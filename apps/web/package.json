@@ -75,7 +75,7 @@
     "@types/react-dom": "18.3.7",
     "@types/ws": "8.18.1",
     "@vanilla-extract/vite-plugin": "5.2.6",
-    "@vitejs/plugin-react": "4.7.0",
+    "@vitejs/plugin-react": "6.1.2",
     "esbuild": "0.28.2",
     "fake-indexeddb": "6.2.4",
     "nodemailer": "10.0.14",
