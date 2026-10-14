@@ -52,7 +52,7 @@
     }
   },
   "devDependencies": {
-    "wrangler": "4.142.0"
+    "wrangler": "4.149.0"
   },
   "license": "MIT",
   "description": "A self-hosted whiteboard for shared ideas and editable workflows.",
