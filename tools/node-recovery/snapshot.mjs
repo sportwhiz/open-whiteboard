@@ -1,8 +1,9 @@
 import { createPool } from 'mysql2/promise';
 import { DatabaseSync } from 'node:sqlite';
 import { createHash, randomUUID } from 'node:crypto';
-import { readFile, writeFile, realpath, stat, lstat, rename, unlink, chmod, open } from 'node:fs/promises';
+import { readFile, writeFile, realpath, stat, lstat, rename, unlink, open } from 'node:fs/promises';
 import { resolve, isAbsolute } from 'node:path';
+import { constants } from 'node:fs';
 import { buildMysqlPoolOptions } from '../../apps/web/src/node/database.ts';
 import { namespaceMysqlPool, validateDatabaseNamespace, logicalDatabaseTable } from '../../apps/web/src/node/database-namespace.ts';
 import { digest, encodeCell, decodeCell, MAX_PLAIN } from './archive.mjs';
@@ -26,7 +27,6 @@ export async function openRecovery(config, { afterMysqlCommit } = {}) {
   const namespace = validateDatabaseNamespace(config.HUDDLE_DATABASE_NAMESPACE);
   const base = resolve(config.HUDDLE_DATA_DIRECTORY || '/private/huddle-loom');
   const directory = await realpath(resolve(base, namespace));
-  if ((await stat(directory)).mode & 0o077) throw new Error('Recovery directory must be private.');
   const catalogPath = resolve(directory, 'catalog.sqlite');
   if ((await lstat(catalogPath)).isSymbolicLink() || (await stat(catalogPath)).mode & 0o077) throw new Error('Catalog must be a private regular file.');
   const pool = namespaceMysqlPool(createPool({ ...buildMysqlPoolOptions(config), dateStrings: true, bigNumberStrings: true }), namespace);
@@ -34,8 +34,10 @@ export async function openRecovery(config, { afterMysqlCommit } = {}) {
   try { connection = await pool.getConnection(); }
   catch (error) { await pool.end(); throw error; }
   let locked = false;
-  let lock;
+  let lock, directoryHandle;
   try {
+    directoryHandle = await open(directory, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+    if ((await directoryHandle.stat()).mode & 0o077) throw new Error('Recovery directory must be private.');
     const [rows] = await connection.query('SELECT DATABASE() AS db');
     lock = 'huddle-rooms:' + createHash('sha256').update(rows[0].db).digest('hex').slice(0, 48);
     const [owned] = await connection.execute('SELECT GET_LOCK(?,0) AS acquired', [lock]);
@@ -61,7 +63,7 @@ export async function openRecovery(config, { afterMysqlCommit } = {}) {
     return {
       async close() {
         try { if (locked) await connection.execute('SELECT RELEASE_LOCK(?)', [lock]); }
-        finally { connection.destroy(); await pool.end(); }
+        finally { connection.destroy(); try { await pool.end(); } finally { await directoryHandle?.close(); } }
       },
       async exportSnapshot() {
         await assertOwner();
@@ -72,9 +74,13 @@ export async function openRecovery(config, { afterMysqlCommit } = {}) {
         const sqlite = new DatabaseSync(catalogPath, { readOnly: true, allowExtension: false });
         try {
           sqlite.exec("VACUUM INTO '" + temporary.replaceAll("'", "''") + "'");
-          await chmod(temporary, 0o600);
-          if ((await stat(temporary)).size > MAX_PLAIN / 2) throw new Error('Catalog exceeds the recovery size limit.');
-          bytes = await readFile(temporary);
+          const snapshotFile = await open(temporary, constants.O_RDONLY | constants.O_NOFOLLOW);
+          try {
+            await snapshotFile.chmod(0o600);
+            const info = await snapshotFile.stat();
+            if (!info.isFile() || info.size > MAX_PLAIN / 2) throw new Error('Catalog exceeds the recovery size limit.');
+            bytes = await snapshotFile.readFile();
+          } finally { await snapshotFile.close(); }
         } finally { sqlite.close(); await unlink(temporary).catch(() => {}); }
         const snapshot = { format: 'open-whiteboard/installation-recovery', version: 1, namespace, catalogDirectory: directory, createdAt: new Date().toISOString(), sqliteSchema: schema, sqlite: bytes.toString('base64'), tables: [] };
         await connection.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
@@ -158,7 +164,7 @@ export async function openRecovery(config, { afterMysqlCommit } = {}) {
           const stagedHandle = await open(staged, 'r'); try { await stagedHandle.sync(); } finally { await stagedHandle.close(); }
           if (!marker) {
             await writeFile(markerPath, JSON.stringify({ digest: archiveDigest }), { flag: 'wx', mode: 0o600, flush: true });
-            const handle = await open(directory, 'r'); try { await handle.sync(); } finally { await handle.close(); }
+            await directoryHandle.sync();
           }
           await connection.beginTransaction();
           try {
@@ -175,16 +181,21 @@ export async function openRecovery(config, { afterMysqlCommit } = {}) {
           // commit may only be retried with the identical authenticated archive.
           for (const suffix of ['-wal', '-shm']) await unlink(catalogPath + suffix).catch(error => { if (error.code !== 'ENOENT') throw error; });
           await rename(staged, catalogPath);
-          const handle = await open(directory, 'r'); try { await handle.sync(); } finally { await handle.close(); }
-          await writeFile(completedPath, JSON.stringify({ digest: archiveDigest }), { mode: 0o600, flush: true });
+          await directoryHandle.sync();
+          const completedTemporary = resolve(directory, '.restore-completed-' + randomUUID());
+          try {
+            await writeFile(completedTemporary, JSON.stringify({ digest: archiveDigest }), { flag: 'wx', mode: 0o600, flush: true });
+            await rename(completedTemporary, completedPath);
+            await directoryHandle.sync();
+          } finally { await unlink(completedTemporary).catch(() => {}); }
           await unlink(markerPath);
-          const completedDirectory = await open(directory, 'r'); try { await completedDirectory.sync(); } finally { await completedDirectory.close(); }
+          await directoryHandle.sync();
           return { restored: true, tables: decoded.length };
         } finally { await unlink(staged).catch(() => {}); }
       },
     };
   } catch (error) {
-    try { if (locked) await connection.execute('SELECT RELEASE_LOCK(?)', [lock]); } finally { connection.destroy(); await pool.end(); }
+    try { if (locked) await connection.execute('SELECT RELEASE_LOCK(?)', [lock]); } finally { connection.destroy(); try { await pool.end(); } finally { await directoryHandle?.close(); } }
     throw error;
   }
 }
