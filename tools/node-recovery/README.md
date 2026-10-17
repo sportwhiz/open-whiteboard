@@ -9,7 +9,7 @@ The tool is separate from the normal application package. It temporarily replace
 - Node 22, with the private SQLite catalog backend used by the GoDaddy wizard.
 - Matching application schemas and database namespaces at source and destination. Initialize the destination using the same official package, but do not create its owner account.
 - Installation-managed authentication and encryption keys. Externally supplied `AUTH_SECRET`, `AUTH_SECRETS` or `AUTH_ENCRYPTION_KEYS` require a separate recovery procedure and are refused here.
-- An archive below 128 MiB encrypted and 256 MiB expanded. Larger installations need an offline database backup procedure; this in-memory tool fails without producing an incomplete backup.
+- An archive below 128 MiB encrypted and 256 MiB expanded. The maintenance server allows 30 minutes to receive an authenticated upload; configure the operator client accordingly. A hosting proxy may impose a shorter limit. Larger installations or transfers that exceed the hosting limit need an offline database backup procedure; this in-memory tool fails without producing an incomplete backup.
 
 ## Maintainer procedure
 

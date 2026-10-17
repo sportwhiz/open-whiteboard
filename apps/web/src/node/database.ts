@@ -45,7 +45,8 @@ export function buildMysqlPoolOptions(env: MysqlEnvironment) {
     user: required("DB_USER"),
     password: required("DB_PASSWORD"),
     connectionLimit,
-    // mysql2 only starts idle eviction when maxIdle is below connectionLimit.
+    // mysql2 only starts idle eviction when maxIdle is below connectionLimit;
+    // once started, its reaper expires sockets by age OR by excess free count.
     // Retire unused sockets before a hosting proxy's idle disconnect; checked-out
     // ownership connections and transactions are never evicted by the pool.
     maxIdle: connectionLimit - 1,

@@ -77,7 +77,9 @@ const server = createServer(async (request, response) => {
     busy = false;
   }
 });
-server.requestTimeout = 120_000;
+// A 128 MiB archive can take many minutes on a slow uplink. Authentication is
+// checked before reading its body; retain a separate short header deadline.
+server.requestTimeout = 30 * 60_000;
 server.headersTimeout = 15_000;
 server.listen(port, '0.0.0.0', () => console.log('Open Whiteboard recovery maintenance is ready.'));
 for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => {
