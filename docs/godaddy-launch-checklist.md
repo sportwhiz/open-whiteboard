@@ -27,6 +27,7 @@ Done when: the exact published package passes all live checks and evidence is re
 ## 3. Prove updates and recovery on real hosting
 
 - [ ] Seed the qualified test app with accounts, boards, uploads and saved settings. Take a coordinated backup of its private SQLite catalog and MySQL data, including installation keys. Restore into an isolated test installation and verify sign-in and data. Keep backup locations and credentials private.
+- [ ] Capture a redacted live `GET /apps/{appId}` response and verify the top-level `id` equals the configured `GODADDY_APP_ID`, with `appType: NODEJS`. Match both provider fixtures to the observed response shape. Exercise the current update-connection identity check on the provider address and a connected custom domain; reject a different app ID. Earlier connection tests predate this check and do not qualify it. Keep credentials and identifying values out of committed evidence.
 - [ ] Connect the separate four-scope update token in **Administration → Updates**. Test owner-initiated installation of a second reviewed, compatible stable patch release. Keep the same app, origin, namespaces, database and installation keys.
 - [ ] Verify the replacement runs the target version, commit and schema; the provider deployment is complete; the saved update shows success; and existing accounts, boards, images and settings remain intact.
 - [ ] Rehearse an interrupted request and token replacement. Continue must recover the same saved operation without creating a second app or duplicate publication.

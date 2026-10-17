@@ -54,7 +54,14 @@ export function providerFixture() {
       return response(keys.get(key), 202);
     }
     if (path === '/app-operations/op-one') return response({ operationId: 'op-one', status: 'COMPLETED', app: { id: 'NODEJS-test' } });
-    if (path === '/apps/NODEJS-test') return response({ urls: { preview: 'https://host.godaddy.com/nodejs/projects/test/preview', publish: 'https://fixture.c39.airoapp.ai' } });
+    // GET /apps/{appId} returns the Application schema, including top-level id.
+    // https://developer.godaddy.com/en/docs/references/rest/hosting/get-app
+    if (path === '/apps/NODEJS-test') return response({
+      id: 'NODEJS-test', name: 'Test whiteboard', appType: 'NODEJS', status: 'ACTIVE',
+      urls: { preview: 'https://host.godaddy.com/nodejs/projects/test/preview', publish: 'https://fixture.c39.airoapp.ai' },
+      createdAt: '2026-10-17T00:00:00Z', updatedAt: '2026-10-17T00:00:00Z',
+      links: [{ rel: 'self', href: `${GODADDY}/apps/NODEJS-test` }],
+    });
     if (path.startsWith('/apps/NODEJS-test/secrets?')) {
       if (options.rejectConfigureOnce) { options.rejectConfigureOnce = false; return response({ error: 'Expired token' }, 401); }
       assert.equal(method, 'PATCH'); assert.equal(init.headers['Content-Type'], 'application/json-patch+json');
