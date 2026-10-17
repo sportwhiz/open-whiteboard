@@ -36,7 +36,7 @@ export function providerFixture() {
     calls.push({ url, ...init });
     if (url === 'https://fixture.c39.airoapp.ai/healthz') { assert.equal(init.headers.Authorization, undefined); return response({ ready: options.ready }); }
     if (url === release.url) { assert.equal(init.headers?.Authorization, undefined); return new Response(options.badChecksum ? 'bad bytes' : bytes); }
-    assert.ok(url.startsWith(`${GODADDY}/`)); assert.equal(init.redirect, 'error');
+    assert.ok(url.startsWith(`${GODADDY}/`)); assert.equal(init.redirect, 'manual');
     if (init.headers.Authorization !== `Bearer ${token}`) return response({ error: 'secret provider message' }, 401);
     if (options.denied) return response({ error: `${token} ${passphrase}` }, 403);
     const path = url.slice(GODADDY.length); const method = init.method;

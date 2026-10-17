@@ -171,7 +171,7 @@ test('advertised setup scopes cover the full asynchronous deployment and log tro
   assert.equal(used.size, 8);
   assert.equal(advertisedScopes.size, 9);
   assert.equal(advertisedScopes.has('hosting.log:read'), true);
-  const logs = await fixture.fetchImpl(`${GODADDY}/apps/NODEJS-test/logs?variant=PUBLISH`, { method: 'GET', redirect: 'error', headers: { Authorization: `Bearer ${token}` } });
+  const logs = await fixture.fetchImpl(`${GODADDY}/apps/NODEJS-test/logs?variant=PUBLISH`, { method: 'GET', redirect: 'manual', headers: { Authorization: `Bearer ${token}` } });
   assert.equal(logs.status, 200);
   const prompt = readFileSync(new URL('./public/agent-prompt.txt', import.meta.url), 'utf8');
   assert.deepEqual(scopesIn(prompt), advertisedScopes, 'Coding-agent instructions must match the setup checklist');
@@ -183,7 +183,7 @@ for (const scope of advertisedScopes) {
     Object.assign(fixture.options, { scopes: new Set([...advertisedScopes].filter(s => s !== scope)), creationPending: true, importPending: true, publishPending: true });
     if (scope === 'hosting.log:read') {
       await call('connect'); await deployment.run(); // Log access is diagnostic only.
-      const logs = await fixture.fetchImpl(`${GODADDY}/apps/NODEJS-test/logs?variant=PUBLISH`, { method: 'GET', redirect: 'error', headers: { Authorization: `Bearer ${token}` } });
+      const logs = await fixture.fetchImpl(`${GODADDY}/apps/NODEJS-test/logs?variant=PUBLISH`, { method: 'GET', redirect: 'manual', headers: { Authorization: `Bearer ${token}` } });
       assert.equal(logs.status, 403);
     } else if (['hosting.source:read', 'hosting.subscription:read'].includes(scope)) {
       // The checklist explicitly lists reads; GoDaddy also allows the matching
