@@ -10,17 +10,18 @@ Current state: the website opens a preview, the installer pins the failing v0.4.
 - [x] Merge the preview website: [website PR #3](https://github.com/sportwhiz/huddle-loom-site/pull/3) merged on October 17, 2026 as `80b3e1d9c8c0ff68840fbb68730c41e14a3c9a25`; its Cloudflare build passed. The public GoDaddy link still opens the preview.
 - [x] Website PR #4 merged as `fa1e649bbaa934f752e4079ddc01217f7a0de374`, pinning product `cb9472d97ca9a2e101087704c95a6abf11e65ed7`. Its Cloudflare production build passed.
 - [x] Keep `VITE_GODADDY_INSTALLER_URL` unset. The website may publish its preview at this point; live setup remains closed.
-- [ ] Resolve the existing MCP SDK high-severity advisories before public launch. Review the upgrade in [maintenance PR #15](https://github.com/sportwhiz/open-whiteboard/pull/15) against the merged code; do not assume another branch's fix is included.
+- [x] [Product PR #24](https://github.com/sportwhiz/open-whiteboard/pull/24) merged as `22f197cf160b321fbb1aa946336c0bfc15f2db27` after all checks passed. It patches the MCP SDK, KaTeX, source-map-js and Sharp, and refreshes the bundled notices. The dependency audit and GitHub advisory list both report zero open vulnerabilities.
 
 Done when: the merged commits and passing checks are recorded, the security upgrade is included, and the public GoDaddy button still opens an explicitly labeled preview.
 
 ## 2. Publish and qualify the corrected package
 
-- [ ] Choose the next unused release version, update root and application package versions, and tag the reviewed commit. Follow [release publication](software-updates.md#release-publication).
-- [ ] Run **Publish Open Whiteboard release** with that existing tag. Start with `prerelease: true`; set `security` only for a reviewed security fix. Require the Cloudflare, Node and manifest jobs to pass.
-- [ ] Record the release URL, commit, `open-whiteboard-node.zip` SHA-256 and manifest. Download the published ZIP and verify its checksum. Test these exact bytes, not a locally rebuilt candidate.
-- [ ] Deploy the ZIP to a disposable GoDaddy app using the documented API/CLI or manual procedure. Require terminal deployment status `COMPLETED`, a working published HTTPS address and `/healthz` returning 200 with `ready: true`.
-- [ ] Complete owner creation and MFA. Test sign-in, creating/editing/reloading boards, images, two-user collaboration, WebSockets and an app restart with data retained. Confirm Preview and Publish data isolation and that the plan supports the required single-process replacement behavior.
+- [x] Tag `v0.4.1` points to reviewed commit `66c7ace460ff50f6484e3056a0fef720091d894a`; both package versions match. The tag was corrected before publication to include regenerated license notices.
+- [x] [Release workflow 39057713431](https://github.com/sportwhiz/open-whiteboard/actions/runs/39057713431) passed its Cloudflare, Node, manifest and publication jobs. It published `v0.4.1` as a prerelease with genuine dependency security fixes.
+- [x] Downloaded the [published v0.4.1 package](https://github.com/sportwhiz/open-whiteboard/releases/tag/v0.4.1). ZIP SHA-256: `347944203cd01b72b835e279dfe7661743c1a1940f8f8a1ff0c130f688dec59b`. Its embedded version, commit, schema and protocol match the release manifest; patched dependency notices are included.
+- [x] Deployed the exact published v0.4.1 ZIP through the installer API and flow modules to a disposable GoDaddy Deluxe app. Deployment reached `COMPLETED`; published HTTPS health returned 200 with `ready: true`. A deliberately lost publish response resumed the original deployment with the same retry key. [Live evidence](qa/godaddy-release-v0.4.1.json).
+- [x] Completed owner creation, MFA, browser sign-in, board saves, Command-D duplication, sticky editing, dragging, zooming, guest collaboration/authorization, WebSockets, images and OAuth/MCP on the published release. Provider-confirmed restarts retained owner and guest sessions, settings, board data, keys and image bytes.
+- [ ] Confirm actual Preview and Publish data isolation and single-process replacement during a package update. Investigate the background asset-reconciliation retry observed after a restart.
 
 Done when: the exact published package passes all live checks and evidence is recorded. Only then promote that release to stable; keep its tag and assets unchanged.
 
@@ -71,14 +72,14 @@ Done when: the public site points at the exact tested installer, and the recipie
 | Item | Evidence/status |
 | --- | --- |
 | Product and website merge commits | Product `cb9472d97ca9a2e101087704c95a6abf11e65ed7`; site `fa1e649bbaa934f752e4079ddc01217f7a0de374`; production build passed |
-| Security advisory resolution | Pending |
-| Qualified stable package/tag/commit/SHA-256 | Pending |
-| Fresh live install and restart | Pending |
+| Security advisory resolution | PR #24 merged; dependency audit and GitHub open-alert list are empty |
+| Qualified stable package/tag/commit/SHA-256 | Published and checksum-verified v0.4.1 prerelease; live qualification and stable promotion pending |
+| Fresh live install and restart | Exact published v0.4.1 passed; [sanitized evidence](qa/godaddy-release-v0.4.1.json). Preview isolation and replacement-update behavior remain pending |
 | Source → target stable update and unattended security update | Pending |
 | Backup/restore and interrupted-update recovery | Pending |
 | Hosted installer URL and deployed commit | Pending |
 | D1 migrations and email receipt | Pending; private operator settings stay private |
-| Independent outage/recovery notification | Pending |
+| Independent outage/recovery notification | PR #25 merged as `086a873e9e04214e4bcfeb9e02173f3963f5ee71`; [outage exercise](https://github.com/sportwhiz/open-whiteboard/actions/runs/39058451586) opened test issue #26 and [recovery exercise](https://github.com/sportwhiz/open-whiteboard/actions/runs/39058482686) closed it. Inbox receipt and live schedule activation pending |
 | Hosted browser setup and agent setup | Pending |
 | Public website build and button checks | Pending |
 

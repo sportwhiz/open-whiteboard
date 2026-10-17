@@ -1,0 +1,51 @@
+{
+  "testedAt": "2026-10-17T18:44:54.132Z",
+  "release": {
+    "tag": "v0.4.1",
+    "commit": "66c7ace460ff50f6484e3056a0fef720091d894a",
+    "sha256": "347944203cd01b72b835e279dfe7661743c1a1940f8f8a1ff0c130f688dec59b",
+    "channel": "prerelease"
+  },
+  "provider": "GoDaddy Node.js Deluxe",
+  "deploymentStatus": "COMPLETED",
+  "checks": {
+    "freshInstall": true,
+    "interruptedUploadResumedSameApp": true,
+    "lostPublishResponseResumedSameDeployment": true,
+    "ownerSetupAndMfa": true,
+    "ownerBrowserSignIn": true,
+    "boardSaveAndReload": true,
+    "commandDDuplication": true,
+    "stickyTextBlurPersistence": true,
+    "dragAndZoom": true,
+    "guestPermissionsAndLiveRevocation": true,
+    "websocketSnapshot": true,
+    "oauthPkceMcpRefreshRevocation": true,
+    "imageUploadAndByteComparison": true,
+    "imageArchiveIncludesAsset": true,
+    "ownerAndGuestSessionRestartPersistence": true,
+    "boardSettingsKeysAndImageRestartPersistence": true,
+    "realProviderIdentityUpdateConnection": true,
+    "automaticUpdatesEnabled": false
+  },
+  "restartEvidence": {
+    "startupAt": "2026-10-17T18:44:48.202Z",
+    "providerState": "running",
+    "healthReady": true
+  },
+  "outstanding": [
+    "Actual Preview and Publish data isolation through GoDaddy preview access",
+    "Full coordinated SQLite and MySQL backup and isolated restore",
+    "Actual attached custom domain",
+    "Stable-to-stable owner update and unattended security update",
+    "Hosted installer, email receipt and independent live uptime schedule",
+    "Full hosted browser and coding-agent installation",
+    "Production marketing site activation"
+  ],
+  "notes": [
+    "The initial restart test required observable downtime and was replaced with provider startup-log evidence; the restart completed between health polls.",
+    "Repeating the fresh-install guest-capacity test on a populated app hit its known guest-count assumption. The first fresh-install run passed; the restart continuation used an existing guest session and restored the test guest limit.",
+    "One asset-reconciliation retry and MySQL packet-order warning occurred after a restart at 18:42:11 UTC. No recurrence appeared in provider logs through 18:46:17 UTC, including two later restarts. This observation does not prove recovery from every database failure.",
+    "Private credentials, account details, resource IDs and raw logs are retained outside the repositories."
+  ]
+}
