@@ -1,0 +1,33 @@
+name: Installer uptime
+on:
+  schedule:
+    - cron: '3,13,23,33,43,53 * * * *'
+  workflow_dispatch:
+    inputs:
+      exercise:
+        description: Test outage and recovery notifications without changing the live service
+        type: choice
+        options: [none, outage, recovery]
+        default: none
+permissions:
+  contents: read
+  issues: write
+concurrency:
+  group: installer-uptime
+  cancel-in-progress: false
+jobs:
+  monitor:
+    if: vars.GODADDY_INSTALLER_MONITOR_ENABLED == 'true' || (github.event_name == 'workflow_dispatch' && inputs.exercise != 'none')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+      - run: node scripts/installer-uptime.mjs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          INSTALLER_HEALTH_URL: ${{ vars.GODADDY_INSTALLER_HEALTH_URL }}
+          MONITOR_RECIPIENT: ${{ github.repository_owner }}
+          MONITOR_EXERCISE: ${{ inputs.exercise || 'none' }}
