@@ -21,7 +21,7 @@ function sqliteSchema(db) {
 function checkSqlite(db) {
   if (db.prepare('PRAGMA quick_check').get().quick_check !== 'ok' || db.prepare('PRAGMA foreign_key_check').all().length) throw new Error('Catalog integrity check failed.');
 }
-export async function openRecovery(config, { afterMysqlCommit } = {}) {
+export async function openRecovery(config, { afterMysqlCommit, beforeRestoreMarkerPublish } = {}) {
   if (!['godaddy', 'node-private-volume'].includes(config.HUDDLE_PLATFORM ?? 'godaddy')) throw new Error('Recovery requires the private SQLite catalog backend.');
   if (config.AUTH_SECRET || config.AUTH_SECRETS || config.AUTH_ENCRYPTION_KEYS) throw new Error('External authentication keys require a separate backup; this tool supports managed installation keys.');
   const namespace = validateDatabaseNamespace(config.HUDDLE_DATABASE_NAMESPACE);
@@ -163,9 +163,21 @@ export async function openRecovery(config, { afterMysqlCommit } = {}) {
           } finally { restored.close(); }
           const stagedHandle = await open(staged, 'r'); try { await stagedHandle.sync(); } finally { await stagedHandle.close(); }
           if (!marker) {
-            await writeFile(markerPath, JSON.stringify({ digest: archiveDigest }), { flag: 'wx', mode: 0o600, flush: true });
-            await directoryHandle.sync();
+            const markerTemporary = resolve(directory, '.restore-marker-' + randomUUID());
+            try {
+              await writeFile(markerTemporary, JSON.stringify({ digest: archiveDigest }), { flag: 'wx', mode: 0o600, flush: true });
+              await beforeRestoreMarkerPublish?.();
+              await rename(markerTemporary, markerPath);
+              await directoryHandle.sync();
+            } finally { await unlink(markerTemporary).catch(() => {}); }
           }
+          // Keep the old catalog self-contained before removing its WAL files.
+          // An interruption before the final rename must still leave a catalog
+          // that can be opened to resume the same restore.
+          const oldCatalog = new DatabaseSync(catalogPath, { allowExtension: false });
+          try {
+            if (oldCatalog.prepare('PRAGMA journal_mode=DELETE').get().journal_mode !== 'delete') throw new Error('Could not checkpoint the destination catalog.');
+          } finally { oldCatalog.close(); }
           await connection.beginTransaction();
           try {
             for (const table of [...decoded].reverse()) await connection.query('DELETE FROM ' + quote(table.name));

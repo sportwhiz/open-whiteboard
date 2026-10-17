@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createPool } from '../../apps/web/node_modules/mysql2/promise.js';
 import { build } from '../../apps/web/node_modules/esbuild/lib/main.js';
-import { mkdtemp, symlink, rm, mkdir, readFile } from 'node:fs/promises';
+import { mkdtemp, symlink, rm, mkdir, readFile, stat } from 'node:fs/promises';
 import { DatabaseSync } from 'node:sqlite';
 import { resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -94,6 +94,10 @@ try {
   await recovery.close(); recovery = null;
   const key = randomBytes(32).toString('base64url'); const encrypted = encryptArchive(snapshot, key); const restored = decryptArchive(encrypted,key);
   target = await start(b); await target.close(); target = null;
+  recovery = await openRecovery(b, { beforeRestoreMarkerPublish() { throw new Error('Controlled marker interruption'); } });
+  await assert.rejects(recovery.restoreSnapshot(restored, digest(encrypted)), /Controlled marker interruption/);
+  await recovery.close(); recovery = null;
+  await assert.rejects(stat(resolve(b.HUDDLE_DATA_DIRECTORY, 'live/.restore-in-progress')), { code: 'ENOENT' });
   recovery = await openRecovery(b, { afterMysqlCommit() { throw new Error('Controlled interruption'); } });
   await assert.rejects(recovery.restoreSnapshot(restored, digest(encrypted)), /Controlled interruption/);
   await recovery.close(); recovery = null;
