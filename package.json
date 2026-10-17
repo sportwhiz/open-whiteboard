@@ -27,7 +27,10 @@
     "build:node": "pnpm --filter @whiteboard/web run build:node",
     "typecheck:node": "pnpm --filter @whiteboard/web run typecheck:node",
     "test:node": "pnpm --filter @whiteboard/web exec vitest run src/node",
-    "package:node": "pnpm run build:node"
+    "package:node": "pnpm run build:node",
+    "deploy:godaddy": "node tools/godaddy-deploy/server.mjs",
+    "test:godaddy-installer": "node --test tools/godaddy-deploy/*.test.mjs",
+    "test:godaddy-installer:browser": "node tools/godaddy-deploy/browser-smoke.mjs"
   },
   "cloudflare": {
     "bindings": {

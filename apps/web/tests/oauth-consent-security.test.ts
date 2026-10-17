@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { NativeEnv } from "../src/auth/types";
 import {
@@ -14,6 +15,12 @@ const env = {
 } as NativeEnv;
 
 describe("OAuth browser consent security", () => {
+  it("keeps static Cloudflare pages and Worker/Node responses on the same policy", () => {
+    const headers = readFileSync(new URL("../public/_headers", import.meta.url), "utf8");
+    const staticPolicy = headers.match(/Content-Security-Policy: (.+)/)?.[1];
+    expect(staticPolicy).toBe(CONTENT_SECURITY_POLICY);
+  });
+
   it("preserves the origin of consent POSTs without disclosing cross-origin referrers", () => {
     const response = protectResponse(new Response("consent"), "/oauth/authorize");
     expect(response.headers.get("Referrer-Policy")).toBe("same-origin");

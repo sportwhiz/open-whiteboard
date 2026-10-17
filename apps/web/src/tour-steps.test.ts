@@ -43,7 +43,7 @@ describe("permission aware page guides", () => {
   });
   it("gives Node installations a manual upgrade guide and administrators review-only controls", () => {
     expect(
-      tourSteps("admin", "owner", false, "/settings/updates", "godaddy")[0]
+      tourSteps("admin", "owner", false, "/settings/updates", "node")[0]
         .heading,
     ).toBe("Update through your hosting dashboard");
     expect(

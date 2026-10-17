@@ -302,6 +302,11 @@ async function qualifyMcp(boardId: string) {
 }
 try {
   runtime = await start();
+  // Supervisor probes use a local hostname instead of AUTH_ORIGIN. They may
+  // read readiness, but must not gain access to any application/auth route.
+  assert.deepEqual(await (await fetch("http://localhost:5219/healthz")).json(), { ready: true });
+  assert.equal((await fetch("http://localhost:5219/")).status, 200);
+  assert.equal((await fetch("http://localhost:5219/api/v1/auth/bootstrap")).status, 400);
   assert.equal((await call("/api/v1/auth/bootstrap")).setupState, "unclaimed");
   await call("/api/v1/setup/unlock", { secret: "wrong" }, 403);
   await call("/api/v1/setup/unlock", { secret: setupPassword });
@@ -392,7 +397,10 @@ try {
   );
   await qualifyMcp(board.id);
   const updates = await call("/api/v1/admin/updates");
-  assert.equal(updates.deploymentMode, "manual-node");
+  const godaddyUpdates = config.HUDDLE_PLATFORM === "godaddy" && config.GODADDY_VARIANT !== "PREVIEW";
+  assert.equal(updates.deploymentMode, godaddyUpdates ? "godaddy" : "manual-node");
+  assert.equal(updates.connected, false);
+  await call("/api/v1/admin/updates/policy", { automaticSecurity: true }, 409);
   const ownerNotice = await call("/api/v1/updates/notice");
   assert.ok(Object.hasOwn(ownerNotice, "notice"));
   assert.equal(JSON.stringify(ownerNotice).includes("hook"), false);
@@ -401,7 +409,7 @@ try {
     {
       hook: "https://api.cloudflare.com/client/v4/accounts/example/workers/builds/deploy_hooks/example",
     },
-    409,
+    godaddyUpdates ? 400 : 409,
   );
   const invitation = await call("/api/v1/admin/local-invitations", {
     label: "Node test guest",

@@ -18,6 +18,16 @@ Drag a sticky-note or shape tool onto the canvas to place the last style you cho
 
 Sticky notes have a toolbar for their color and text. Font, size, and alignment apply to the whole note. Bold, italic, underline, strikethrough, and text color apply to the words you select while editing, or to the whole note when you have selected the note itself. Select several notes to change them together. While editing, ⌘B, ⌘I, ⌘U, and ⌘⇧X (Ctrl on Windows and Linux) toggle bold, italic, underline, and strikethrough. Pasted text arrives as plain text.
 
+Click a selected sticky again, double-click it, or press Enter to write. Clicking the paper around the text keeps you in the same editor. Escape finishes editing. Typing while a sticky is selected appends to its text.
+
+New sticky notes use **Auto fit** text sizing. Text gets smaller as the note fills, down to a readable minimum; after that, the note grows taller. Choose a fixed size in the text toolbar if you prefer. Existing notes keep their saved size.
+
+Press **⌘D** (Ctrl+D on Windows/Linux) to duplicate selected objects. Press **⌘Enter** (Ctrl+Enter) on a selected sticky, or while writing, to create the next note. Tab while writing also creates the next note. It keeps the source note's color, dimensions, font, size, and alignment, avoids nearby objects, and pans into view without changing your zoom.
+
+Open **Quick actions** with **⌘K** (Ctrl+K) or the keyboard icon beside board search. Search for an action such as “tidy”, “group”, “next note”, or “fit selection”; use the arrow keys and Enter to run it. Actions that need a different selection or edit access explain why they are unavailable. Escape returns to the board.
+
+Board search (**⌘F** / Ctrl+F from the canvas) supports Enter or Down for the next result and Shift+Enter or Up for the previous result. Escape closes search and returns keyboard focus to the canvas. Your position and zoom are remembered on this device separately for each account and board; following someone else's camera preserves your own place. Restoring an older board version starts a fresh view.
+
 Use the connected-next-step control to add a note or shape with an arrow. Bound connectors follow their objects when you move them. Frames keep sections together; documents and tables hold details that would be difficult to read on a sticky note.
 
 Drag the empty background to select an area. To pan, scroll with a trackpad or mouse wheel, right-drag the empty background, hold Space and drag, or use the hand tool. Use the zoom controls to fit the board. Selection, tool, and editing shortcuts are listed in board help.

@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Deploy to GoDaddy · Open Whiteboard</title><link rel="stylesheet" href="./style.css"><script type="module" src="./app.js"></script></head>
+<body>
+<a class="skip-link" href="#setup">Skip to setup</a>
+<header><a class="brand" href="https://github.com/sportwhiz/open-whiteboard" target="_blank" rel="noreferrer"><img class="mark" src="./brand.svg" alt=""> open whiteboard</a><span class="badge"><span class="provider-logo"><img src="./godaddy-black.svg" alt="" width="32" height="30"></span> GoDaddy Node.js</span></header>
+<main>
+  <section class="intro"><p class="eyebrow">HOSTED IN YOUR ACCOUNT</p><h1>A home for<br> your team’s ideas.</h1><p class="lede">Set up Open Whiteboard on GoDaddy. We’ll handle the app settings and installation.</p>
+    <ol class="journey" aria-label="Setup stages">
+      <li data-journey="connect" aria-current="step"><span class="journey-number" aria-hidden="true">1</span><div><strong>Connect GoDaddy</strong><p>Use a temporary key to give the installer access.</p></div></li>
+      <li data-journey="configure"><span class="journey-number" aria-hidden="true">2</span><div><strong>Make it yours</strong><p>Choose a name and your hosting plan.</p></div></li>
+      <li data-journey="deploy"><span class="journey-number" aria-hidden="true">3</span><div><strong>Set up your whiteboard</strong><p>We’ll install it and check that it’s ready.</p></div></li>
+      <li data-journey="account"><span class="journey-number" aria-hidden="true">4</span><div><strong>Create your account</strong><p>Sign in, then invite your team.</p></div></li>
+    </ol>
+    <div class="hosting-note"><strong>Before you start</strong><p>You’ll need a GoDaddy Node.js Hosting plan with an available app slot. This installer uses your existing plan. It won’t buy one for you.</p></div>
+    <details class="agent-option"><summary>Prefer to use Claude or Codex?</summary><p>Copy these instructions into your coding assistant. It can deploy the app and open GoDaddy’s sign-in page for you.</p><button id="copy-agent" class="secondary" type="button">Copy setup instructions</button><p id="copy-status" class="hint" role="status" aria-live="polite">The instructions contain no credentials.</p><a class="download" href="./agent-prompt.txt" download>Download instructions instead</a></details>
+  </section>
+  <section class="card" aria-label="Deployment setup">
+    <div id="setup">
+      <p class="eyebrow" id="setup-kicker">STEP 1 OF 4 · CONNECT</p><h2 id="setup-title" tabindex="-1">Connect your GoDaddy account.</h2><p class="hint" id="setup-intro">Create a temporary key in GoDaddy, then paste it here. We’ll check which hosting plans you can use.</p>
+      <form id="connect-form">
+        <ol class="token-guide">
+          <li><strong>Open GoDaddy in a new tab.</strong><a class="token-link" href="https://developer.godaddy.com/personal-access-token" target="_blank" rel="noreferrer">Create my temporary key ↗</a></li>
+          <li><strong>Choose Generate Token.</strong><span>Name it “Open Whiteboard setup” and choose <b>7 days</b> under Expires After. Check each permission listed here.</span><details id="permissions"><summary>What to select under Hosting</summary>
+            <p>Expand Hosting, then open its sections. Select the individual permissions below.</p>
+            <ul class="permission-groups">
+              <li><strong>Applications</strong><code>hosting.application:read</code><code>hosting.application:create</code><code>hosting.deployment:execute</code></li>
+              <li><strong>Source Code</strong><code>hosting.source:read</code><code>hosting.source:write</code></li>
+              <li><strong>Domains</strong><p>Leave unchecked. Setup uses the address GoDaddy provides.</p></li>
+              <li><strong>Secrets</strong><code>hosting.secret:write</code></li>
+              <li><strong>Subscriptions</strong><code>hosting.subscription:read</code><code>hosting.subscription:write</code></li>
+              <li><strong>Logs</strong><code>hosting.log:read</code></li>
+            </ul>
+            <p>Select these nine permissions and leave the others unchecked. GitHub access is not needed because setup uploads a ready-made release ZIP.</p>
+            <p>Log access lets your coding assistant investigate startup problems. The guided installer does not collect or email raw logs.</p>
+            <p>Use a personal access token, not the API key and secret for GoDaddy’s older domain API. Hosting API availability depends on your GoDaddy account.</p>
+          </details></li>
+          <li><strong>Choose Create Token, then Copy Token.</strong><span>Come back here and paste it below. Keep the key out of chats and documents.</span></li>
+        </ol>
+        <label for="token">Paste your temporary key</label>
+        <input id="token" type="password" required autocomplete="off" spellcheck="false" placeholder="Paste your personal access token" aria-describedby="token-help">
+        <p id="token-help" class="hint">GoDaddy calls this a “Personal Access Token.” It is different from your GoDaddy password.</p>
+
+        <p class="privacy">This installer sends the key to GoDaddy and keeps it in memory while this page is open. It does not save the key. These permissions cover your GoDaddy account, so use an installer you trust. You can also run this one locally.</p><p class="privacy">The hosted installer records failed setup steps and sends the maintainer a short error report. Reports contain a random support reference, the release version, and an error category. They exclude your key, passphrase, app name, and raw logs. Records are deleted after 30 days without activity.</p>
+        <button id="connect" type="submit" disabled>Connect GoDaddy <span aria-hidden="true">→</span></button>
+      </form>
+      <form id="deploy-form" hidden>
+        <div class="connected"><span>✓ GoDaddy connected</span><button id="disconnect" class="text-button" type="button">Disconnect</button></div>
+        <label for="name">Whiteboard name</label><input id="name" required maxlength="100" value="My whiteboard" autocomplete="off">
+        <label for="plan">Hosting plan</label><select id="plan" required></select><p id="plan-help" class="hint">Uses one available app slot on your existing plan. No new plan is purchased.</p>
+        <div class="field-heading"><label for="passphrase">Setup passphrase</label><button type="button" id="generate-passphrase" class="text-button">Make one for me</button></div><input id="passphrase" type="password" required minlength="16" maxlength="256" autocomplete="new-password" aria-describedby="passphrase-help"><button id="copy-passphrase" type="button" class="text-button" hidden>Copy passphrase</button><p id="passphrase-help" class="hint">At least 16 characters. Save it in your password manager; you’ll use it to create the first administrator account.</p>
+        <label class="save-confirmation"><input id="saved-passphrase" type="checkbox" required> I’ve saved my setup passphrase.</label>
+        <p class="release">Installing Open Whiteboard <strong id="version"></strong> · verified release</p>
+        <button id="deploy" type="submit">Deploy to GoDaddy <span aria-hidden="true">→</span></button><p class="hint center">Usually takes a few minutes. Keep this page open.</p>
+      </form>
+    </div>
+    <section id="progress" hidden aria-label="Deployment progress"><p class="eyebrow">SETTING UP YOUR WHITEBOARD</p><h2 id="progress-title" tabindex="-1" aria-live="polite" aria-atomic="true">We’ll take it from here.</h2><p class="hint">You can follow each step below. Keep this page open to preserve your progress.</p><p id="progress-count" class="hint" role="status"></p><progress id="deployment-progress" max="10" value="0" aria-label="Completed deployment steps"></progress><ol id="steps"></ol><p id="app-id" class="hint"></p><a id="manage-app" class="hint" target="_blank" rel="noreferrer" hidden>Open this app in GoDaddy ↗</a><button id="retry" hidden type="button">Continue deployment</button><form id="reconnect-form" hidden><h3>Reconnect to continue</h3><p class="hint">Create a replacement key with the same permissions in the same GoDaddy account. Your progress stays here, and we’ll continue with the same app.</p><a href="https://developer.godaddy.com/personal-access-token" target="_blank" rel="noreferrer">Open GoDaddy tokens ↗</a><label for="reconnect-token">Replacement temporary key</label><input id="reconnect-token" type="password" autocomplete="off" spellcheck="false" required><button id="reconnect" type="submit">Reconnect and continue</button></form></section>
+    <div id="error" class="error" role="alert" tabindex="-1" hidden></div>
+    <section id="success" hidden tabindex="-1"><div class="success-mark" aria-hidden="true">✓</div><p class="eyebrow">PUBLISHED ON GODADDY</p><h2>Make yourself at home.</h2><p>Your whiteboard is running. Finish setting up your account to start using it.</p><a id="open-board" class="button" target="_blank" rel="noreferrer">Open my whiteboard ↗</a>
+      <ol class="finish-steps"><li><strong>Create your owner account</strong><p>Enter your saved setup passphrase, choose your sign-in details, and save your recovery code. Connect your authenticator to finish.</p></li><li><strong>Remove the setup key</strong><p><a href="https://developer.godaddy.com/personal-access-token" target="_blank" rel="noreferrer">Open your GoDaddy tokens ↗</a>. Find “Open Whiteboard setup,” open its ⋯ menu, and choose Revoke.</p></li><li><strong>Choose how to update</strong><p>Open Administration → Updates in your whiteboard. Connect a separate update token and choose whether to install compatible security patches automatically.</p></li></ol>
+      <details><summary>About your GoDaddy Preview</summary><p class="hint">The private Preview stays on its setup guide until you configure its own app address. Your published whiteboard is ready for account setup.</p></details></section>
+  </section>
+</main>
+<footer><span>Open source. Yours to host.</span><a href="https://github.com/sportwhiz/open-whiteboard/blob/main/docs/godaddy-nodejs-installation.md" target="_blank" rel="noreferrer">Installation guide ↗</a></footer>
+</body></html>

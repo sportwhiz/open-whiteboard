@@ -1,0 +1,16 @@
+{
+  "name": "open-whiteboard-godaddy-installer",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.16.0"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test installer.test.mjs",
+    "test:browser": "node browser-smoke.mjs",
+    "build": "node --check server.mjs"
+  },
+  "main": "server.mjs",
+  "version": "0.1.0"
+}

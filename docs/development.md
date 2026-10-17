@@ -29,6 +29,20 @@ Frontend builds, Worker builds, and Node packages are separate outputs. A shared
 
 ## Integration tests
 
+With the local development server running, `pnpm --filter @whiteboard/web test:sticky http://127.0.0.1:5173` checks sticky editing, saving, automatic text sizing, formatting, duplication and undo/redo in Chromium. It exercises both Mac and Windows shortcut mappings and creates disposable local boards.
+
+`pnpm --filter @whiteboard/web test:workflow http://127.0.0.1:5173` checks quick-action keyboard navigation and permissions, selection and grouping, continuous note creation with inherited styling, keyboard search, and view persistence across reloads. Both browser scripts accept `CHROMIUM_EXECUTABLE_PATH`; they use installed Chrome on macOS when available. The platform override checks application shortcut mappings, not native Windows browser behavior. Run the scripts sequentially against a stable dev server, without changing source files during the run.
+
+Additional browser checks use the same local-server argument:
+
+- `test:gestures`: actual pointer dragging, resizing, Space/Hand/right-button/wheel panning, cursor-anchored zoom, drawing, connectors, clipboard, images, persistence, and all native canvas font variants. It needs access to the existing canvas font CDN. `CANVAS_CPU_THROTTLE=4` exercises slower rendering; `CANVAS_TRACE_PATH=/tmp/canvas-trace.zip` records a Playwright trace.
+- `test:collaboration-browser`: two browser identities editing concurrently, offline merge, following the final camera update, preserving the follower's own view, presentation, and live access revocation.
+- `test:sticky-performance`: 200- and 1,000-note fixtures, text-measurement locality, formatting invalidation, and fit after reload. Timings are diagnostic, not portable performance thresholds.
+
+Run clipboard scenarios sequentially: browser contexts share the operating-system clipboard. For release checks, also run the gesture and collaboration scripts against built assets served by a local Worker or Node fixture; Vite development does not apply the static production CSP. Stop the built-asset server before rebuilding its output directory.
+
+See [End-to-end QA](end-to-end-qa.md) for the tested journeys, discovered defects, and remaining coverage limits.
+
 Some Node suites need disposable MySQL databases. Without their test URL variables, those suites skip. Use MySQL 8.4 and databases whose names end in `_test`; the suites refuse ordinary database names.
 
 The Node workflow in `.github/workflows/node-hosting.yml` creates these databases and provides the variables. Follow it for a complete local run. It covers adapters, catalog migrations, ownership, installation namespaces, source startup, and packaged startup with a process restart.
@@ -52,3 +66,5 @@ Run `node scripts/licenses.mjs` after changing dependencies. It refreshes the pu
 Set matching root and app versions, commit reviewed source, and tag `vX.Y.Z`. The release workflow qualifies both hosts before attaching the Node ZIP and release manifest. [Updates](software-updates.md) explains the manifest and compatibility checks.
 
 The release workflow defaults to a preview release. Preview releases are available for manual installation and are excluded from stable automatic updates. Publish a stable release only after completing the hosting checks for the supported platforms.
+
+GoDaddy deployment regression checks: `pnpm test:godaddy-installer` and `pnpm test:godaddy-installer:browser`. The latter uses a provider simulator. With a local frontend running, use `UI_ORIGIN=http://127.0.0.1:5192 node apps/web/scripts/godaddy-update-ui-smoke.mjs` for the update controls. `apps/web/tests/godaddy-updates.test.ts` covers the durable provider state machine. See [the qualification report](end-to-end-qa.md#guided-godaddy-deployment-and-updates) for real-hosting evidence and the public-release gate.

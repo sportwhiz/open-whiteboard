@@ -24,6 +24,7 @@ import { createMysqlBlobBucket } from "./blobs";
 import { createNodeHttpServer, staticAssets } from "./http";
 import { sendGoDaddyMail } from "./godaddy-mail";
 import { installationEnvironment } from "../auth/installation-keys";
+import { maintainGoDaddyUpdates } from "../updates/godaddy";
 import { securityMaintenance } from "../security/maintenance";
 import { mailEnvironment } from "../mail/setup";
 import type { NativeEnv } from "../auth/types";
@@ -311,6 +312,7 @@ export async function startNodeRuntime(config: Environment = process.env) {
   let http: ReturnType<typeof createNodeHttpServer> | undefined;
   const pending = new Set<Promise<unknown>>();
   let interval: ReturnType<typeof setInterval> | undefined;
+  let updateInterval: ReturnType<typeof setInterval> | undefined;
   let stopped = false;
   let ownership: NodeOwnership | undefined;
   let fatalError: Error | undefined;
@@ -331,6 +333,7 @@ export async function startNodeRuntime(config: Environment = process.env) {
     if (closing) return closing;
     stopped = true;
     if (interval) clearInterval(interval);
+    if (updateInterval) clearInterval(updateInterval);
     return (closing = closeNodeResources([
       () => http?.close(),
       () => drainNodeTasks([...pending]),
@@ -545,6 +548,9 @@ export async function startNodeRuntime(config: Environment = process.env) {
         config.HUDDLE_MAIL_GATEWAY === "godaddy"
           ? "godaddy"
           : "node",
+      NODE_UPDATES_ENABLED: config.GODADDY_VARIANT !== "PREVIEW",
+      GODADDY_APP_ID: config.GODADDY_APP_ID,
+      GODADDY_VARIANT: config.GODADDY_VARIANT,
       AUTH_MODE: "native",
       ACCESS_INTEGRATION: "off",
       ENVIRONMENT: config.ENVIRONMENT ?? "production",
@@ -588,6 +594,7 @@ export async function startNodeRuntime(config: Environment = process.env) {
         },
       },
       settings.origin,
+      { isReady },
     );
     await new Promise<void>((resolve, reject) => {
       http!.server.once("error", reject);
@@ -613,6 +620,15 @@ export async function startNodeRuntime(config: Environment = process.env) {
     };
     interval = setInterval(maintain, 60_000);
     interval.unref();
+    let updating = false;
+    const update = () => {
+      if (updating || !isReady()) return;
+      updating = true;
+      context.waitUntil(installationEnvironment(env).then(maintainGoDaddyUpdates).finally(() => { updating = false; }));
+    };
+    updateInterval = setInterval(update, 15_000);
+    updateInterval.unref();
+    update();
     return { close, port: settings.port, failure, isReady };
   } catch (error) {
     try {

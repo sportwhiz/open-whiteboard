@@ -745,6 +745,20 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   cursor: text;
+  color: #23304a;
+}
+.sticky-text-input {
+  min-height: 1.4em;
+  outline: none;
+}
+/* Match the editing overlay: document paragraph margins create a jump on
+   entering/leaving a single-paragraph sticky. Rich document notes keep theirs. */
+.editor-canvas [data-whiteboard-sticky] {
+  --affine-paragraph-margin: 0px;
+  --affine-line-height: 1.4;
+}
+.editor-canvas [data-whiteboard-sticky] .inline-editor {
+  font-family: Arial, Helvetica, sans-serif;
 }
 .arrange-controls {
   position: absolute;
@@ -882,6 +896,41 @@
 .canvas-modal.wide {
   width: 820px;
 }
+.quick-actions {
+  width: min(560px, calc(100vw - 32px));
+}
+.quick-actions > input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  margin-top: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.quick-action-results {
+  max-height: min(440px, 50vh);
+  overflow: auto;
+  margin-top: 12px;
+}
+.quick-action-results [role="option"] {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.quick-action-results [aria-selected="true"] {
+  background: var(--surface-hover, #4262ff14);
+  box-shadow: inset 3px 0 var(--accent);
+}
+.quick-action-results [aria-disabled="true"] { opacity: 0.5; cursor: default; }
+.quick-action-results small { display: block; margin-top: 3px; font-size: 11px; }
+.quick-action-results kbd { white-space: nowrap; font-size: 11px; color: var(--text-secondary); }
+.quick-action-hint { margin: 14px 0 0; color: var(--text-secondary); font-size: 11px; }
+.navigator-list > button[aria-current="true"] { box-shadow: inset 3px 0 var(--accent); background: var(--surface-hover, #4262ff14); }
 .canvas-modal > header {
   display: flex;
   align-items: center;

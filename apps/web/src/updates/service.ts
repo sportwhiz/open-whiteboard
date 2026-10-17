@@ -229,8 +229,9 @@ export async function releaseNotice(env: NativeEnv) {
     security: available.security,
     notes: available.notes.slice(0, 2000),
     inProgress: Boolean(active && active.status !== "uncertain" && active.updated_at > Date.now() - 1200000),
-    guidedUpgrade: Boolean(compatibleRelease(available, currentRelease)),
-    deploymentMode: env.HOSTING_PLATFORM && env.HOSTING_PLATFORM !== "cloudflare"
+    guidedUpgrade: Boolean(compatibleRelease(available, currentRelease) || (env.NODE_UPDATES_ENABLED && env.HOSTING_PLATFORM === "godaddy" && available.schema !== currentRelease.schema)),
+    deploymentMode: env.NODE_UPDATES_ENABLED && env.HOSTING_PLATFORM === "godaddy"
+      ? "godaddy" as const : env.HOSTING_PLATFORM && env.HOSTING_PLATFORM !== "cloudflare"
       ? "manual-node" as const : "cloudflare" as const,
   };
 }

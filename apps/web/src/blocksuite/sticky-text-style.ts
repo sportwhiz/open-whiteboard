@@ -11,6 +11,7 @@ export const STICKY_FONTS = [
   { id: "hand", name: "Handwriting", css: 'var(--font-hand, "Whiteboard Hand", cursive)' },
 ] as const;
 export const STICKY_SIZES = [
+  { id: "auto", name: "Auto fit", px: 28 },
   { id: "s", name: "Small", px: 16 },
   { id: "m", name: "Medium", px: 20 },
   { id: "l", name: "Large", px: 28 },
@@ -78,8 +79,8 @@ export function stickyTextCss(notes: { id: string; style: StickyTextStyle }[]) {
       const font = stickyFontCss(style.font);
       if (font) declarations.push(`font-family: ${font}`, `--affine-font-family: ${font}`);
       if (style.size !== "m") {
-        const px = stickySizePx(style.size);
-        declarations.push(`font-size: ${px}px`, `--affine-font-base: ${px}px`);
+        const size = style.size === "auto" ? "var(--sticky-auto-size, 28px)" : `${stickySizePx(style.size)}px`;
+        declarations.push(`font-size: ${size}`, `--affine-font-base: ${size}`);
       }
       if (style.align !== "left") declarations.push(`text-align: ${style.align}`);
       if (!declarations.length) return "";

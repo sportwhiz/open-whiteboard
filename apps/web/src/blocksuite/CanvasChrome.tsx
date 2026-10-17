@@ -3,6 +3,8 @@ import { PatternPreview } from "./PatternPreview";
 import { openTour } from "../onboarding-events";
 import { UiIcon } from "../UiIcon";
 import { canvasPointAt } from "./canvas-hit-test";
+import { useStickyTextLayout } from "./sticky-text-layout";
+import { QuickActions, type QuickAction } from "./QuickActions";
 import {
   useEffect,
   useLayoutEffect,
@@ -59,6 +61,17 @@ const shortcutLabel = (mark: TextMark) =>
   (IS_MAC ? "⌘" : "Ctrl+") +
   (MARK_SHORTCUTS[mark].shift ? (IS_MAC ? "⇧" : "Shift+") : "") +
   MARK_SHORTCUTS[mark].key.toUpperCase();
+const ARRANGEMENTS: Record<Arrangement, string> = {
+  left: "Align left", center: "Align center", right: "Align right", top: "Align top",
+  middle: "Align middle", bottom: "Align bottom", horizontal: "Distribute horizontally",
+  vertical: "Distribute vertically", grid: "Tidy into a grid",
+};
+
+// Native navigation and selection shortcuts are scoped to editor-host. The
+// outer shell handles product shortcuts but cannot activate Space-to-pan.
+function focusCanvas(host: HTMLElement) {
+  (host.querySelector<HTMLElement>("editor-host") ?? host).focus({ preventScroll: true });
+}
 
 type IconName =
   | CanvasTool
@@ -85,7 +98,8 @@ type IconName =
   | "alignCenter"
   | "alignRight"
   | "lock"
-  | "duplicate";
+  | "duplicate"
+  | "commands";
 function Icon({ name }: { name: IconName }) {
   return <UiIcon name={name} className="canvas-icon" />;
 }
@@ -293,9 +307,10 @@ export function CanvasChrome({
   canComment: boolean;
 }) {
   const [state, setState] = useState<CanvasState>(() => controller.state());
+  const fittedSizes = useStickyTextLayout(host, state, controller);
   const [options, setOptions] = useState<CanvasOptions>(loadToolPreferences);
   const [palette, setPalette] = useState<CanvasTool | null>(null);
-  const [modal, setModal] = useState<"bulk" | "templates" | "help" | null>(
+  const [modal, setModal] = useState<"bulk" | "templates" | "help" | "actions" | null>(
     null,
   );
   const [bulk, setBulk] = useState("");
@@ -303,6 +318,7 @@ export function CanvasChrome({
     "search" | "frames" | "map" | null
   >(null);
   const [query, setQuery] = useState("");
+  const [activeSearchId, setActiveSearchId] = useState("");
   const [zoomMenu, setZoomMenu] = useState(false);
   // The rich editor of the note being edited, and its last text selection,
   // which survives focus moving to a toolbar menu.
@@ -356,7 +372,7 @@ export function CanvasChrome({
       if ("tool" in intent)
         controller.placeTool(intent.tool, local.x, local.y, intent.options);
       else controller.connectNext(intent.direction, intent.source, local);
-      host.focus({ preventScroll: true });
+      focusCanvas(host);
     },
   });
   useEffect(() => {
@@ -458,7 +474,7 @@ export function CanvasChrome({
     setNavigation(null);
     setArranging(false);
     setZoomMenu(false);
-    host.focus({ preventScroll: true });
+    focusCanvas(host);
   };
   const changeOptions = (patch: Partial<CanvasOptions>) => {
     const next = { ...optionsRef.current, ...patch };
@@ -496,7 +512,7 @@ export function CanvasChrome({
         setArranging(false);
         if (!controller.isEditing())
           controller.selectTool("select", optionsRef.current);
-        host.focus({ preventScroll: true });
+        focusCanvas(host);
         return;
       }
       if (
@@ -520,6 +536,25 @@ export function CanvasChrome({
         return;
       if (modal) return;
       const letter = event.key.toLowerCase();
+      const command = IS_MAC ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
+      if (command && !event.altKey && !event.shiftKey && !controller.isEditing()) {
+        if (letter === "k") {
+          event.preventDefault(); event.stopImmediatePropagation();
+          setPalette(null); setNavigation(null); setModal("actions");
+          return;
+        }
+        if (event.key === "Enter" && !event.repeat && controller.addAdjacentNote()) {
+          event.preventDefault(); event.stopImmediatePropagation(); return;
+        }
+      }
+      if ((IS_MAC ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey) &&
+          letter === "d" && !event.altKey && !event.shiftKey && !controller.isEditing() &&
+          controller.editable() && controller.state().selection.length) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        if (!event.repeat) void controller.duplicateSelection().catch(() => setNotice("Could not duplicate the selection. Try again."));
+        return;
+      }
       if ((event.metaKey || event.ctrlKey) && letter === "f") {
         event.preventDefault();
         event.stopImmediatePropagation();
@@ -553,7 +588,6 @@ export function CanvasChrome({
         controller.state().selection.length === 1 &&
         controller.editSelectedNote(
           event.key === "Enter" ? undefined : event.key,
-          !controller.isEditing(),
         )
       ) {
         event.preventDefault();
@@ -655,6 +689,18 @@ export function CanvasChrome({
       )
     : [];
   const frames = state.items.filter((item) => item.kind === "frame");
+  const arrangeableSelection = state.selection.filter(item => item.arrangeable);
+  const selectSearchResult = (id: string) => { setActiveSearchId(id); controller.select(id); };
+  const stepSearch = (direction: number) => {
+    if (!matches.length) return;
+    const current = matches.findIndex(item => item.id === activeSearchId);
+    const next = current < 0 ? (direction > 0 ? 0 : matches.length - 1) :
+      (current + direction + matches.length) % matches.length;
+    selectSearchResult(matches[next].id);
+  };
+  useEffect(() => {
+    chromeRef.current?.querySelector('.navigator-list [aria-current="true"]')?.scrollIntoView({ block: "nearest" });
+  }, [activeSearchId]);
   const stickySelection = state.selection.filter((item) => item.simpleSticky);
   // A box selection also picks up the arrows between notes, so notes plus
   // connectors still get the note toolbar. Its actions apply to the notes.
@@ -797,6 +843,46 @@ export function CanvasChrome({
     host.classList.toggle("whiteboard-note-selection", noteSelection);
     return () => host.classList.remove("whiteboard-note-selection");
   }, [host, noteSelection]);
+  const mod = IS_MAC ? "⌘" : "Ctrl+";
+  const needsEdit = !editable ? "Requires edit access" : undefined;
+  const quickActions: QuickAction[] = [
+    { id: "note-now", label: "Add sticky note here", keywords: "create new idea", disabled: needsEdit,
+      run: () => controller.placeTool("sticky", host.clientWidth / 2, host.clientHeight / 2, optionsRef.current) },
+    { id: "next-note", label: "Add next note", keywords: "quick create adjacent brainstorm", shortcut: `${mod}Enter`,
+      disabled: needsEdit ?? (state.selection.length !== 1 || !state.selection[0].simpleSticky || state.selection[0].locked ? "Select one unlocked sticky note" : undefined),
+      run: () => { controller.addAdjacentNote(); } },
+    { id: "duplicate", label: "Duplicate selection", shortcut: `${mod}D`, disabled: needsEdit ?? (!state.selection.length ? "Select an object first" : undefined), run: () => controller.duplicateSelection() },
+    { id: "undo", label: "Undo", shortcut: `${mod}Z`, disabled: needsEdit ?? (!state.canUndo ? "Nothing to undo" : undefined), run: controller.undo },
+    { id: "redo", label: "Redo", shortcut: IS_MAC ? "⌘⇧Z" : "Ctrl+Y", disabled: needsEdit ?? (!state.canRedo ? "Nothing to redo" : undefined), run: controller.redo },
+    { id: "fit-board", label: "Fit board", keywords: "zoom out show everything", run: () => controller.fit() },
+    { id: "fit-selection", label: "Fit selection", keywords: "zoom selected objects", disabled: !state.selection.length ? "Select an object first" : undefined, run: () => controller.fit(state.selection.map(item => item.id)) },
+    { id: "zoom-reset", label: "Zoom to 100%", keywords: "actual size reset", run: () => controller.zoom(1) },
+    { id: "find", label: "Find on board", keywords: "search text", shortcut: `${mod}F`, run: () => setNavigation("search") },
+    { id: "overview", label: "Board overview", keywords: "map minimap navigate", run: () => setNavigation("map") },
+    { id: "frames", label: "Browse frames", keywords: "sections navigate", run: () => setNavigation("frames") },
+    { id: "select-all", label: "Select all objects", shortcut: `${mod}A`, run: controller.selectAll },
+    ...Object.entries(ARRANGEMENTS).map(([id, label]): QuickAction => ({ id: `arrange-${id}`, label,
+      keywords: "arrange organize spacing layout", disabled: needsEdit ?? (arrangeableSelection.length < (["horizontal", "vertical"].includes(id) ? 3 : 2) ? "Select enough unlocked, ungrouped objects" : undefined),
+      run: () => controller.arrange(id as Arrangement) })),
+    { id: "group", label: "Group selection", shortcut: `${mod}G`, disabled: needsEdit ?? (state.selection.length < 2 || state.selection.some(item => item.locked) ? "Select two or more unlocked objects" : undefined), run: controller.groupSelection },
+    { id: "ungroup", label: "Ungroup selection", shortcut: IS_MAC ? "⌘⇧G" : "Ctrl+Shift+G", disabled: needsEdit ?? (state.selection.length !== 1 || state.selection[0].kind !== "group" || state.selection[0].locked ? "Select one unlocked group" : undefined), run: controller.ungroupSelection },
+    { id: "bulk", label: "Add multiple sticky notes", keywords: "bulk paste list brainstorm", disabled: needsEdit, run: () => setModal("bulk") },
+    { id: "templates", label: "Browse templates", keywords: "retro kanban workflow brainstorm", disabled: needsEdit, run: () => setModal("templates") },
+    { id: "grid", label: grid ? "Hide grid" : "Show grid", keywords: "background dots", run: () => setGrid(value => !value) },
+    ...TOOLS.map((tool): QuickAction => ({ id: `tool-${tool.id}`, label: `${tool.label} tool`, shortcut: tool.key,
+      disabled: ["select", "hand"].includes(tool.id) ? undefined : needsEdit, run: () => useTool(tool.id) })),
+    { id: "help", label: "Keyboard shortcuts", keywords: "help learn", shortcut: "?", run: () => setModal("help") },
+  ];
+  const runQuickAction = (action: QuickAction) => {
+    if (action.disabled) return;
+    setModal(null);
+    // Let the dialog restore focus before a tool or editor claims it.
+    requestAnimationFrame(() => {
+      if (!host.isConnected) return;
+      focusCanvas(host);
+      Promise.resolve().then(() => action.run()).catch(() => setNotice("That action could not be completed. Try again."));
+    });
+  };
   const templateCards = [
     {
       id: "brainstorm" as const,
@@ -845,6 +931,7 @@ export function CanvasChrome({
       {state.editing ? (
         <StickyTextEditor
           key={state.editing.id}
+          fittedSize={fittedSizes[state.editing.id]}
           state={state}
           controller={controller}
           host={host}
@@ -1171,7 +1258,7 @@ export function CanvasChrome({
                       if (!drag.consumeClick()) {
                         changeOptions({ shape: shape.id });
                         setPalette(null);
-                        host.focus({ preventScroll: true });
+                        focusCanvas(host);
                       }
                     }}
                   >
@@ -1309,6 +1396,10 @@ export function CanvasChrome({
         role="group"
         aria-label="Board navigation"
       >
+        <button className="canvas-icon-button" type="button" aria-label="Quick actions" title={`Quick actions · ${mod}K`}
+          onClick={() => { controller.finishEditing(); setPalette(null); setNavigation(null); setModal("actions"); }}>
+          <Icon name="commands" />
+        </button>
         <button
           className={
             "canvas-icon-button" + (navigation === "search" ? " active" : "")
@@ -1376,8 +1467,7 @@ export function CanvasChrome({
                   key={action}
                   type="button"
                   disabled={
-                    (action === "horizontal" || action === "vertical") &&
-                    state.selection.length < 3
+                    arrangeableSelection.length < ((action === "horizontal" || action === "vertical") ? 3 : 2)
                   }
                   onClick={() => {
                     controller.arrange(action);
@@ -1385,19 +1475,7 @@ export function CanvasChrome({
                   }}
                 >
                   <UiIcon name={action === "grid" ? "arrange" : action} />
-                  {
-                    {
-                      left: "Align left",
-                      center: "Align center",
-                      right: "Align right",
-                      top: "Align top",
-                      middle: "Align middle",
-                      bottom: "Align bottom",
-                      horizontal: "Distribute horizontally",
-                      vertical: "Distribute vertically",
-                      grid: "Tidy into a grid",
-                    }[action]
-                  }
+                  {ARRANGEMENTS[action]}
                 </button>
               ))}
               <button
@@ -1597,6 +1675,11 @@ export function CanvasChrome({
                 ? "Frame navigation"
                 : "Board overview"
           }
+          onKeyDown={event => {
+            if (event.key === "Escape") {
+              event.preventDefault(); event.stopPropagation(); setNavigation(null); focusCanvas(host);
+            }
+          }}
         >
           <header>
             <strong>
@@ -1622,10 +1705,18 @@ export function CanvasChrome({
                 aria-label="Search board text"
                 placeholder="Search notes, shapes, text…"
                 value={query}
-                onChange={(event) => setQuery(event.target.value)}
+                onChange={(event) => { setQuery(event.target.value); setActiveSearchId(""); }}
+                onKeyDown={event => {
+                  if (event.nativeEvent.isComposing) return;
+                  if (["Enter", "ArrowDown", "ArrowUp"].includes(event.key)) {
+                    event.preventDefault(); event.stopPropagation();
+                    stepSearch(event.key === "ArrowUp" || (event.key === "Enter" && event.shiftKey) ? -1 : 1);
+                  }
+                }}
               />
               {query.trim() ? (
-                <p className="navigator-meta">
+                <p className="navigator-meta" aria-live="polite">
+                  {matches.some(item => item.id === activeSearchId) ? `${matches.findIndex(item => item.id === activeSearchId) + 1} of ` : ""}
                   {matches.length} {matches.length === 1 ? "result" : "results"}
                 </p>
               ) : (
@@ -1634,11 +1725,12 @@ export function CanvasChrome({
                 </p>
               )}
               <div className="navigator-list">
-                {matches.slice(0, 100).map((item) => (
+                {matches.map((item) => (
                   <button
                     type="button"
                     key={item.id}
-                    onClick={() => controller.select(item.id)}
+                    aria-current={activeSearchId === item.id ? "true" : undefined}
+                    onClick={() => { selectSearchResult(item.id); focusCanvas(host); }}
                   >
                     <span
                       className="result-swatch"
@@ -1651,6 +1743,7 @@ export function CanvasChrome({
                   </button>
                 ))}
               </div>
+              {matches.length > 0 && <p className="navigator-meta">Enter for next · Shift+Enter for previous · Esc to return</p>}
             </>
           ) : navigation === "frames" ? (
             <>
@@ -1795,6 +1888,10 @@ export function CanvasChrome({
       <div className="canvas-mode-hint">
         {!editable
           ? "View only"
+          : state.editing
+            ? `Esc to finish · Tab or ${IS_MAC ? "⌘" : "Ctrl+"}Enter for the next note`
+          : state.tool === "select" && state.selection.length === 1 && state.selection[0].simpleSticky && !state.selection[0].locked
+            ? `Click again or press Enter to write · ${IS_MAC ? "⌘ D" : "Ctrl+D"} to duplicate`
           : state.tool === "sticky"
             ? "Click to place a sticky note"
             : state.tool === "connector"
@@ -1807,6 +1904,7 @@ export function CanvasChrome({
                     ? "Click or drag to add a shape"
                     : null}
       </div>
+      {modal === "actions" ? <QuickActions actions={quickActions} onClose={() => setModal(null)} onRun={runQuickAction} /> : null}
       {modal === "bulk" ? (
         <Modal title="Add multiple sticky notes" onClose={() => setModal(null)}>
           <p className="modal-description">
@@ -1924,6 +2022,8 @@ export function CanvasChrome({
               ["Undo / redo", "⌘ Z / ⌘ ⇧ Z"],
               ["Copy / paste", "⌘ C / ⌘ V"],
               ["Duplicate", "⌘ D"],
+              ["Quick actions", "⌘ K"],
+              ["Next sticky note", "⌘ Enter / Tab while editing"],
               ["Group / ungroup", "⌘ G / ⌘ ⇧ G"],
               ["Bold / italic / underline", "⌘ B / ⌘ I / ⌘ U"],
               ["Strikethrough", "⌘ ⇧ X"],
@@ -2021,12 +2121,14 @@ function StickyTextEditor({
   host,
   onEditor,
   onToggleMark,
+  fittedSize,
 }: {
   state: CanvasState;
   controller: CanvasController;
   host: HTMLElement;
   onEditor: (editor: StickyInlineEditor | null) => void;
   onToggleMark: (mark: TextMark) => void;
+  fittedSize?: number;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const inlineRef = useRef<StickyInlineEditor | null>(null);
@@ -2056,29 +2158,35 @@ function StickyTextEditor({
   }, [host, yText]);
   if (!bounds) return null;
   const style = editing.textStyle;
+  const scale = state.zoom * editing.textScale;
   return (
     <div
-      ref={ref}
       className="sticky-text-editor"
-      role="textbox"
-      aria-multiline="true"
-      aria-label="Edit sticky note"
-      spellCheck
       style={{
         left: bounds.x,
         top: bounds.y,
         width: bounds.w,
         height: bounds.h,
         background: editing.color,
-        fontSize: stickySizePx(style.size) * state.zoom,
-        fontFamily: stickyFontCss(style.font) ?? undefined,
+        fontSize: (fittedSize ?? stickySizePx(style.size)) * scale,
+        fontFamily: stickyFontCss(style.font) ?? "Arial, Helvetica, sans-serif",
         textAlign: style.align,
-        padding: 24 * state.zoom,
+        padding: 24 * scale,
         lineHeight: 1.4,
+      }}
+      onMouseDown={(event) => {
+        // Paper around the text is a focus target, never a second editable
+        // region where the browser could insert text outside the shared model.
+        if (event.target === event.currentTarget) {
+          event.preventDefault();
+          ref.current?.focus({ preventScroll: true });
+          inlineRef.current?.focusEnd();
+        }
       }}
       onBlur={(event) => {
         // Toolbar menus take focus without ending the edit.
         const next = event.relatedTarget;
+        if (next instanceof Node && event.currentTarget.contains(next)) return;
         if (next instanceof Element && next.closest(".sticky-selection-actions")) return;
         controller.finishEditing(editing.id);
       }}
@@ -2097,6 +2205,7 @@ function StickyTextEditor({
       }}
       onDrop={(event) => event.preventDefault()}
       onKeyDown={(event) => {
+        if (event.nativeEvent.isComposing) return;
         const mark = markForShortcut(event);
         if (mark) {
           event.preventDefault();
@@ -2110,20 +2219,21 @@ function StickyTextEditor({
           event.stopPropagation();
           if (event.shiftKey) controller.redo();
           else controller.undo();
-        } else if (
-          event.key === "Escape" ||
-          (event.key === "Enter" && (event.metaKey || event.ctrlKey))
-        ) {
+        } else if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+          event.preventDefault(); event.stopPropagation(); if (!event.repeat) controller.addAdjacentNote();
+        } else if (event.key === "Escape") {
           event.preventDefault();
           event.stopPropagation();
           controller.finishEditing();
-          host.focus({ preventScroll: true });
+          focusCanvas(host);
         } else if (event.key === "Tab" && !event.shiftKey) {
           event.preventDefault();
           event.stopPropagation();
-          controller.addAdjacentNote();
+          if (!event.repeat) controller.addAdjacentNote();
         }
       }}
-    />
+    >
+      <div ref={ref} className="sticky-text-input" role="textbox" aria-multiline="true" aria-label="Edit sticky note" spellCheck />
+    </div>
   );
 }

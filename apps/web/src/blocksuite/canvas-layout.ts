@@ -7,3 +7,15 @@ export function canvasFitPadding(host: HTMLElement): [number, number, number, nu
     : 88;
   return [96, right, 80, 88];
 }
+
+/** Pan just far enough to reveal an object without changing the user's zoom. */
+export function revealDelta(
+  box: { x: number; y: number; w: number; h: number },
+  width: number, height: number,
+  [top, right, bottom, left]: [number, number, number, number],
+) {
+  const axis = (start: number, size: number, min: number, max: number) =>
+    size > max - min ? start + size / 2 - (min + max) / 2 :
+      start < min ? start - min : Math.max(0, start + size - max);
+  return { x: axis(box.x, box.w, left, width - right), y: axis(box.y, box.h, top, height - bottom) };
+}
