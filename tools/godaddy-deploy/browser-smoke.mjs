@@ -61,6 +61,8 @@ try {
   // The provider creates an app but the first response is lost. Continue must reuse it.
   fixture.options.loseCreate = true;
   fixture.options.rejectConfigureOnce = true;
+  fixture.options.failImportOnce = true;
+  fixture.options.failPublishOnce = true;
   await page.getByRole('button', { name: 'Deploy to GoDaddy' }).click();
   await page.getByRole('alert').filter({ hasText: 'could not be reached' }).waitFor();
   assert.equal(fixture.created, 1);
@@ -74,7 +76,18 @@ try {
   assert.equal(fixture.created, 1);
   await page.getByLabel('Replacement temporary key', { exact: true }).fill(token);
   await page.getByRole('button', { name: 'Reconnect and continue', exact: true }).click();
+  await page.getByRole('button', { name: 'Upload again to this app', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Continue deployment', exact: true }).click();
+  await page.getByRole('button', { name: 'Upload again to this app', exact: true }).waitFor();
+  assert.equal(fixture.calls.filter(c => new URL(c.url).pathname.endsWith('/imports') && c.method === 'POST').length, 1);
+  await page.screenshot({ path: '/tmp/open-whiteboard-godaddy-retry.png', fullPage: true });
+  await page.getByRole('button', { name: 'Upload again to this app', exact: true }).click();
+  await page.getByRole('button', { name: 'Publish again to this app', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Publish again to this app', exact: true }).click();
   await page.getByRole('heading', { name: 'Make yourself at home.' }).waitFor();
+  assert.equal(fixture.calls.filter(c => new URL(c.url).pathname.endsWith('/imports') && c.method === 'POST').length, 2);
+  assert.equal(fixture.calls.filter(c => new URL(c.url).pathname.endsWith('/deployments') && c.method === 'POST').length, 2);
+  assert.equal(fixture.calls.filter(c => c.method === 'PATCH').length, 3, 'Successful settings must not be repeated after retrying a failed job');
   assert.equal(fixture.created, 1);
   assert.equal(await page.getByRole('link', { name: 'Open my whiteboard' }).getAttribute('href'), 'https://fixture.c39.airoapp.ai');
   assert.equal(await page.locator('#passphrase').inputValue(), '');
@@ -116,5 +129,5 @@ try {
   assert.equal(await mobile.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   await mobile.screenshot({ path: '/tmp/open-whiteboard-godaddy-walkthrough-mobile.png', fullPage: true });
   assert.deepEqual(errors, []);
-  console.log('Browser smoke passed: invalid token, unavailable plan, selection, disconnect, lost response recovery, mid-deployment key replacement, full deployment, credential clearing, desktop/mobile layouts, and a complete browser-only setup/update walkthrough with zero hosting requests.');
+  console.log('Browser smoke passed: invalid token, unavailable plan, selection, disconnect, lost response recovery, mid-deployment key replacement, explicit failed upload/publish retries on the same app, full deployment, credential clearing, desktop/mobile layouts, and a complete browser-only setup/update walkthrough with zero hosting requests.');
 } finally { await context.close(); await browser.close(); await new Promise(resolve => server.close(resolve)); }

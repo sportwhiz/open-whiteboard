@@ -113,6 +113,7 @@ describe("GoDaddy durable updates", () => {
             });
           if (url.endsWith("/apps/NODEJS-test"))
             return Response.json({
+              id: "NODEJS-test",
               appType: "NODEJS",
               urls: { publish: env.AUTH_ORIGIN },
             });
@@ -220,6 +221,7 @@ describe("GoDaddy durable updates", () => {
   it("rejects another application and a preview connection", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(
       Response.json({
+        id: "NODEJS-another",
         appType: "NODEJS",
         urls: { publish: "https://another.c39.airoapp.ai" },
       }),
@@ -228,6 +230,40 @@ describe("GoDaddy durable updates", () => {
     env.GODADDY_VARIANT = "PREVIEW";
     await expect(connect()).rejects.toThrow("Preview");
     expect((await godaddyUpdateStatus(env)).connected).toBe(false);
+  });
+  it("connects a custom domain using the server-configured app identity", async () => {
+    env.AUTH_ORIGIN = "https://board.example.test";
+    vi.mocked(fetch).mockResolvedValueOnce(Response.json({
+      id: "NODEJS-test", appType: "NODEJS", urls: { publish: "https://test.c39.airoapp.ai" },
+    }));
+    await connect();
+    expect((await godaddyUpdateStatus(env)).connected).toBe(true);
+    env.AUTH_ORIGIN = "https://changed.example.test";
+    expect((await godaddyUpdateStatus(env)).connected).toBe(false);
+  });
+  it("cannot override the configured app even with a valid provider response", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(Response.json({
+      id: "NODEJS-another", appType: "NODEJS", urls: { publish: env.AUTH_ORIGIN },
+    }));
+    await expect(route("connection", { token, appId: "NODEJS-another" })).rejects.toThrow("must match");
+    expect((await godaddyUpdateStatus(env)).connected).toBe(false);
+  });
+  it("requires the published origin for legacy installs without a configured app ID", async () => {
+    delete env.GODADDY_APP_ID;
+    await route("connection", { token, appId: "NODEJS-test" });
+    expect((await godaddyUpdateStatus(env)).connected).toBe(true);
+    env.AUTH_ORIGIN = "https://custom.example.test";
+    vi.mocked(fetch).mockResolvedValueOnce(Response.json({
+      id: "NODEJS-test", appType: "NODEJS", urls: { publish: "https://test.c39.airoapp.ai" },
+    }));
+    await expect(route("connection", { token, appId: "NODEJS-test" })).rejects.toThrow("must match");
+  });
+  it.each([
+    { appType: "NODEJS", urls: { publish: "https://test.c39.airoapp.ai" } },
+    { id: "NODEJS-test", appType: "OTHER", urls: { publish: "https://test.c39.airoapp.ai" } },
+  ])("rejects missing provider identity or the wrong app type", async app => {
+    vi.mocked(fetch).mockResolvedValueOnce(Response.json(app));
+    await expect(connect()).rejects.toThrow("must match");
   });
   it("requires both a completed provider job and the approved running build", async () => {
     await start();

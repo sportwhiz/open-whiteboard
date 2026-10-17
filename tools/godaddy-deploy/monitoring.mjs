@@ -1,11 +1,16 @@
 // Store only this allowlisted metadata. Never pass requests, provider bodies,
-// app/account identifiers, credentials, or error objects to the monitor.
+// app/account identifiers, raw credentials, or error objects to the monitor.
+// A short-lived credential fingerprint bounds reporting registrations.
 const actions = new Set(['connect', 'verify-release', 'create', 'app-operation', 'addresses', 'configure', 'upload', 'import', 'attach', 'publish', 'deployment', 'health', 'status', 'release', 'preview', 'live']);
 const categories = new Set(['credential_rejected', 'access_denied', 'rate_limited', 'provider_unavailable', 'request_failed', 'operation_failed', 'browser_timeout']);
 const uuid = /^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i;
 const address = /^[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+$/;
 export function failureCategory(status) {
   return ({ 401: 'credential_rejected', 403: 'access_denied', 429: 'rate_limited' })[status] || (status >= 500 ? 'provider_unavailable' : 'request_failed');
+}
+export async function reportingCredentialKey(token, time = Date.now()) {
+  const bytes = new TextEncoder().encode(`whiteboard-reporting:${new Date(time).toISOString().slice(0, 10)}:${token}`);
+  return [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(b => b.toString(16).padStart(2, '0')).join('');
 }
 export function createMonitor(env, version, now = () => Date.now()) {
   const db = env.INSTALLER_ALERTS;
@@ -19,14 +24,15 @@ export function createMonitor(env, version, now = () => Date.now()) {
   }
   return {
     // Only successful GoDaddy responses establish a reporting session. Store no
-    // credential, account identifier, app name, or network address.
-    async authorize(attempt) {
-      if (!configured() || !uuid.test(attempt || '')) return false;
+    // raw credential, account identifier, app name, or network address.
+    async authorize(attempt, credentialKey) {
+      if (!configured() || !uuid.test(attempt || '') || !/^[a-f0-9]{64}$/.test(credentialKey || '')) return false;
       try {
-        await db.prepare(`INSERT INTO installer_attempts (attempt, updated)
-          SELECT ?, ? WHERE (SELECT COUNT(*) FROM installer_attempts) < 1000
+        await db.prepare(`INSERT INTO installer_attempts (attempt, updated, credential_key)
+          SELECT ?, ?, ? WHERE ((SELECT COUNT(*) FROM installer_attempts) < 1000
+            AND (SELECT COUNT(*) FROM installer_attempts WHERE credential_key = ?) < 20)
             OR EXISTS (SELECT 1 FROM installer_attempts WHERE attempt = ?)
-          ON CONFLICT (attempt) DO UPDATE SET updated = excluded.updated`).bind(attempt, now(), attempt).run();
+          ON CONFLICT (attempt) DO UPDATE SET updated = excluded.updated`).bind(attempt, now(), credentialKey, credentialKey, attempt).run();
         const accepted = await known(attempt);
         if (!accepted) await aggregate("reporting_capacity");
         return accepted;
@@ -35,7 +41,7 @@ export function createMonitor(env, version, now = () => Date.now()) {
     async ready() {
       if (!configured()) return false;
       try {
-        await db.prepare('SELECT attempt FROM installer_attempts LIMIT 1').first();
+        await db.prepare('SELECT attempt, credential_key FROM installer_attempts LIMIT 1').first();
         await db.prepare('SELECT category FROM installer_rejections LIMIT 1').first();
         const row = await db.prepare('SELECT heartbeat, delivery_failed FROM installer_alert_state WHERE id = 1').first();
         return Boolean(row && row.heartbeat > now() - 15 * 60_000 && !row.delivery_failed);

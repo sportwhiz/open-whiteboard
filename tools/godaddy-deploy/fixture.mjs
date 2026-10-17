@@ -29,7 +29,7 @@ export function requiredScope(url, method = 'GET') {
 export function providerFixture() {
   const calls = []; const keys = new Map();
   const options = { loseCreate: false, noPlans: false, running: true, ready: true, badChecksum: false, creationPending: false, denied: false };
-  let created = 0;
+  let created = 0; let imports = 0; let publications = 0;
   const response = (body, status = 200, headers = {}) => new Response(JSON.stringify(body), { status, headers });
   async function fetchImpl(url, init = {}) {
     calls.push({ url, ...init });
@@ -68,11 +68,32 @@ export function providerFixture() {
       const form = await new Response(init.body, { headers: { 'Content-Type': init.headers['Content-Type'] } }).formData();
       assert.equal(form.get('file').name, 'open-whiteboard-node.zip');
       assert.deepEqual(new Uint8Array(await form.get('file').arrayBuffer()), bytes);
-      return response({ importId: 'import-one', status: options.importPending ? 'PENDING' : 'COMPLETED' }, 202);
+      const key = init.headers['Idempotency-Key'];
+      if (!keys.has(key)) {
+        imports++;
+        keys.set(key, { importId: imports === 1 ? 'import-one' : `import-${imports}`, status: options.failImportOnce ? 'FAILED' : options.importPending ? 'PENDING' : 'COMPLETED' });
+        options.failImportOnce = false;
+      }
+      return response(keys.get(key), 202);
     }
-    if (path === '/apps/NODEJS-test/imports/import-one') return response({ importId: 'import-one', status: 'COMPLETED' });
-    if (path === '/apps/NODEJS-test/deployments') { assert.equal(method, 'POST'); assert.deepEqual(JSON.parse(init.body), {}); return response({ deploymentId: 'deploy-one', status: options.publishPending ? 'PENDING' : 'COMPLETED', logs: [token, passphrase] }, 202); }
-    if (path === '/apps/NODEJS-test/deployments/deploy-one') return response({ deploymentId: 'deploy-one', status: 'COMPLETED' });
+    if (path.startsWith('/apps/NODEJS-test/imports/')) {
+      const record = [...keys.values()].find(value => value.importId === path.split('/').at(-1));
+      return response({ ...record, status: record?.status === 'FAILED' ? 'FAILED' : 'COMPLETED' });
+    }
+    if (path === '/apps/NODEJS-test/deployments') {
+      assert.equal(method, 'POST'); assert.deepEqual(JSON.parse(init.body), {});
+      const key = init.headers['Idempotency-Key'];
+      if (!keys.has(key)) {
+        publications++;
+        keys.set(key, { deploymentId: publications === 1 ? 'deploy-one' : `deploy-${publications}`, status: options.failPublishOnce ? 'FAILED' : options.publishPending ? 'PENDING' : 'COMPLETED', logs: [token, passphrase] });
+        options.failPublishOnce = false;
+      }
+      return response(keys.get(key), 202);
+    }
+    if (path.startsWith('/apps/NODEJS-test/deployments/')) {
+      const record = [...keys.values()].find(value => value.deploymentId === path.split('/').at(-1));
+      return response({ ...record, status: record?.status === 'FAILED' ? 'FAILED' : 'COMPLETED' });
+    }
     if (path.startsWith('/apps/NODEJS-test/logs?')) return response({ items: [] });
     if (path === '/apps/NODEJS-test/status') return response({ status: 'ACTIVE', variants: [{ variant: 'PREVIEW', status: 'RUNNING' }, ...(options.omitPublishedStatus ? [] : [{ variant: 'PUBLISH', status: options.running ? 'RUNNING' : 'STOPPED' }])] });
     throw new Error(`Unexpected fixture request: ${method} ${path}`);

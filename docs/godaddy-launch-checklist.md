@@ -7,7 +7,8 @@ Current state: the website opens a preview, the installer pins the failing v0.4.
 ## 1. Merge the reviewed code
 
 - [ ] Require the latest checks to pass on [product PR #20](https://github.com/sportwhiz/open-whiteboard/pull/20), then merge it.
-- [ ] Point the website submodule at the actual product commit on main, especially if the product PR was squash-merged. Require checks on [website PR #3](https://github.com/sportwhiz/huddle-loom-site/pull/3), then merge it.
+- [x] Merge the preview website: [website PR #3](https://github.com/sportwhiz/huddle-loom-site/pull/3) merged on October 17, 2026 as `80b3e1d9c8c0ff68840fbb68730c41e14a3c9a25`; its Cloudflare build passed. The public GoDaddy link still opens the preview.
+- [ ] After product PR #20 merges, point the website submodule at the actual product commit on main, especially if it was squash-merged. Use a follow-up site PR and require its checks to pass. Merging the preview site first does not require a rollback.
 - [ ] Keep `VITE_GODADDY_INSTALLER_URL` unset. The website may publish its preview at this point; live setup remains closed.
 - [ ] Resolve the existing MCP SDK high-severity advisories before public launch. Review the upgrade in [maintenance PR #15](https://github.com/sportwhiz/open-whiteboard/pull/15) against the merged code; do not assume another branch's fix is included.
 
@@ -67,7 +68,7 @@ Done when: the public site points at the exact tested installer, and the recipie
 
 | Item | Evidence/status |
 | --- | --- |
-| Product and website merge commits | Pending |
+| Product and website merge commits | Product pending; preview site merged as `80b3e1d9c8c0ff68840fbb68730c41e14a3c9a25`; final product pointer pending |
 | Security advisory resolution | Pending |
 | Qualified stable package/tag/commit/SHA-256 | Pending |
 | Fresh live install and restart | Pending |

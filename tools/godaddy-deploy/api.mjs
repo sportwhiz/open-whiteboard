@@ -1,5 +1,5 @@
 // Only this fixed host receives the user's GoDaddy credential.
-import { failureCategory } from './monitoring.mjs';
+import { failureCategory, reportingCredentialKey } from './monitoring.mjs';
 export const GODADDY = 'https://api.godaddy.com/v1/hosting';
 const MAX_ZIP = 32 * 1024 * 1024;
 export const headers = {
@@ -95,6 +95,7 @@ export function createApi({ release, fetchImpl = fetch, monitor }) {
       if (monitor && ['connect', 'create'].includes(action) && !await monitor.ready()) return json({ error: 'The installer is temporarily unavailable. Please try again later. No new app was created.' }, 503);
       if (typeof token !== 'string' || token.length < 8 || token.length > 4096 || /\s/.test(token)) fail('Enter a valid GoDaddy personal access token.');
       if (release.qualified !== true && ['create', 'configure', 'upload', 'attach', 'publish'].includes(action)) fail('The GoDaddy installer is waiting for a release that passes its live hosting checks. No app has been created. Please try again after the next release.', 503);
+      let credentialKey;
       const call = async (path, method = 'GET', body, patch = false, contentType) => {
         const outgoing = { Authorization: `Bearer ${token}`, Accept: 'application/json' };
         if (method === 'POST' || method === 'PATCH') {
@@ -119,7 +120,10 @@ export function createApi({ release, fetchImpl = fetch, monitor }) {
           const seconds = Math.max(5, Math.min(300, Number(response.headers.get('retry-after')) || 10));
           throw new PublicError(messages[response.status] || 'GoDaddy could not complete this step. Check your app in the GoDaddy dashboard, then continue.', response.status >= 500 ? 502 : response.status, response.status === 429 ? seconds : undefined);
         }
-        await monitor?.authorize(attempt).catch(() => false);
+        if (monitor) {
+          credentialKey ||= await reportingCredentialKey(token);
+          await monitor.authorize(attempt, credentialKey).catch(() => false);
+        }
         if (response.status === 204) return {};
         // Never forward upstream logs, errors or secret values to the browser.
         return response.json();

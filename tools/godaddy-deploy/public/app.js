@@ -32,6 +32,7 @@ async function call(action, values = {}) {
 function retryLabel() {
   const seconds = Math.max(0, Math.ceil((retryAt - Date.now()) / 1000));
   $('retry').disabled = seconds > 0;
+  $('retry-failed').disabled = seconds > 0;
   $('retry').textContent = seconds ? `Continue in ${seconds}s` : 'Continue deployment';
   if (!seconds) clearInterval(timer);
 }
@@ -78,11 +79,11 @@ $('deploy-form').addEventListener('submit', async event => {
   $('setup').hidden = true; $('progress').hidden = false; journey('deploy'); $('progress-title').focus(); $('progress').scrollIntoView({ block: 'start' });
   await run();
 });
-async function run() {
+async function run(retryFailed = false) {
   if (inProgress || Date.now() < retryAt) return;
-  inProgress = true; $('retry').hidden = true; $('error').hidden = true;
+  inProgress = true; $('retry').hidden = true; $('retry-failed').hidden = true; $('error').hidden = true;
   try {
-    const addresses = await deployment.run();
+    const addresses = await deployment.run({ retryFailed });
     token = ''; $('token').value = ''; $('progress').hidden = true; $('success').hidden = false;
     journey('account');
     if (preview) finishPreview();
@@ -97,11 +98,15 @@ async function run() {
     const needsKey = [401, 403].includes(error.status);
     $('reconnect-form').hidden = !needsKey;
     $('retry').hidden = needsKey;
+    $('retry-failed').hidden = needsKey || !deployment.state.retryStage;
+    $('retry').classList.toggle('secondary', Boolean(deployment.state.retryStage));
+    $('retry-failed').textContent = deployment.state.retryStage === 'upload' ? 'Upload again to this app' : 'Publish again to this app';
     if (!needsKey) { retryLabel(); timer = setInterval(retryLabel, 1000); }
   }
   finally { inProgress = false; }
 }
-$('retry').addEventListener('click', run);
+$('retry').addEventListener('click', () => run());
+$('retry-failed').addEventListener('click', () => run(true));
 $('reconnect-form').addEventListener('submit', async event => {
   event.preventDefault();
   if (inProgress) return;

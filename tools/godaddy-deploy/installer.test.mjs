@@ -229,3 +229,96 @@ test('per-caller throttling does not consume other callers global allowance', as
   assert.equal(global, 2); assert(!keys.join('').includes('192.0.2'));
   assert.equal(await allowRequest(request('192.0.2.1'), {}), false);
 });
+
+test('caller limiter groups canonical IPv6 /64s and IPv4-mapped addresses', async () => {
+  const { allowRequest } = await import('./rate-limit.mjs');
+  let captured;
+  const env = { INSTALLER_LIMIT: { limit: async ({ key }) => { captured = key; return { success: true }; } }, INSTALLER_GLOBAL_LIMIT: { limit: async () => ({ success: true }) } };
+  async function key(ip) { await allowRequest(new Request('https://installer.test/api', { headers: ip ? { 'CF-Connecting-IP': ip } : {} }), env); return captured; }
+  const first = await key('2001:db8:abcd:12::1');
+  assert.equal(first, await key('2001:0DB8:ABCD:0012:abcd:0000:0000:1234'));
+  assert.notEqual(first, await key('2001:db8:abcd:13::1'));
+  assert.equal(await key('::ffff:192.0.2.1'), await key('192.0.2.1'));
+  assert.equal(await key('::FFFF:c000:201'), await key('192.0.2.1'));
+  assert.notEqual(await key('192.0.2.1'), await key('192.0.2.2'));
+  const unknown = await key();
+  for (const invalid of ['invalid', '999.1.1.1', '::1%eth0', '2001:::1', '::1]/other', '192.00.2.1']) assert.equal(await key(invalid), unknown);
+});
+
+for (const [stage, action, field] of [['upload', 'import', 'importId'], ['publish', 'deployment', 'deploymentId']]) {
+  for (const scenario of ['failed', 'cancelled', 'lost-retry-response', 'completed-on-recheck', 'pending-on-recheck', 'failed-recheck']) {
+    test(`explicit ${stage} retry preserves the app and settings: ${scenario}`, async () => {
+      const calls = []; const writes = new Map(); let recheck = false; let loseResponse = scenario === 'lost-retry-response';
+      const terminal = scenario === 'cancelled' ? 'CANCELLED' : 'FAILED';
+      const deployment = createDeployment({ details: { name: 'test', passphrase }, sleep: async () => {}, attempts: 1, call: async (name, values) => {
+        calls.push({ name, values });
+        if (name === stage) {
+          if (!writes.has(values.key)) writes.set(values.key, { [field]: `job-${writes.size}`, status: writes.size ? 'COMPLETED' : terminal });
+          if (writes.size === 2 && loseResponse) { loseResponse = false; throw new Error('Response lost'); }
+          return writes.get(values.key);
+        }
+        if (name === action) {
+          if (recheck && scenario === 'failed-recheck') throw new Error('Read unavailable');
+          return { [field]: values[field], status: recheck && scenario === 'completed-on-recheck' ? 'COMPLETED' : recheck && scenario === 'pending-on-recheck' ? 'PENDING' : terminal };
+        }
+        if (name === 'create') return { operationId: 'created', appId: 'NODEJS-test', status: 'COMPLETED' };
+        if (name === 'upload') return { importId: 'uploaded', status: 'COMPLETED' };
+        if (name === 'publish') return { deploymentId: 'published', status: 'COMPLETED' };
+        if (name === 'status') return { running: true };
+        if (name === 'health') return { ready: true };
+        return {};
+      } });
+      await assert.rejects(deployment.run(), /stopped/);
+      assert.equal(deployment.state.retryStage, stage);
+      await assert.rejects(deployment.run(), /stopped/); // Continue never replaces a failed job.
+      assert.equal(writes.size, 1);
+      recheck = true;
+      if (scenario === 'lost-retry-response') {
+        await assert.rejects(deployment.run({ retryFailed: true }), /Response lost/);
+        assert.equal(deployment.state.retryStage, undefined);
+        await deployment.run();
+        const keys = calls.filter(c => c.name === stage).map(c => c.values.key);
+        assert.notEqual(keys[0], keys[1]); assert.equal(keys[1], keys[2]);
+      } else if (scenario === 'failed-recheck' || scenario === 'pending-on-recheck') {
+        await assert.rejects(deployment.run({ retryFailed: true }), /Read unavailable|longer than usual/);
+        assert.equal(deployment.state.retryStage, undefined);
+        assert.equal(writes.size, 1);
+      } else {
+        await deployment.run({ retryFailed: true });
+        assert.equal(writes.size, scenario === 'completed-on-recheck' ? 1 : 2);
+      }
+      assert.equal(calls.filter(c => c.name === 'create').length, 1);
+      assert.equal(calls.filter(c => c.name === 'attach').length, 1);
+      assert.equal(calls.filter(c => c.name === 'configure').length, 2);
+      assert(calls.filter(c => c.name === stage || c.name === action).every(c => c.values.appId === 'NODEJS-test'));
+    });
+  }
+}
+test('explicit retry cannot replace creation or an unverified operation', async () => {
+  let calls = 0;
+  const deployment = createDeployment({ details: {}, call: async action => { calls++; return action === 'create' ? { operationId: 'failed', status: 'FAILED' } : {}; } });
+  await assert.rejects(deployment.run({ retryFailed: true }), /Check the current operation/);
+  assert.equal(calls, 0);
+  await assert.rejects(deployment.run(), /stopped/);
+  const before = calls;
+  await assert.rejects(deployment.run({ retryFailed: true }), /Check the current operation/);
+  assert.equal(calls, before);
+});
+
+test('an in-flight check and an expired session cannot start replacement writes', async t => {
+  let releaseCheck; let calls = 0;
+  const deployment = createDeployment({ details: {}, call: async action => {
+    calls++;
+    if (action === 'verify-release') await new Promise(resolve => { releaseCheck = resolve; });
+    return action === 'create' ? { operationId: 'failed', status: 'FAILED' } : {};
+  } });
+  const first = deployment.run();
+  await assert.rejects(deployment.run({ retryFailed: true }), /already running/);
+  assert.equal(calls, 1);
+  releaseCheck();
+  await assert.rejects(first, /stopped/);
+  const before = calls;
+  t.mock.method(Date, 'now', () => 9999999999999);
+  await assert.rejects(deployment.run({ retryFailed: true }), /expired/);
+  assert.equal(calls, before);
+});

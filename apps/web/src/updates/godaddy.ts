@@ -310,7 +310,10 @@ export async function godaddyUpdateRoutes(
       }
       if (
         app.appType !== "NODEJS" ||
-        app.urls?.publish?.replace(/\/$/, "") !== env.AUTH_ORIGIN ||
+        app.id !== appId ||
+        (env.GODADDY_APP_ID
+          ? appId !== env.GODADDY_APP_ID
+          : app.urls?.publish?.replace(/\/$/, "") !== env.AUTH_ORIGIN) ||
         env.GODADDY_VARIANT === "PREVIEW"
       )
         throw new HttpError(

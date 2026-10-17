@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { readFileSync, readdirSync } from 'node:fs';
-import { createMonitor } from './monitoring.mjs';
+import { createMonitor, reportingCredentialKey } from './monitoring.mjs';
 import { createApi } from './api.mjs';
 import { release, providerFixture, token, passphrase } from './fixture.mjs';
 
@@ -89,7 +89,7 @@ test('mail recovery reopens installation even when all original incidents have r
 test('new incidents respect the hourly email limit and retention', async t => {
   const { monitor, incident, advance, mail, sql } = setup(t);
   await monitor.record(incident); advance(minutes(6)); await monitor.tick();
-  const another = crypto.randomUUID(); await monitor.authorize(another);
+  const another = crypto.randomUUID(); await monitor.authorize(another, "a".repeat(64));
   await monitor.record({ ...incident, attempt: another });
   advance(minutes(6)); await monitor.tick(); assert.equal(mail.length, 1);
   advance(minutes(60)); await monitor.tick(); assert.equal(mail.length, 2);
@@ -204,8 +204,8 @@ test('reporting session and incident capacity are bounded while existing attempt
   const { monitor, incident, sql } = setup(t);
   const add = sql.prepare('INSERT INTO installer_attempts (attempt, updated) VALUES (?, ?)');
   for (let i = 1; i < 1000; i++) add.run(crypto.randomUUID(), Date.now());
-  assert.equal(await monitor.authorize(crypto.randomUUID()), false);
-  assert.equal(await monitor.authorize(incident.attempt), true);
+  assert.equal(await monitor.authorize(crypto.randomUUID(), "a".repeat(64)), false);
+  assert.equal(await monitor.authorize(incident.attempt, "a".repeat(64)), true);
   const insert = sql.prepare("INSERT INTO installer_incidents (attempt, action, category, version, occurred, updated) VALUES (?, 'publish', 'browser_timeout', '1.0.0', ?, ?)");
   for (let i = 0; i < 5000; i++) insert.run(crypto.randomUUID(), Date.now(), Date.now());
   assert.equal(await monitor.record(incident), false);
@@ -229,5 +229,42 @@ test('a connected attempt reports release verification failures without another 
   assert.equal(result.status, 502);
   assert.equal((await result.json()).supportReference, incident.attempt);
   assert.equal(sql.prepare('SELECT action FROM installer_incidents').get().action, 'verify-release');
-  assert.equal(fixture.calls.some(c => c.url.includes('api.godaddy.com')), false);
+  assert.equal(fixture.calls.some(c => new URL(c.url).hostname === 'api.godaddy.com'), false);
+});
+
+test('one valid token cannot fill the attempt registry with new browser sessions', async t => {
+  const { monitor, sql } = setup(t); await monitor.tick();
+  const api = createApi({ release, monitor, fetchImpl: async () => Response.json({ items: [] }) });
+  const attempts = Array.from({ length: 1001 }, () => crypto.randomUUID());
+  for (const attempt of attempts) assert.equal((await request(api, 'connect', attempt)).status, 200);
+  const key = await reportingCredentialKey(token);
+  assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM installer_attempts WHERE credential_key = ?').get(key).n, 20);
+  const second = crypto.randomUUID();
+  await request(api, 'connect', second, { token: 'another-test-token' });
+  assert.ok(sql.prepare('SELECT attempt FROM installer_attempts WHERE attempt = ?').get(second));
+  // Existing sessions can recover even at their quota and after token replacement.
+  await request(api, 'connect', attempts[0], { token: 'replacement-test-token' });
+  assert.equal(sql.prepare('SELECT credential_key FROM installer_attempts WHERE attempt = ?').get(attempts[0]).credential_key, key);
+  assert.equal((await (await request(api, 'report-stalled', attempts[0], { stage: 'health' })).json()).reported, true);
+  assert.equal((await (await request(api, 'report-stalled', attempts[1000], { stage: 'health' })).json()).reported, false);
+  assert.equal(sql.prepare("SELECT total FROM installer_rejections WHERE category = 'reporting_capacity'").get().total, 981);
+  const stored = JSON.stringify(sql.prepare('SELECT * FROM installer_attempts').all());
+  assert(!stored.includes(token)); assert(!stored.includes('another-test-token'));
+});
+test('registration quota is atomic, fingerprints rotate daily and expire with idle attempts', async t => {
+  const { monitor, sql, advance } = setup(t);
+  const time = Date.UTC(2026, 9, 17, 12);
+  const key = await reportingCredentialKey(token, time);
+  assert.equal(key, await reportingCredentialKey(token, time + minutes(1)));
+  assert.notEqual(key, await reportingCredentialKey(token, time + minutes(24 * 60)));
+  assert.equal(await monitor.authorize(crypto.randomUUID(), token), false);
+  const accepted = await Promise.all(Array.from({ length: 100 }, () => monitor.authorize(crypto.randomUUID(), key)));
+  assert.equal(accepted.filter(Boolean).length, 20);
+  advance(minutes(24 * 60 + 1)); await monitor.tick();
+  assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM installer_attempts').get().n, 0);
+});
+test('monitor remains unavailable until the registration-budget migration is applied', async t => {
+  const { monitor, sql } = setup(t); await monitor.tick();
+  sql.exec('DROP INDEX installer_attempts_credential_key; ALTER TABLE installer_attempts DROP COLUMN credential_key');
+  assert.equal(await monitor.ready(), false);
 });
