@@ -2,6 +2,8 @@
 
 A browser flow for deploying a new Open Whiteboard installation to GoDaddy Node.js Hosting. It creates the app, attaches an existing hosting plan, sets the published address and setup passphrase, uploads the qualified Node release, publishes it, and waits for successful GoDaddy deployment completion, reads runtime status, and checks `/healthz` before handing off to administrator setup.
 
+The remaining public rollout is tracked in the [GoDaddy launch checklist](../../docs/godaddy-launch-checklist.md). Merging the code does not complete that checklist.
+
 ## Run locally
 
 Requires Node 22.16 or later. No installer dependencies or build step are needed:
