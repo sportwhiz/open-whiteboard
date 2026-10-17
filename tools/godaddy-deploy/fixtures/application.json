@@ -1,0 +1,19 @@
+{
+  "id": "NODEJS-test",
+  "name": "Test whiteboard",
+  "appType": "NODEJS",
+  "status": "ACTIVE",
+  "source": "ZIP",
+  "createdAt": "2026-10-17T00:00:00Z",
+  "updatedAt": "2026-10-17T00:00:00Z",
+  "urls": {
+    "preview": "https://host.godaddy.com/nodejs/projects/test/preview",
+    "publish": "https://fixture.c39.airoapp.ai"
+  },
+  "links": [
+    {
+      "rel": "self",
+      "href": "/v1/hosting/apps/NODEJS-test"
+    }
+  ]
+}

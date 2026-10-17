@@ -1,0 +1,11 @@
+{
+  "name": "open-whiteboard-godaddy-installer",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-10-01",
+  "assets": { "directory": "public", "binding": "ASSETS", "run_worker_first": true },
+  "d1_databases": [{ "binding": "INSTALLER_ALERTS", "database_name": "whiteboard-installer-alerts", "migrations_dir": "migrations" }],
+  "send_email": [{ "name": "EMAIL" }],
+  "ratelimits": [{ "name": "INSTALLER_LIMIT", "namespace_id": "1041726", "simple": { "limit": 120, "period": 60 } }, { "name": "INSTALLER_GLOBAL_LIMIT", "namespace_id": "1041727", "simple": { "limit": 1200, "period": 60 } }],
+  "triggers": { "crons": ["*/5 * * * *"] },
+  "observability": { "enabled": false }
+}

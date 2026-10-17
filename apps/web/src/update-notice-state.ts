@@ -5,7 +5,7 @@ export type UpdateNotice = {
   notes: string;
   inProgress: boolean;
   guidedUpgrade: boolean;
-  deploymentMode: "cloudflare" | "manual-node";
+  deploymentMode: "cloudflare" | "manual-node" | "godaddy";
 };
 export const NOTICE_SNOOZE_MS = 86400000;
 export function parseNotice(value: unknown): UpdateNotice | null {
@@ -16,7 +16,7 @@ export function parseNotice(value: unknown): UpdateNotice | null {
       !new RegExp(`^${item.version.replaceAll(".", "\\.")}:[a-f0-9]{40}$`).test(item.id) ||
       typeof item.security !== "boolean" || typeof item.inProgress !== "boolean" ||
       typeof item.guidedUpgrade !== "boolean" || typeof item.notes !== "string" ||
-      item.notes.length > 2000 || !["cloudflare", "manual-node"].includes(item.deploymentMode))
+      item.notes.length > 2000 || !["cloudflare", "manual-node", "godaddy"].includes(item.deploymentMode))
     throw new Error("Invalid update notice.");
   return item;
 }

@@ -4,8 +4,10 @@ import { HttpError } from "./errors";
 import { cookie, equal, hmac, randomToken } from "./primitives";
 import { boundedBody } from "./primitives";
 
+// The native canvas font menu uses CommunityCanvasTextFonts. Permit its font
+// host only for fonts; script and connection sources remain same-origin.
 export const CONTENT_SECURITY_POLICY =
-  "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'";
+  "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data: https://fonts.cdnfonts.com; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'";
 
 // Call only after OAuth has matched the callback to the client's registration.
 // Chrome applies form-action to the subsequent redirect as well as the POST.

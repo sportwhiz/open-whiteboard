@@ -1,7 +1,7 @@
 import * as Y from "yjs";
 import { demoPattern, type DemoPatternId } from "./demo-patterns";
 import { nativeBlockText } from "./native-block-text";
-import { canvasFitPadding } from "./canvas-layout";
+import { canvasFitPadding, revealDelta } from "./canvas-layout";
 import {
   DefaultTool,
   EdgelessCRUDIdentifier,
@@ -11,7 +11,7 @@ import { ConnectorTool } from "@blocksuite/affine/gfx/connector";
 import { PanTool } from "@blocksuite/affine/gfx/pointer";
 import { ShapeTool, mountShapeTextEditor } from "@blocksuite/affine/gfx/shape";
 import { TextTool } from "@blocksuite/affine/gfx/text";
-import { createGroupFromSelectedCommand } from "@blocksuite/affine/gfx/group";
+import { createGroupFromSelectedCommand, ungroupCommand } from "@blocksuite/affine/gfx/group";
 import { FrameTool } from "@blocksuite/affine/blocks/frame";
 import { addImages } from "@blocksuite/affine/blocks/image";
 import {
@@ -28,6 +28,7 @@ import {
   ShapeType,
   ConnectorElementModel,
   ShapeElementModel,
+  GroupElementModel,
   getShapeType,
   type ShapeName,
 } from "@blocksuite/affine/model";
@@ -97,6 +98,7 @@ export function createSticky(
   color: string,
   content = "",
   size = { w: 208, h: 208 },
+  appearance?: { background?: unknown; edgeless?: Record<string, unknown> },
 ) {
   const gfx = editor.std.get(GfxControllerIdentifier);
   const store = editor.doc;
@@ -106,10 +108,9 @@ export function createSticky(
       xywh: new Bound(x, y, size.w, size.h).serialize(),
       index: gfx.layer.generateIndex(),
       displayMode: NoteDisplayMode.EdgelessOnly,
-      background: { light: color, dark: color },
+      background: appearance?.background ?? { light: color, dark: color },
       edgeless: {
         collapse: true,
-        collapsedHeight: size.h,
         scale: 1,
         style: {
           borderRadius: 2,
@@ -117,6 +118,9 @@ export function createSticky(
           borderStyle: StrokeStyle.None,
           shadowType: "--affine-note-shadow-box",
         },
+        ...appearance?.edgeless,
+        [STICKY_TEXT_STYLE_KEY]: appearance ? storedStickyTextStyle(readStickyTextStyle(appearance.edgeless)) : { size: "auto" },
+        collapsedHeight: size.h / (Number(appearance?.edgeless?.scale) || 1),
       },
     },
     store.root!.id,
@@ -233,7 +237,9 @@ export type CanvasItem = {
   /** The text color shared by all of the note's text, or null. */
   textColor: string | null;
   textStyle: StickyTextStyle;
+  textScale: number;
   simpleSticky: boolean;
+  arrangeable: boolean;
 };
 export const TEXT_MARKS = ["bold", "italic", "underline", "strike"] as const;
 export type TextMark = (typeof TEXT_MARKS)[number];
@@ -302,6 +308,7 @@ export function createCanvasController(editor: WhiteboardEditorElement) {
       h: bound.h,
       color: typeof bg === "string" && bg.startsWith("#") ? bg : "#e5eaf4",
       locked: Boolean(props.lockedBySelf ?? props.locked),
+      arrangeable: !model.isLocked() && !model.group && !["connector", "frame", "group", "mindmap"].includes(kind),
       marks: Object.fromEntries(
         TEXT_MARKS.map((mark) => [mark, every((attributes) => Boolean(attributes[mark]))]),
       ) as Record<TextMark, boolean>,
@@ -311,6 +318,7 @@ export function createCanvasController(editor: WhiteboardEditorElement) {
           ? firstColor
           : null,
       textStyle: readStickyTextStyle(props.edgeless),
+      textScale: Math.max(0.01, Number((props.edgeless as { scale?: number } | undefined)?.scale) || 1),
       simpleSticky:
         kind === "note" &&
         "children" in model &&
@@ -332,15 +340,6 @@ export function createCanvasController(editor: WhiteboardEditorElement) {
     eraser: "eraser",
     frame: "frame",
   };
-  const notePosition = (x: number, y: number) =>
-    findOpenPosition(
-      { id: "new", x, y, w: 208, h: 208 },
-      gfx.gfxElements
-        .map(item)
-        .filter(
-          (model) => !["frame", "connector", "group"].includes(model.kind),
-        ),
-    );
   const fit = (ids?: string[]) => {
     const models = ids
       ?.map((id) => gfx.getElementById<GfxModel>(id))
@@ -350,6 +349,17 @@ export function createCanvasController(editor: WhiteboardEditorElement) {
       smooth: true,
       padding: canvasFitPadding(canvasHost),
     });
+  };
+  const reveal = (id: string) => {
+    const model = gfx.getElementById<GfxModel>(id);
+    if (!model) return;
+    const bound = model.elementBound;
+    const [x, y] = gfx.viewport.toViewCoord(bound.x, bound.y);
+    const delta = revealDelta({ x, y, w: bound.w * gfx.viewport.zoom, h: bound.h * gfx.viewport.zoom },
+      canvasHost.clientWidth, canvasHost.clientHeight, canvasFitPadding(canvasHost));
+    // A one-frame transition also cancels an older fit/search animation.
+    gfx.viewport.smoothTranslate(gfx.viewport.centerX + delta.x / gfx.viewport.zoom,
+      gfx.viewport.centerY + delta.y / gfx.viewport.zoom, 1);
   };
   const selectTool = (tool: CanvasTool, options: CanvasOptions) => {
     clearEditing();
@@ -411,6 +421,7 @@ export function createCanvasController(editor: WhiteboardEditorElement) {
     const note = gfx.getElementById<GfxModel>(id);
     if (!editable() || !note || item(note).kind !== "note" || item(note).locked)
       return false;
+    if (editing?.id === id) return true;
     // Keep document notes and embedded blocks in the native rich editor. The
     // sticky editor owns only a single paragraph, so it never flattens old data.
     if (
@@ -421,7 +432,7 @@ export function createCanvasController(editor: WhiteboardEditorElement) {
     )
       return false;
     gfx.tool.setTool(DefaultTool);
-    gfx.selection.set({ elements: [id] });
+    gfx.selection.set({ elements: [id], editing: false });
     store.captureSync();
     clearEditing();
     const paragraph =
@@ -436,7 +447,7 @@ export function createCanvasController(editor: WhiteboardEditorElement) {
     editing = { id };
     if (initial !== undefined) {
       const text = (paragraph.props as { text: Text }).text;
-      store.transact(() => text.replace(0, text.length, initial));
+      store.transact(() => text.insert(initial, text.length));
     }
     notify();
     return true;
@@ -580,32 +591,10 @@ export function createCanvasController(editor: WhiteboardEditorElement) {
     store.captureSync();
     store.transact(() => {
       if (!existing) {
-        nextId = createSticky(
-          editor,
-          target.x,
-          target.y,
-          source.color,
-          "",
-          source,
-        ).id;
-        // Preserve native note scale, borders and shadow, without copying text.
-        if ("props" in sourceModel) {
-          const props = sourceModel.props as {
-            background?: unknown;
-            edgeless?: Record<string, unknown>;
-          };
-          const style = props.edgeless;
-          const scale =
-            typeof style?.scale === "number" && style.scale > 0
-              ? style.scale
-              : 1;
-          crud.updateElement(nextId, {
-            ...(props.background ? { background: props.background } : {}),
-            ...(style
-              ? { edgeless: { ...style, collapsedHeight: target.h / scale } }
-              : {}),
-          });
-        }
+        const appearance = "props" in sourceModel
+          ? sourceModel.props as { background?: unknown; edgeless?: Record<string, unknown> }
+          : undefined;
+        nextId = createSticky(editor, target.x, target.y, source.color, "", source, appearance).id;
       }
       crud.addElement("connector", {
         mode: ConnectorMode.Orthogonal,
@@ -622,17 +611,7 @@ export function createCanvasController(editor: WhiteboardEditorElement) {
     store.captureSync();
     gfx.tool.setTool(DefaultTool);
     gfx.selection.set({ elements: [nextId] });
-    // Preserve the user's zoom unless the new note falls outside the viewport.
-    const bounds = gfx.viewport.toViewCoord(target.x, target.y);
-    if (
-      !existing &&
-      (bounds[0] < 88 ||
-        bounds[1] < 80 ||
-        bounds[0] + target.w * gfx.viewport.zoom >
-          canvasHost.clientWidth - 40 ||
-        bounds[1] + target.h * gfx.viewport.zoom > canvasHost.clientHeight - 80)
-    )
-      fit([sourceId, nextId]);
+    if (!existing) reveal(nextId);
     if (!existing) startEditing(nextId);
   };
   return {
@@ -684,6 +663,19 @@ export function createCanvasController(editor: WhiteboardEditorElement) {
     isEditing: () => Boolean(editing) || gfx.selection.editing,
     startEditing,
     editingText,
+    fitAutoNoteHeight(id: string, contentHeight: number) {
+      const note = gfx.getElementById<GfxModel>(id);
+      if (editing?.id !== id || !note || !editable() || item(note).locked || !("props" in note)) return;
+      const current = item(note);
+      if (!current.simpleSticky || current.textStyle.size !== "auto") return;
+      const height = Math.ceil((contentHeight + 48) * current.textScale);
+      if (height <= current.h + 1) return;
+      const props = note.props as unknown as { edgeless: Record<string, unknown> };
+      crud.updateElement(note.id, {
+        xywh: new Bound(current.x, current.y, current.w, height).serialize(),
+        edgeless: { ...props.edgeless, collapsedHeight: height / current.textScale },
+      });
+    },
     finishEditing(id?: string) {
       if (id && editing?.id !== id) return;
       clearEditing();
@@ -698,16 +690,26 @@ export function createCanvasController(editor: WhiteboardEditorElement) {
       return { spacing, x: x % spacing, y: y % spacing };
     },
     addAdjacentNote() {
-      if (!editing || !editable()) return;
-      const source = gfx.getElementById<GfxModel>(editing.id);
-      if (!source) return;
+      if (!editable()) return false;
+      const source = editing ? gfx.getElementById<GfxModel>(editing.id) :
+        gfx.selection.selectedElements.length === 1 ? gfx.selection.selectedElements[0] : null;
+      if (!source || !item(source).simpleSticky || source.isLocked()) return false;
       const old = item(source);
-      const position = notePosition(old.x + old.w + 32, old.y);
+      const position = findOpenPosition({ ...old, x: old.x + old.w + 32 }, connectionObstacles());
       store.captureSync();
-      const next = createSticky(editor, position.x, position.y, old.color);
+      const appearance = "props" in source
+        ? source.props as { background?: unknown; edgeless?: Record<string, unknown> }
+        : undefined;
+      // Include appearance in the initial block: newly created blocks are not
+      // necessarily registered in the canvas until this transaction finishes.
+      let next!: ReturnType<typeof createSticky>;
+      store.transact(() => {
+        next = createSticky(editor, position.x, position.y, old.color, "", old, appearance);
+      });
       store.captureSync();
       startEditing(next.id);
-      fit([source.id, next.id]);
+      reveal(next.id);
+      return true;
     },
     editNoteAtPoint(x: number, y: number) {
       const [mx, my] = gfx.viewport.toModelCoord(x, y);
@@ -732,7 +734,7 @@ export function createCanvasController(editor: WhiteboardEditorElement) {
         h: bounds.h * gfx.viewport.zoom,
       };
     },
-    editSelectedNote(value?: string, replace = false) {
+    editSelectedNote(value?: string) {
       if (!editable()) return false;
       if (editing) {
         const text = editingText();
@@ -747,10 +749,7 @@ export function createCanvasController(editor: WhiteboardEditorElement) {
         !("children" in note)
       )
         return false;
-      return startEditing(
-        note.id,
-        replace && value !== undefined ? value : undefined,
-      );
+      return startEditing(note.id, value);
     },
     state(): CanvasState {
       const editingModel = editing && gfx.getElementById<GfxModel>(editing.id);
@@ -791,8 +790,9 @@ export function createCanvasController(editor: WhiteboardEditorElement) {
       const history = store.history.onUpdated.subscribe(schedule);
       const readonly = store.readonly$.subscribe(schedule);
       const doc = store.spaceDoc;
-      const beginEditing = (event: Event) =>
-        startEditing((event as CustomEvent<{ id: string }>).detail.id);
+      const beginEditing = (event: Event) => {
+        if (startEditing((event as CustomEvent<{ id: string }>).detail.id)) event.preventDefault();
+      };
       // Paste followed immediately by Escape can beat the native label's
       // ResizeObserver. Flush its actual DOM size before the editor commits
       // its stashed bounds, so the persisted label never keeps its empty size.
@@ -845,6 +845,8 @@ export function createCanvasController(editor: WhiteboardEditorElement) {
     connectNext,
     fit,
     zoom(value: number) {
+      // Manual zoom wins over any fit-to-content animation still in flight.
+      gfx.viewport.smoothZoom(value, undefined, 1);
       gfx.viewport.setZoom(value);
     },
     undo() {
@@ -886,6 +888,13 @@ export function createCanvasController(editor: WhiteboardEditorElement) {
       gfx.selection.set({ elements: [id] });
       fit([id]);
     },
+    selectAll() {
+      clearEditing();
+      gfx.tool.setTool(DefaultTool);
+      gfx.selection.set({ elements: gfx.gfxElements.filter(model => !model.group &&
+        !("props" in model && (model.props as { displayMode?: NoteDisplayMode }).displayMode === NoteDisplayMode.DocOnly))
+        .map(model => model.id), editing: false });
+    },
     colorSelection(color: string) {
       if (!editable()) return;
       store.captureSync();
@@ -900,11 +909,17 @@ export function createCanvasController(editor: WhiteboardEditorElement) {
       store.captureSync();
     },
     async duplicateSelection() {
-      if (!editable()) return;
+      if (!editable() || !gfx.selection.selectedElements.length) return;
+      clearEditing();
       const root = editor.std.view.getBlock(
         store.root!.id,
       ) as EdgelessRootBlockComponent | null;
-      if (root) await duplicate(root, gfx.selection.selectedElements);
+      if (root) {
+        store.captureSync();
+        await duplicate(root, gfx.selection.selectedElements);
+        store.captureSync();
+        notify();
+      }
     },
     lockSelection() {
       if (!editable()) return;
@@ -959,14 +974,8 @@ export function createCanvasController(editor: WhiteboardEditorElement) {
     },
     arrange(action: Arrangement) {
       if (!editable()) return;
-      const selected = gfx.selection.selectedElements.filter(
-        (model) =>
-          !item(model).locked &&
-          !["connector", "frame", "group", "mindmap"].includes(
-            item(model).kind,
-          ) &&
-          !model.group,
-      );
+      const selected = gfx.selection.selectedElements.filter((model) => item(model).arrangeable);
+      if (selected.length < ((action === "horizontal" || action === "vertical") ? 3 : 2)) return;
       const boxes = arrangeBoxes(selected.map(item), action);
       store.captureSync();
       store.transact(() =>
@@ -981,11 +990,20 @@ export function createCanvasController(editor: WhiteboardEditorElement) {
     groupSelection() {
       if (
         !editable() ||
+        gfx.selection.selectedElements.length < 2 ||
         gfx.selection.selectedElements.some((model) => item(model).locked)
       )
         return;
       store.captureSync();
       editor.std.command.exec(createGroupFromSelectedCommand);
+      store.captureSync();
+    },
+    ungroupSelection() {
+      const selected = gfx.selection.selectedElements;
+      if (!editable() || selected.length !== 1 || !(selected[0] instanceof GroupElementModel) ||
+          item(selected[0]).kind !== "group" || selected[0].isLocked()) return;
+      store.captureSync();
+      editor.std.command.exec(ungroupCommand, { group: selected[0] });
       store.captureSync();
     },
     insertTemplate(kind: "brainstorm" | "retro" | "kanban" | "flow" | DemoPatternId) {

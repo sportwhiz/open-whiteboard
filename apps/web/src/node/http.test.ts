@@ -188,3 +188,41 @@ it("closes safely and idempotently when the listener never started", async () =>
   await expect(runtime.close()).resolves.toBeUndefined();
   await expect(runtime.close()).resolves.toBeUndefined();
 });
+
+it("serves only readiness to local supervisor probes without weakening application hosts", async () => {
+  let ready = false;
+  let appRequests = 0;
+  const runtime = createNodeHttpServer(
+    { fetch: async () => { appRequests++; return new Response("application"); } },
+    "https://studio.example",
+    { isReady: () => ready },
+  );
+  await new Promise<void>((resolve) => runtime.server.listen(0, "127.0.0.1", resolve));
+  const { port } = runtime.server.address() as { port: number };
+  const probe = (host: string, path = "/", method = "GET") => new Promise<{ status: number; body: string; cookie: unknown }>((resolve, reject) => {
+    request({ host: "127.0.0.1", port, path, method, headers: { Host: host, "X-Forwarded-Host": "studio.example", Cookie: "private=unused" } }, response => {
+      let body = ""; response.setEncoding("utf8"); response.on("data", chunk => body += chunk);
+      response.on("end", () => resolve({ status: response.statusCode!, body, cookie: response.headers['set-cookie'] }));
+    }).on("error", reject).end();
+  });
+  try {
+    expect((await probe(`localhost:${port}`)).status).toBe(503);
+    ready = true;
+    for (const host of ["localhost", "127.0.0.1", "[::1]"]) {
+      for (const path of ["/", "/healthz"]) {
+        const result = await probe(`${host}:${port}`, path);
+        expect(result).toEqual({ status: 200, body: '{"ready":true}', cookie: undefined });
+        expect((await probe(`${host}:${port}`, path, "HEAD")).body).toBe("");
+      }
+    }
+    for (const path of ["/api/v1/auth/bootstrap", "/oauth/authorize", "/?probe=1", "/healthz?probe=1"]) expect((await probe(`localhost:${port}`, path)).status).toBe(400);
+    expect((await probe(`localhost:${port}`, "/", "POST")).status).toBe(400);
+    expect((await probe(`localhost:${port + 1}`)).status).toBe(400);
+    expect((await probe("attacker.test")).status).toBe(400);
+    expect(appRequests).toBe(0);
+    expect((await probe("studio.example")).body).toBe("application");
+    expect(appRequests).toBe(1);
+    ready = false;
+    expect((await probe(`127.0.0.1:${port}`, "/healthz")).status).toBe(503);
+  } finally { await runtime.close(); }
+});

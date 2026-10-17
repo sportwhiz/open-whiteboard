@@ -354,6 +354,22 @@ export function tourSteps(
     ],
   };
   const section = path.split("/").at(-1) ?? "";
+  if (section === "updates" && platform === "godaddy")
+    return [
+      step(
+        "Keep your whiteboard up to date",
+        "Connect a separate GoDaddy update token for your published app. This page guides you through creating it and keeps it encrypted inside your whiteboard.",
+        "Your temporary installation token is not reused for updates.",
+        ".updates-heading",
+      ),
+      step(
+        "Choose automatic security updates",
+        "The owner can enable compatible security patches. New features wait for Update now; database upgrades use the hosting guide.",
+        "If the update token expires, reconnect here. Your boards keep working.",
+        ".identity-section",
+        { heading: "Automatic security updates" },
+      ),
+    ];
   if (section === "updates" && platform !== "cloudflare")
     return [
       step(

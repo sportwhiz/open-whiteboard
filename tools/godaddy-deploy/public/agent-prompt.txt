@@ -1,0 +1,31 @@
+RELEASE QUALIFICATION: The currently pinned v0.4.0 ZIP fails GoDaddy startup checks. Stop before creating an app or uploading it. Use this workflow only after the maintainer publishes and pins a release containing the GoDaddy loopback readiness fix and qualifies it on live hosting. Do not bypass this check.
+
+Help me deploy Open Whiteboard to my GoDaddy account. Please do the technical work and keep the steps you need from me simple.
+
+Use the official GoDaddy CLI and browser sign-in so I do not have to paste a secret into this conversation. Install the official CLI if needed after inspecting its installer. Read the current official guide and command help before running commands:
+https://www.godaddy.com/resources/news/deploy-a-node-js-app-to-godaddy-from-your-terminal-or-let-your-coding-agent-do-it
+https://developer.godaddy.com/en/docs/api-users/hosting/workflows/deploy-nodejs-app
+https://developer.godaddy.com/en/docs/api-users/troubleshoot/hosting
+
+Use gddy auth login with only these hosting permissions: hosting.application:create, hosting.application:read, hosting.source:read, hosting.source:write, hosting.subscription:read, hosting.subscription:write, hosting.deployment:execute, hosting.secret:write, hosting.log:read. Open the browser for me to sign in and approve. If browser sign-in is unavailable, guide me to create a short-lived Personal Access Token and enter it through a secure local prompt or credential store. Never ask me to paste it into chat. Do not put tokens or passwords in command arguments, command history, source code, logs, screenshots, or the final response.
+
+Deploy the qualified Open Whiteboard Node release, not the source workspace:
+Version: 0.4.0
+ZIP: https://github.com/sportwhiz/open-whiteboard/releases/download/v0.4.0/open-whiteboard-node.zip
+SHA-256: 1ab6debff1ab64d2ca138f1ac73a148afe38b8b7bbbbcc693570038fa5064516
+Project: https://github.com/sportwhiz/open-whiteboard
+Verify the ZIP checksum before upload. If it does not match, stop. Do not substitute an unverified build.
+
+Use an existing active GoDaddy Web Hosting plan with a free app slot. Show me the plan you selected. Do not purchase a plan, domain, or add-on. If I have no capacity, explain my options and wait for me to choose.
+
+Create one new Node.js app named Open Whiteboard. First look for an app from this deployment attempt so retries do not create duplicates. Never replace or reconfigure a pre-existing populated installation. Record the new app and operation identifiers, and reuse them after network errors. Use the same Idempotency-Key for identical REST write retries. Do not automatically delete apps after errors.
+
+Attach the selected existing plan. Get the app's published HTTPS address from the authenticated hosting API. Before uploading source, set the following in PUBLISH: AUTH_ORIGIN to that exact HTTPS origin; HUDDLE_PLATFORM to godaddy; HUDDLE_DATABASE_NAMESPACE to live; GODADDY_APP_ID to the new app ID; GODADDY_VARIANT to PUBLISH; and SETUP_PASSWORD to a unique, strong passphrase of at least 16 characters. Help me save that passphrase privately in my password manager or a local owner-readable file, not in this chat. Use private JSON input or a temporary file with owner-only permissions for secret writes, then remove it.
+
+Set PREVIEW to HUDDLE_PLATFORM=godaddy, HUDDLE_DATABASE_NAMESPACE=preview, GODADDY_APP_ID to the same new app ID, GODADDY_VARIANT=PREVIEW, and the same setup passphrase. GoDaddy's urls.preview may be a dashboard wrapper such as https://host.godaddy.com/nodejs/projects/<id>/preview. Never use host.godaddy.com as AUTH_ORIGIN. Leave Preview on Open Whiteboard's setup guide unless you have its real app origin. This does not prevent publishing the configured live installation. Do not copy Preview settings over Publish. The managed database is shared; the separate namespaces protect the two installations.
+
+Upload the verified release ZIP, wait for its source import, and publish it. GoDaddy supplies PORT and DB_* settings; the package creates its own database tables and private sign-in keys. Do not disable database TLS verification or change existing apps' data settings.
+
+Poll operations with backoff, handle rate limits, and report useful progress. Wait for the publish deployment job to report COMPLETED, then verify GET /healthz on the published address returns 200 with ready=true. A briefly healthy endpoint cannot bypass a pending or failed deployment: GoDaddy may roll it back. Runtime status may list only PREVIEW during publication; the completed publish job and live health check are required. If status explicitly reports the published app as stopped, suspended, or failed, wait for it to recover before reporting success. Do not send my GoDaddy token to the app URL. If anything fails, inspect only this new app and use the official troubleshooting guide; use the included hosting.log:read permission to inspect recent logs for only this app and the failed variant when needed. Logs may contain credentials or personal information. Inspect them locally and report a sanitized explanation; do not paste raw logs into chat, email, or issue reports. Do not request secret-read, application-update, domain, shopping, or deletion permissions for this setup.
+
+Open the live whiteboard for me and let me create my administrator account and enroll my authenticator using the private setup passphrase. Do not create an account using guessed personal details. Tell me how to revoke a temporary token once setup is complete. Explain that Administration → Updates can connect a separate update token and enable compatible security patches. Never save the temporary installer token for unattended updates. End with the live URL, the app identifier, and a brief description of what you verified.

@@ -5,6 +5,10 @@ export type NativeEnv = {
   BLOBS?: R2Bucket;
   BOARD_ROOMS?: DurableObjectNamespace;
   HOSTING_PLATFORM?: "cloudflare" | "godaddy" | "node";
+  /** Set only by the Node runtime; never accepted from a request. */
+  NODE_UPDATES_ENABLED?: boolean;
+  GODADDY_APP_ID?: string;
+  GODADDY_VARIANT?: string;
   AUTH_MODE?: "native" | "access" | "development";
   ENVIRONMENT?: string;
   AUTH_ORIGIN?: string;

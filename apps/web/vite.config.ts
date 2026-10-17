@@ -82,6 +82,9 @@ export default defineConfig({
     ...(process.env.HUDDLE_BUILD_TARGET === 'node' ? [] : [cloudflare({ configPath: process.env.WHITEBOARD_WRANGLER_CONFIG ?? ((process.env.WORKERS_CI || process.env.WRANGLER_CI_OVERRIDE_NAME) ? "../../wrangler.jsonc" : undefined), ...(process.env.WHITEBOARD_WRANGLER_CONFIG?.startsWith('tests/') ? { persistState: { path: `${dirname(process.env.WHITEBOARD_WRANGLER_CONFIG)}/.wrangler/state` } } : {}) })]),
   ],
   optimizeDeps: {
+    // BlockSuite is served from source; its CommonJS clipboard compressor
+    // needs explicit namespace interop in development as well as the build.
+    needsInterop: ['@blocksuite/std > lz-string'],
     exclude: [
       ...blockSuitePackages,
       '@lit/reactive-element',
@@ -98,6 +101,7 @@ export default defineConfig({
       },
     },
     include: [
+      '@blocksuite/std > lz-string',
       'bind-event-listener',
       'bytes',
       'change-case',

@@ -47,4 +47,11 @@ describe("sticky text style", () => {
     ]);
     expect(css).toContain('[data-block-id="a\\"] body { display:none } [x=\\""]');
   });
+
+  it("persists auto fit without changing existing notes' size", () => {
+    const style = { ...DEFAULT_STICKY_TEXT_STYLE, size: "auto" as const };
+    expect(readStickyTextStyle({ whiteboardText: storedStickyTextStyle(style) })).toEqual(style);
+    expect(readStickyTextStyle(undefined).size).toBe("m");
+    expect(stickyTextCss([{ id: "auto", style }])).toContain("var(--sticky-auto-size, 28px)");
+  });
 });

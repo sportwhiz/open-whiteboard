@@ -18,6 +18,7 @@ import {
   settings,
   updateStatus,
 } from "./service";
+import { godaddyUpdateRoutes } from "./godaddy";
 import { compatibleRelease } from "./release";
 export async function updateRoutes(
   request: Request,
@@ -40,6 +41,8 @@ export async function updateRoutes(
     request.method !== "GET",
     request.method !== "GET",
   );
+  if (env.NODE_UPDATES_ENABLED && env.HOSTING_PLATFORM === "godaddy")
+    return godaddyUpdateRoutes(request, env, principal.id);
   if (path === "/api/v1/admin/updates" && request.method === "GET")
     return Response.json(await updateStatus(env));
   if (request.method !== "POST")

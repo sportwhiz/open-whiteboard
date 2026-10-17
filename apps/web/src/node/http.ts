@@ -136,6 +136,7 @@ async function writeResponse(
 export function createNodeHttpServer(
   application: Application,
   canonicalOrigin: string,
+  options: { isReady?: () => boolean } = {},
 ) {
   const origin = new URL(canonicalOrigin);
   if (
@@ -157,6 +158,31 @@ export function createNodeHttpServer(
       });
       incoming.on("aborted", () => controller.abort());
       try {
+        // Hosting supervisors probe the local listener before promoting a build.
+        // A loopback probe gets only readiness, never an application response or
+        // session. All normal routes and WebSocket upgrades keep strict hosts.
+        const peer = incoming.socket.remoteAddress;
+        const localHost = incoming.headers.host?.toLowerCase();
+        const port = incoming.socket.localPort;
+        if (
+          options.isReady &&
+          ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(peer ?? "") &&
+          ["localhost", "127.0.0.1", "[::1]"].some(
+            (host) => localHost === `${host}:${port}`,
+          ) &&
+          ["GET", "HEAD"].includes(incoming.method ?? "") &&
+          ["/", "/healthz"].includes(incoming.url ?? "")
+        ) {
+          const ready = options.isReady();
+          outgoing.writeHead(ready ? 200 : 503, {
+            "Content-Type": "application/json",
+            "Cache-Control": "no-store",
+          });
+          outgoing.end(
+            incoming.method === "HEAD" ? undefined : JSON.stringify({ ready }),
+          );
+          return;
+        }
         let request: Request;
         try {
           request = webRequest(incoming, origin, controller);

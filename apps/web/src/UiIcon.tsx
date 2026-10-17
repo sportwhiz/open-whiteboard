@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 const paths = {
+  commands: <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M7 9h1m3 0h1m3 0h2M7 12h1m3 0h1m3 0h2M7 15h10" /></>,
   menu: <><path d="M4 6h16M4 12h16M4 18h16" /></>,
   pause: <><path d="M8 5v14M16 5v14" /></>,
   play: <path d="m8 5 11 7-11 7Z" />,

@@ -4,6 +4,12 @@ Upload the ready-made ZIP to GoDaddy, add two app settings, and open your board.
 
 You can start with GoDaddy's Preview address. Choose a custom domain when you are ready to publish.
 
+## Guided deployment
+
+The new [guided installer](../tools/godaddy-deploy/README.md) creates the app, chooses an existing plan, sets its address and private setup passphrase, and publishes the ready-made package. It includes temporary-token instructions and a copyable setup prompt for Claude, Codex, or another coding agent. The marketing site has a browser-only walkthrough. Its live deploy button will open the hosted installer after the installer and its release pin are qualified.
+
+**Release gate:** the published v0.4.0 ZIP fails GoDaddy’s supervisor startup probe. The fix has passed live publication in a candidate build. The guided installer blocks that old ZIP until a fixed release is published and pinned. Do not interpret a briefly working app as a completed deployment.
+
 ## Create your app
 
 1. Download [open-whiteboard-node.zip](https://github.com/sportwhiz/open-whiteboard/releases/latest/download/open-whiteboard-node.zip) from the latest stable Open Whiteboard release.
@@ -47,15 +53,21 @@ GoDaddy's gateway selects a sender on the app's hosting domain, or an attached v
 
 ## Update an existing app
 
+After installing the release with the new updater, open **Administration → Updates**. Choose **Connect updates**, follow the link to create a separate GoDaddy update token, and paste it there. New wizard installations already know their app ID. Turn on **Install compatible security patches automatically** if you want them installed without returning to the dashboard. The app checks daily. New features wait for **Update now**; database changes use the manual process below.
+
+Your setup token can be revoked after installation. The update token is separate, encrypted in your installation, and must be renewed when it expires. The Updates page explains how to reconnect without starting a duplicate deployment. See [update behavior and recovery](software-updates.md#nodejs--godaddy).
+
+For the first upgrade from an older installation, or a release that changes the database:
+
 Download the new release ZIP and upload it to the **same GoDaddy app**. Keep its address, secrets, database and namespace settings. Use GoDaddy's Preview or Publish action for the variant you are updating. After it starts, check your version under **Administration → Updates** and open an existing board.
 
-Open Whiteboard can check for new releases on Node.js Hosting. You install them through GoDaddy's dashboard; the app does not deploy the ZIP for you. Before replacing a Studio you rely on, follow the backup and process-replacement notes below.
+Older Node packages require a dashboard upload to obtain the new updater. Before replacing a Studio you rely on, follow the backup and process-replacement notes below.
 
 ### Automatic updates
 
-The ZIP installation does not have automatic installation of Open Whiteboard releases. GoDaddy can automatically redeploy an app connected to a GitHub branch when that branch changes, but that connection does not automatically download our release ZIPs or sync a private installer repository with this public repository.
+The next qualified Node ZIP includes the GoDaddy updater. It uploads a verified release package to the existing app and publishes it without changing its settings or storage. Automatic installation is off until the owner connects an update token and enables compatible security patches. Feature releases wait for the owner; database or board-format changes require a backup and guided upgrade.
 
-Open Whiteboard's source repository is a development workspace; the prebuilt Node ZIP is the GoDaddy deployment package. Keep using ZIP replacement for this installation. Release-driven automatic updates would need a GoDaddy deployment integration that installs a qualified package and preserves the existing app, settings and databases. See [GoDaddy's GitHub deployment overview](https://www.godaddy.com/resources/news/godaddy-nodejs-hosting-launch).
+A GitHub branch connection is a separate deployment method. It does not download Open Whiteboard release ZIPs or keep a cloned installer repository in sync. Use the packaged updater for standard installations. Teams with custom source changes should manage their own deployments.
 
 ## Hosting reference
 
@@ -99,7 +111,7 @@ Use separate installations for preview and production. `HUDDLE_DATABASE_NAMESPAC
 2. Upload the new package to the same app. Keep `AUTH_ORIGIN`, the database connection and setup settings.
 3. Stop the previous process before the replacement starts. Allow a brief interruption; open boards reconnect after the new server becomes ready. If the hosting rollout overlaps processes, configure stop/start deployment or obtain a provider-supported alternative before production use.
 4. Startup obtains exclusive ownership and applies supported migrations. Applied migration checksums are verified; newer or altered histories are refused. Check `/healthz` and confirm your existing accounts, boards, uploads and MCP connection still work.
-5. Use the Studio updates page to check the running version and build. The current Node package uses dashboard deployment. Cloudflare deployment hooks and automatic update controls are unavailable on Node.
+5. Use the Studio Updates page to check the running version and build. Qualified GoDaddy packages can install compatible releases from this page. Other Node hosts use their deployment tooling; Cloudflare hooks do not apply to Node.
 
 An older package can refuse a database migrated by a newer version. Do not treat an old code upload as a guaranteed rollback. Restore the matching full database backup and code together in an isolated environment, or use a documented forward repair. Replacing private installation keys invalidates sessions and can make encrypted settings unreadable.
 
@@ -114,7 +126,7 @@ Verify on the actual hosting product:
 - Managed email delivery, custom domains, OAuth/MCP and passkeys.
 - Database backups, recovery and an upgrade with real existing data.
 
-The provider upload contract does not supply a public template button or a trusted first-owner handoff. Until those capabilities are available, the HTTPS address and setup password must be set privately in the hosting dashboard.
+The guided installer obtains the published HTTPS address from the authenticated GoDaddy API and writes the setup passphrase to that app’s secrets. The owner still creates their account and enrolls an authenticator on the published whiteboard. Manual uploads require the same settings in the hosting dashboard.
 
 ## Maintainer verification
 

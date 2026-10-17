@@ -4,6 +4,7 @@ import { Field, Feedback, useAction } from "../auth-ui";
 import { UiIcon } from "../UiIcon";
 import type { Release } from "../updates/release";
 import "./updates.css";
+import { GoDaddyUpdatesPanel } from "./GoDaddyUpdatesPanel";
 type History = {
   id: string;
   kind: "update" | "rebuild" | "source";
@@ -16,8 +17,9 @@ type History = {
   delayed: boolean;
   rollbackVersion: string | null;
 };
-type Status = {
-  deploymentMode?: "cloudflare" | "manual-node";
+export type UpdateStatus = {
+  deploymentMode?: "cloudflare" | "manual-node" | "godaddy";
+  appId?: string;
   current: Release;
   available: Release | null;
   connected: boolean;
@@ -40,7 +42,7 @@ const labels: Record<string, string> = {
   uncertain: "Deployment needs verification",
 };
 export function UpdatesPanel() {
-  const [data, setData] = useState<Status>();
+  const [data, setData] = useState<UpdateStatus>();
   const [error, setError] = useState("");
   const [hook, setHook] = useState("");
   const [connecting, setConnecting] = useState(false);
@@ -53,7 +55,7 @@ export function UpdatesPanel() {
   const live = useRef(true);
   const owner = authSnapshot()?.account?.role === "owner";
   async function load() {
-    const result = await api<Status>("/api/v1/admin/updates");
+    const result = await api<UpdateStatus>("/api/v1/admin/updates");
     if (live.current) {
       setData(result);
       setError("");
@@ -84,6 +86,8 @@ export function UpdatesPanel() {
     setStoppedDeployment(false);
     setCancelledBuild(false);
   }, [active?.id, active?.status]);
+  if (data?.deploymentMode === "godaddy")
+    return <GoDaddyUpdatesPanel data={data} error={error} reload={load} owner={owner} />;
   if (data?.deploymentMode === "manual-node")
     return (
       <div className="updates-panel">

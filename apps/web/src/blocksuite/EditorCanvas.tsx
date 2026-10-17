@@ -9,6 +9,8 @@ import { GfxControllerIdentifier, type GfxModel } from '@blocksuite/std/gfx';
 
 import { createEditor, fitEditorToContent } from './create-editor';
 import { canvasFitPadding } from './canvas-layout';
+import { readBoardViewport, writeBoardViewport } from './board-viewport';
+import { createPresenceThrottle } from './presence-throttle';
 import { CanvasChrome } from './CanvasChrome';
 import { createCanvasController, type CanvasController } from './canvas-controller';
 import { getStoreExtensions } from './store-extensions';
@@ -150,7 +152,9 @@ export function EditorCanvas({ boardId, bootstrap, onCollaboration, onConnection
           const bottom = Math.max(...bounds.map(bound => bound.y + bound.h));
           return { x: left, y: top, w: right - left, h: bottom - top };
         };
-        const cancelInitialFit = fitEditorToContent(editor);
+        // Scope the view to this account, board and restored-document epoch.
+        const viewportKey = `whiteboard-viewport-v1:${boardScope}:${board.documentEpoch}`;
+        const cancelInitialFit = fitEditorToContent(editor, readBoardViewport(viewportKey));
         abortController.signal.addEventListener('abort', cancelInitialFit, { once: true });
         setStatus(`${store.getModelsByFlavour('affine:note').length} notes · ${stalePending ? 'Restored board · local copy needs review' : pending ? 'Recovered local edits' : 'Synced'}`);
 
@@ -169,13 +173,29 @@ export function EditorCanvas({ boardId, bootstrap, onCollaboration, onConnection
         let lastPresentedFrame = '';
         let previousViewport: { x: number; y: number; zoom: number } | null = null;
         const viewportRecord = () => ({ x: gfx.viewport.centerX, y: gfx.viewport.centerY, zoom: gfx.viewport.zoom });
+        let viewportTimer: ReturnType<typeof setTimeout> | undefined;
+        const saveViewport = () => {
+          clearTimeout(viewportTimer);
+          // A presenter or collaborator's camera must not replace your place.
+          writeBoardViewport(viewportKey, previousViewport ?? viewportRecord());
+        };
         const moveViewport = (viewport: { x: number; y: number; zoom: number }) => {
           gfx.viewport.setViewport(viewport.zoom, [viewport.x, viewport.y], true);
+        };
+        let followedViewport: { x: number; y: number; zoom: number } | null = null;
+        const moveFollowedViewport = (viewport: { x: number; y: number; zoom: number }) => {
+          // Presence broadcasts also include our own camera. Reapplying the
+          // same followed target would restart its animation and feed another
+          // camera update back into the room indefinitely.
+          if (followedViewport && viewport.x === followedViewport.x && viewport.y === followedViewport.y && viewport.zoom === followedViewport.zoom) return;
+          followedViewport = { ...viewport };
+          moveViewport(viewport);
         };
         const stopFollowing = () => {
           if (followedPresentationId) ignoredPresentationId = followedPresentationId;
           followingUserId = null;
           followedPresentationId = null;
+          followedViewport = null;
           setFollowing('');
           if (previousViewport) moveViewport(previousViewport);
           previousViewport = null;
@@ -185,9 +205,10 @@ export function EditorCanvas({ boardId, bootstrap, onCollaboration, onConnection
           if (!person) return;
           previousViewport ??= viewportRecord();
           followingUserId = userId;
+          followedViewport = null;
           followedPresentationId = presentationId ?? null;
           setFollowing(presentationId ? `Following presenter ${person.name}` : `Following ${person.name}`);
-          if (person.viewport) moveViewport(person.viewport);
+          if (person.viewport) moveFollowedViewport(person.viewport);
         };
         const applyCollaborationView = (next: PublicCollaborationState) => {
           latestCollaboration = next;
@@ -209,7 +230,7 @@ export function EditorCanvas({ boardId, bootstrap, onCollaboration, onConnection
           if (followingUserId) {
             const participant = next.participants.find(item => item.id === followingUserId);
             if (!participant) stopFollowing();
-            else if (participant.viewport && !followedPresentationId) moveViewport(participant.viewport);
+            else if (participant.viewport && !followedPresentationId) moveFollowedViewport(participant.viewport);
           }
         };
         const showSaveError = (error: unknown) => {
@@ -337,7 +358,7 @@ export function EditorCanvas({ boardId, bootstrap, onCollaboration, onConnection
         let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
         let reconnectAttempt = 0;
         let stopReconnect = false;
-        let lastPresenceAt = 0;
+        let lastLaserAt = 0;
         const blockForAccessChange = () => {
           if (editingBlocked || abortController.signal.aborted) return;
           editingBlocked = true;
@@ -478,7 +499,7 @@ export function EditorCanvas({ boardId, bootstrap, onCollaboration, onConnection
             reconnectAttempt = 0;
             onConnection?.('online');
             socket?.send(JSON.stringify({ type: 'sync-request', vectors: captureNativeStateVectors(workspace!) }));
-            socket?.send(JSON.stringify({ type: 'presence', idle: false }));
+            sendPresence(latestCursor, true);
             void drainOutbox().catch(showSaveError);
           });
           socket.addEventListener('message', handleMessage);
@@ -502,18 +523,23 @@ export function EditorCanvas({ boardId, bootstrap, onCollaboration, onConnection
         let laserActive = false;
         let placingComment = false;
         let latestCursor: { x: number; y: number } | undefined;
+        const presence = createPresenceThrottle(() => {
+          if (abortController.signal.aborted || socket?.readyState !== WebSocket.OPEN) return;
+          socket.send(JSON.stringify({ type: 'presence', idle: false, cursor: latestCursor, selection: gfx.selection.selectedIds, viewport: viewportRecord() }));
+        });
         const sendPresence = (cursor = latestCursor, force = false) => {
-          if (!socket || socket.readyState !== WebSocket.OPEN || (!force && Date.now() - lastPresenceAt < 66)) return;
           latestCursor = cursor;
-          lastPresenceAt = Date.now();
-          socket.send(JSON.stringify({ type: 'presence', idle: false, cursor, selection: gfx.selection.selectedIds, viewport: viewportRecord() }));
+          if (socket?.readyState === WebSocket.OPEN) presence.schedule(force);
         };
         const sendPointer = (event: PointerEvent) => {
-          if (!socket || socket.readyState !== WebSocket.OPEN || Date.now() - lastPresenceAt < 66) return;
+          if (socket?.readyState !== WebSocket.OPEN) return;
           const bounds = host.getBoundingClientRect();
           const [x, y] = gfx.viewport.toModelCoord(event.clientX - bounds.left, event.clientY - bounds.top);
           sendPresence({ x, y });
-          if (laserActive) socket.send(JSON.stringify({ type: 'laser', x, y }));
+          if (laserActive && Date.now() - lastLaserAt >= 66) {
+            lastLaserAt = Date.now();
+            socket.send(JSON.stringify({ type: 'laser', x, y }));
+          }
         };
         const followEvent = (event: Event) => followUser((event as CustomEvent<{ userId: string }>).detail.userId);
         const stopFollowEvent = () => stopFollowing();
@@ -541,7 +567,10 @@ export function EditorCanvas({ boardId, bootstrap, onCollaboration, onConnection
         const viewportSubscription = gfx.viewport.viewportUpdated.subscribe(() => {
           setViewportRevision(value => value + 1);
           sendPresence();
+          clearTimeout(viewportTimer);
+          viewportTimer = setTimeout(saveViewport, 200);
         });
+        window.addEventListener('pagehide', saveViewport);
         const selectionSubscription = gfx.selection.slots.updated.subscribe(() => sendPresence(latestCursor, true));
         host.addEventListener('pointermove', sendPointer);
         host.addEventListener('pointerdown', positionComment, true);
@@ -558,6 +587,9 @@ export function EditorCanvas({ boardId, bootstrap, onCollaboration, onConnection
         abortController.signal.addEventListener(
           'abort',
           () => {
+            saveViewport();
+            presence.cancel();
+            window.removeEventListener('pagehide', saveViewport);
             if (updateTimer) clearTimeout(updateTimer);
             cancelInitialFit();
             workspace?.doc.off('update', rootUpdateHandler);

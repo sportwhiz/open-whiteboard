@@ -60,6 +60,7 @@ jobs:
           pnpm --filter @whiteboard/web exec node scripts/update-notice-ui-smoke.mjs
           pnpm --filter @whiteboard/web exec node scripts/reauthentication-ui-smoke.mjs
           UI_ORIGIN=http://127.0.0.1:5300 pnpm --filter @whiteboard/web exec node scripts/tour-ui-smoke.mjs
+          UI_ORIGIN=http://127.0.0.1:5300 pnpm --filter @whiteboard/web exec node scripts/godaddy-update-ui-smoke.mjs
       - name: Native OAuth browser consent and MCP connection
         run: pnpm --filter @whiteboard/web run test:oauth-browser
       - name: PostgreSQL authentication adapter

@@ -1,5 +1,6 @@
 import { RefNodeSlotsProvider } from "@blocksuite/affine/inlines/reference";
 import { canvasFitPadding } from "./canvas-layout";
+import type { BoardViewport } from "./board-viewport";
 import {
   CommunityCanvasTextFonts,
   DocModeProvider,
@@ -15,7 +16,8 @@ import { themeToVar } from "@toeverything/theme/v2";
 import { ColorScheme } from "@blocksuite/affine/model";
 import { StdIdentifier } from "@blocksuite/std";
 import type { ExtensionType, Store, Workspace } from "@blocksuite/affine/store";
-import { GfxControllerIdentifier } from "@blocksuite/std/gfx";
+import { GfxControllerIdentifier, type GfxViewInteractionConfig } from "@blocksuite/std/gfx";
+import { createIdentifier } from "@blocksuite/affine/global/di";
 import { BlockFlavourIdentifier } from "@blocksuite/std";
 import "./editor-container";
 import {
@@ -121,6 +123,32 @@ export function createEditor(store: Store, workspace: Workspace) {
     CanvasShapeTool,
     {
       setup: (di) => {
+        // BlockSuite 0.22 exposes the config type, but not this DI identifier
+        // through its public gfx barrel.
+        const noteInteraction = createIdentifier<GfxViewInteractionConfig>("GfxViewInteraction")("affine:note");
+        const nativeNote = di.provider().get(noteInteraction);
+        di.override(noteInteraction, {
+          ...nativeNote,
+          handleSelection(context) {
+            const nativeSelection = nativeNote.handleSelection?.(context);
+            return {
+              ...nativeSelection,
+              onSelect(selection) {
+                if (!selection.multiSelect && selection.selected &&
+                    (context.gfx.selection.has(context.model.id) || context.gfx.selection.editing)) {
+                  // The product editor claims simple stickies synchronously.
+                  // Document notes retain the engine's rich block editor.
+                  const request = new CustomEvent("whiteboard-edit-note", {
+                    bubbles: true, cancelable: true, detail: { id: context.model.id },
+                  });
+                  if (!editor.dispatchEvent(request)) return;
+                }
+                if (nativeSelection?.onSelect) return nativeSelection.onSelect(selection);
+                return selection.default(selection);
+              },
+            };
+          },
+        });
         for (const flavour of ["group", "frame"]) {
           const id = BlockFlavourIdentifier(`affine:surface:${flavour}`);
           const identifier = ToolbarModuleIdentifier(id.variant);
@@ -153,11 +181,15 @@ export function createEditor(store: Store, workspace: Workspace) {
   return editor;
 }
 
-export function fitEditorToContent(editor: WhiteboardEditorElement) {
+export function fitEditorToContent(editor: WhiteboardEditorElement, remembered?: BoardViewport | null) {
   let secondFrame = 0;
   const firstFrame = requestAnimationFrame(() => {
     secondFrame = requestAnimationFrame(() => {
       const gfx = editor.std.get(GfxControllerIdentifier);
+      if (remembered) {
+        gfx.viewport.setViewport(remembered.zoom, [remembered.x, remembered.y], false);
+        return;
+      }
       const host = editor.closest<HTMLElement>(".editor-canvas");
       // Show the complete composition, including documents outside a frame.
       gfx.fitToScreen({
