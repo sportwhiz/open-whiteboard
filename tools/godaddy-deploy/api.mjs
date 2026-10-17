@@ -2,6 +2,8 @@
 import { failureCategory, reportingCredentialKey } from './monitoring.mjs';
 export const GODADDY = 'https://api.godaddy.com/v1/hosting';
 const MAX_ZIP = 32 * 1024 * 1024;
+// Workers does not supply Node's default User-Agent. GoDaddy rejects an empty one.
+const USER_AGENT = 'OpenWhiteboardInstaller/1.0';
 export const headers = {
   'Cache-Control': 'no-store',
   'Referrer-Policy': 'no-referrer',
@@ -65,7 +67,7 @@ export function createApi({ release, fetchImpl = fetch, monitor }) {
     if (release.qualified !== true) fail("The GoDaddy installer is waiting for a release that passes its live hosting checks. No app has been created. Please try again after the next release.", 503);
     if (!zipPromise) zipPromise = (async () => {
       if (!/^https:\/\/github\.com\/sportwhiz\/open-whiteboard\/releases\/download\/v[\w.-]+\/open-whiteboard-node\.zip$/.test(release.url) || !/^[a-f0-9]{64}$/.test(release.sha256)) fail('The installer release configuration is invalid.', 503);
-      const bytes = await limitedBytes(await fetchImpl(release.url, { signal: AbortSignal.timeout(90_000), redirect: 'follow' }), MAX_ZIP);
+      const bytes = await limitedBytes(await fetchImpl(release.url, { signal: AbortSignal.timeout(90_000), redirect: 'follow', headers: { 'User-Agent': USER_AGENT } }), MAX_ZIP);
       const digest = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(v => v.toString(16).padStart(2, '0')).join('');
       if (digest !== release.sha256) fail('Release checksum verification failed. No package was uploaded.', 502);
       return bytes;
@@ -97,7 +99,7 @@ export function createApi({ release, fetchImpl = fetch, monitor }) {
       if (release.qualified !== true && ['create', 'configure', 'upload', 'attach', 'publish'].includes(action)) fail('The GoDaddy installer is waiting for a release that passes its live hosting checks. No app has been created. Please try again after the next release.', 503);
       let credentialKey;
       const call = async (path, method = 'GET', body, patch = false, contentType) => {
-        const outgoing = { Authorization: `Bearer ${token}`, Accept: 'application/json' };
+        const outgoing = { Authorization: `Bearer ${token}`, Accept: 'application/json', 'User-Agent': USER_AGENT };
         if (method === 'POST' || method === 'PATCH') {
           if (typeof input.key !== 'string' || !/^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(input.key)) fail('Invalid retry identifier.');
           outgoing['Idempotency-Key'] = input.key;
@@ -106,8 +108,11 @@ export function createApi({ release, fetchImpl = fetch, monitor }) {
         let response;
         contactedProvider = true;
         try {
-          response = await fetchImpl(`${GODADDY}${path}`, { method, headers: outgoing, body: contentType ? body : body ? JSON.stringify(body) : undefined, redirect: 'error', signal: AbortSignal.timeout(90_000) });
+          response = await fetchImpl(`${GODADDY}${path}`, { method, headers: outgoing, body: contentType ? body : body ? JSON.stringify(body) : undefined, redirect: 'manual', signal: AbortSignal.timeout(90_000) });
         } catch { fail('GoDaddy could not be reached. Continue to retry the same step safely.', 502); }
+        // Workers rejects redirect:'error'. Never follow a provider redirect or
+        // forward its credential; normalize it to a retryable gateway failure.
+        if (response.status >= 300 && response.status < 400) fail('GoDaddy returned an unexpected redirect. Continue to retry the same step safely.', 502);
         if (!response.ok) {
           const messages = {
             401: 'GoDaddy rejected this token. Check that it is a current personal access token.',
@@ -172,7 +177,7 @@ export function createApi({ release, fetchImpl = fetch, monitor }) {
           // an arbitrary URL fetcher, and never send the PAT to application code.
           if (!/^[a-z0-9-]+\.c[0-9]+\.airoapp\.ai$/.test(new URL(address).hostname)) fail('This app uses an unsupported health-check address. Open the app to verify its setup.', 409);
           try {
-            const response = await fetchImpl(`${address}/healthz`, { redirect: 'error', signal: AbortSignal.timeout(10_000), headers: { Accept: 'application/json', 'Cache-Control': 'no-cache' } });
+            const response = await fetchImpl(`${address}/healthz`, { redirect: 'manual', signal: AbortSignal.timeout(10_000), headers: { Accept: 'application/json', 'Cache-Control': 'no-cache', 'User-Agent': USER_AGENT } });
             const data = JSON.parse(new TextDecoder().decode(await limitedBytes(response, 8192)));
             result = { ready: data.ready === true };
           } catch { result = { ready: false }; }
