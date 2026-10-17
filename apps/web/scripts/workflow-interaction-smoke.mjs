@@ -101,8 +101,40 @@ try {
       await page.keyboard.press('Enter'); assert.equal(await count(), 4);
       await page.getByRole('combobox').fill('fit board'); await page.keyboard.press('Enter');
       await page.getByRole('dialog', { name: 'Quick actions' }).waitFor({ state: 'hidden' });
+      await page.evaluate(async () => {
+        const editor = document.querySelector('whiteboard-editor');
+        editor.doc.readonly = false;
+        const { createSticky } = await import('/src/blocksuite/canvas-controller.ts');
+        editor.doc.transact(() => {
+          for (let i = 0; i < 125; i++) createSticky(editor, (i % 15) * 250, 1000 + Math.floor(i / 15) * 250, '#ded6ff', `Paged idea ${i + 1}`);
+        });
+      });
+      await run('find on board');
+      await search.fill('Paged idea');
+      const results = page.locator('.canvas-navigator.search .navigator-list > button');
+      await page.waitForFunction(() => document.querySelector('.navigator-meta')?.textContent.includes('125 results'));
+      assert.equal(await results.count(), 50, 'Search mounted all matching objects');
+      await search.press('Shift+Enter');
+      await page.waitForFunction(() => document.querySelector('.navigator-meta')?.textContent.includes('125 of 125'));
+      assert.equal(await results.count(), 25);
+      assert(await page.getByRole('button', { name: 'Next search results', exact: true }).isDisabled());
+      await search.press('Enter');
+      await page.waitForFunction(() => document.querySelector('.navigator-meta')?.textContent.includes('1 of 125'));
+      assert.equal(await results.count(), 50);
+      await page.getByRole('button', { name: 'Next search results', exact: true }).click();
+      await page.waitForFunction(() => document.querySelector('.navigator-meta')?.textContent.includes('51 of 125'));
+      assert.equal(await results.count(), 50);
+      await search.press('Shift+Enter');
+      await page.waitForFunction(() => document.querySelector('.navigator-meta')?.textContent.includes('50 of 125'));
+      await search.press('Enter');
+      await page.waitForFunction(() => document.querySelector('.navigator-meta')?.textContent.includes('51 of 125'));
+      await page.getByRole('button', { name: 'Previous search results', exact: true }).click();
+      await page.waitForFunction(() => document.querySelector('.navigator-meta')?.textContent.includes('1 of 125'));
+      await search.fill('Idea four');
+      assert.equal(await results.count(), 1, 'Changing the query did not reset the result page');
+      await search.press('Escape');
       assert.deepEqual(errors, []);
-      console.log(`${platform}: palette permissions/focus, selection, tidy/group/ungroup, quick-create style and zoom, keyboard search, viewport reload and immediate-leave persistence passed.`);
+      console.log(`${platform}: palette permissions/focus, selection, tidy/group/ungroup, quick-create style and zoom, bounded search pages and keyboard traversal, viewport reload and immediate-leave persistence passed.`);
     } catch (error) {
       console.error(platform, await page.evaluate(() => ({ focus: document.activeElement?.outerHTML, selection: window.auditController?.state().selection, palette: document.querySelector('.quick-actions')?.textContent })));
       throw error;

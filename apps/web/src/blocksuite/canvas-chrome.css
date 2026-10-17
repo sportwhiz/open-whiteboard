@@ -931,6 +931,9 @@
 .quick-action-results kbd { white-space: nowrap; font-size: 11px; color: var(--text-secondary); }
 .quick-action-hint { margin: 14px 0 0; color: var(--text-secondary); font-size: 11px; }
 .navigator-list > button[aria-current="true"] { box-shadow: inset 3px 0 var(--accent); background: var(--surface-hover, #4262ff14); }
+.search-pages { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; font-size: 11px; color: var(--muted); }
+.search-pages button { padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); cursor: pointer; }
+.search-pages button:disabled { opacity: .45; cursor: default; }
 .canvas-modal > header {
   display: flex;
   align-items: center;

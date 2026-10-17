@@ -690,17 +690,21 @@ export function CanvasChrome({
     : [];
   const frames = state.items.filter((item) => item.kind === "frame");
   const arrangeableSelection = state.selection.filter(item => item.arrangeable);
+  const activeSearchIndex = matches.findIndex(item => item.id === activeSearchId);
+  const searchPageSize = 50;
+  const searchPageStart = Math.floor(Math.max(0, activeSearchIndex) / searchPageSize) * searchPageSize;
+  const visibleMatches = matches.slice(searchPageStart, searchPageStart + searchPageSize);
   const selectSearchResult = (id: string) => { setActiveSearchId(id); controller.select(id); };
   const stepSearch = (direction: number) => {
     if (!matches.length) return;
-    const current = matches.findIndex(item => item.id === activeSearchId);
+    const current = activeSearchIndex;
     const next = current < 0 ? (direction > 0 ? 0 : matches.length - 1) :
       (current + direction + matches.length) % matches.length;
     selectSearchResult(matches[next].id);
   };
   useEffect(() => {
     chromeRef.current?.querySelector('.navigator-list [aria-current="true"]')?.scrollIntoView({ block: "nearest" });
-  }, [activeSearchId]);
+  }, [activeSearchId, searchPageStart, navigation]);
   const stickySelection = state.selection.filter((item) => item.simpleSticky);
   // A box selection also picks up the arrows between notes, so notes plus
   // connectors still get the note toolbar. Its actions apply to the notes.
@@ -1716,7 +1720,7 @@ export function CanvasChrome({
               />
               {query.trim() ? (
                 <p className="navigator-meta" aria-live="polite">
-                  {matches.some(item => item.id === activeSearchId) ? `${matches.findIndex(item => item.id === activeSearchId) + 1} of ` : ""}
+                  {activeSearchIndex >= 0 ? `${activeSearchIndex + 1} of ` : ""}
                   {matches.length} {matches.length === 1 ? "result" : "results"}
                 </p>
               ) : (
@@ -1725,7 +1729,7 @@ export function CanvasChrome({
                 </p>
               )}
               <div className="navigator-list">
-                {matches.map((item) => (
+                {visibleMatches.map((item) => (
                   <button
                     type="button"
                     key={item.id}
@@ -1743,6 +1747,19 @@ export function CanvasChrome({
                   </button>
                 ))}
               </div>
+              {matches.length > searchPageSize && (
+                <nav className="search-pages" aria-label="Search result pages">
+                  <button type="button" aria-label="Previous search results" disabled={searchPageStart === 0}
+                    onClick={() => selectSearchResult(matches[searchPageStart - searchPageSize].id)}>
+                    Previous
+                  </button>
+                  <span>{searchPageStart + 1}–{searchPageStart + visibleMatches.length} of {matches.length}</span>
+                  <button type="button" aria-label="Next search results" disabled={searchPageStart + searchPageSize >= matches.length}
+                    onClick={() => selectSearchResult(matches[searchPageStart + searchPageSize].id)}>
+                    Next
+                  </button>
+                </nav>
+              )}
               {matches.length > 0 && <p className="navigator-meta">Enter for next · Shift+Enter for previous · Esc to return</p>}
             </>
           ) : navigation === "frames" ? (

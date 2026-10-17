@@ -66,6 +66,25 @@ test('failed mail stays pending, blocks new installs, and retries', async t => {
   env.EMAIL.send = send; advance(minutes(6)); await monitor.tick();
   assert.equal(mail.length, 1); assert.equal(await monitor.ready(), true);
 });
+test('mail recovery reopens installation even when all original incidents have resolved', async t => {
+  const { monitor, env, incident, advance, mail } = setup(t);
+  const send = env.EMAIL.send;
+  let attempts = 0;
+  env.EMAIL.send = async () => { attempts++; throw new Error('Temporary mail outage'); };
+  await monitor.record(incident); advance(minutes(6)); await monitor.tick();
+  await monitor.resolve(incident.attempt, incident.action);
+  advance(minutes(6)); await monitor.tick();
+  assert.equal(attempts, 2, 'An empty incident queue must not prevent delivery recovery');
+  assert.equal(await monitor.ready(), false);
+  env.EMAIL.send = send; advance(minutes(6));
+  await Promise.all([monitor.tick(), monitor.tick()]);
+  assert.equal(mail.length, 1);
+  assert.match(mail[0].subject, /email check/);
+  assert(!mail[0].text.includes(incident.attempt), 'Resolved incidents must not be sent as failures');
+  assert.equal(await monitor.ready(), true);
+  advance(minutes(65)); await monitor.tick();
+  assert.equal(mail.length, 1, 'Successful recovery must not send recurring probes');
+});
 test('new incidents respect the hourly email limit and retention', async t => {
   const { monitor, incident, advance, mail, sql } = setup(t);
   await monitor.record(incident); advance(minutes(6)); await monitor.tick();

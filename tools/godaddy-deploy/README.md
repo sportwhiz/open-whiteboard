@@ -105,6 +105,8 @@ Failures that recover before the five-minute grace period do not send mail. Repe
 
 The production Worker blocks new connections and app creation when reporting configuration, recent scheduler activity, or email delivery is unhealthy. Recovery operations for an existing app remain available. The rate-limit binding limits anonymous API traffic to 120 requests per minute per Cloudflare location without storing caller IP addresses. This is not an account-wide traffic or D1 cost ceiling. Monitor provider usage and increase the budget only after checking normal demand. Request logging remains disabled.
 
+If email fails and the queued installation errors resolve before delivery recovers, the scheduler sends a delivery check to the configured operator address. Failed checks retry at five-minute intervals; one accepted check clears the failure state and ends the probes. Resolved installation errors are not included in that message. The scheduler lease and hourly successful-send limit still apply.
+
 Private operator settings, supplied as Worker secrets:
 
 - `ALERT_TO`: the maintainer's destination email address.

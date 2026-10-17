@@ -121,3 +121,9 @@ The review bounded repeated update connection failures to a 20-minute window. An
 The manual-install summary no longer directs people to use GoDaddy's dashboard wrapper as their app origin. The marketing build now refuses to generate a walkthrough if its preview marker cannot be inserted, keeping the static site from presenting a live credential form after a template change.
 
 Final checks reran all 503 tests against disposable MySQL databases with no skips, Web/Worker and Node type checks, production builds, the 59 installer/monitor tests, installer desktop/mobile browser scenarios, sticky and workflow checks under Mac/Windows shortcut mappings, pointer gestures, two-browser collaboration, and update controls. Source and packaged Node startup/restart checks use disposable local databases. Existing bundle-size warnings remain. Public release qualification and monitoring activation remain the separate launch gates listed above.
+
+## Follow-up PR review
+
+The second review fixed two additional issues. Board search rendered every match at once; it now renders at most 50 result buttons, while keyboard traversal and page controls reach every match. The browser regression covers 125 matches, last-to-first wrapping, page boundaries, and changing the query under both shortcut mappings.
+
+An email outage could leave new installations blocked after all queued errors resolved, because an empty queue prevented the sender from being checked again. A failing regression reproduced this. The scheduler now sends a bounded delivery check in that state, clears the failure flag only after the send succeeds, and stops checking once healthy. Resolved errors stay out of failure reports. Installer and monitor coverage now totals 60 tests.

@@ -46,15 +46,20 @@ export function createMonitor(env, version, now = () => Date.now()) {
       if (!claimed.meta.changes) return;
       const { results } = await db.prepare('SELECT attempt, action, category, version, occurred, updated FROM installer_incidents WHERE resolved = 0 AND reported = 0 AND occurred <= ? ORDER BY occurred LIMIT 50')
         .bind(time - 5 * 60_000).all();
-      if (!results.length) {
+      // Existing installs can recover while email is down. If that empties the
+      // queue, still verify sending before lifting the new-installation gate.
+      const recoveryCheck = !results.length && Boolean((await db.prepare('SELECT delivery_failed FROM installer_alert_state WHERE id = 1').first())?.delivery_failed);
+      if (!results.length && !recoveryCheck) {
         await db.prepare('UPDATE installer_alert_state SET lease_until = 0 WHERE id = 1').run();
         return;
       }
-      const text = `GoDaddy installation failures\n\n${results.length} setup step(s) still need attention. Retries that recovered before this check are excluded.\n\n` + results.map(row =>
+      const text = recoveryCheck
+        ? 'An earlier attempt to send an installer alert failed. This message checks whether email delivery is working again. It contains no installation details.\n'
+        : `GoDaddy installation failures\n\n${results.length} setup step(s) still need attention. Retries that recovered before this check are excluded.\n\n` + results.map(row =>
         `Support reference: ${row.attempt}\nStep: ${row.action}\nCategory: ${row.category}\nRelease: ${row.version}\nFirst seen: ${new Date(row.occurred).toISOString()}`
       ).join('\n\n') + '\n\nBrowser timeouts are reported by the installer page. Other categories come from installer API results. This report contains no provider logs, credentials, app names, or board content.\n';
       try {
-        await env.EMAIL.send({ to: env.ALERT_TO, from: env.ALERT_FROM, subject: 'Open Whiteboard: GoDaddy setup needs attention', text });
+        await env.EMAIL.send({ to: env.ALERT_TO, from: env.ALERT_FROM, subject: recoveryCheck ? 'Open Whiteboard: installer email check' : 'Open Whiteboard: GoDaddy setup needs attention', text });
         await db.batch([
           ...results.map(row => db.prepare('UPDATE installer_incidents SET reported = 1 WHERE attempt = ? AND action = ? AND updated = ?').bind(row.attempt, row.action, row.updated)),
           db.prepare('UPDATE installer_alert_state SET lease_until = 0, next_send = ?, delivery_failed = 0 WHERE id = 1').bind(time + 60 * 60_000),
