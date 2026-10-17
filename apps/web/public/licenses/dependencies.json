@@ -1103,20 +1103,20 @@
     },
     {
       "name": "@img/sharp-darwin-arm64",
-      "version": "0.35.4",
+      "version": "0.35.5",
       "license": "Apache-2.0",
       "repository": "git+https://github.com/lovell/sharp.git",
-      "source": "https://registry.npmjs.org/@img/sharp-darwin-arm64/-/sharp-darwin-arm64-0.35.4.tgz",
+      "source": "https://registry.npmjs.org/@img/sharp-darwin-arm64/-/sharp-darwin-arm64-0.35.5.tgz",
       "notices": [
-        "packages/img__sharp-darwin-arm64@0.35.4/LICENSE"
+        "packages/img__sharp-darwin-arm64@0.35.5/LICENSE"
       ]
     },
     {
       "name": "@img/sharp-libvips-darwin-arm64",
-      "version": "1.3.3",
+      "version": "1.3.4",
       "license": "LGPL-3.0-or-later",
       "repository": "git+https://github.com/lovell/sharp-libvips.git",
-      "source": "https://registry.npmjs.org/@img/sharp-libvips-darwin-arm64/-/sharp-libvips-darwin-arm64-1.3.3.tgz",
+      "source": "https://registry.npmjs.org/@img/sharp-libvips-darwin-arm64/-/sharp-libvips-darwin-arm64-1.3.4.tgz",
       "notices": []
     },
     {
@@ -1239,12 +1239,12 @@
     },
     {
       "name": "@modelcontextprotocol/sdk",
-      "version": "1.30.1",
+      "version": "1.32.1",
       "license": "MIT",
       "repository": "git+https://github.com/modelcontextprotocol/typescript-sdk.git",
-      "source": "https://registry.npmjs.org/@modelcontextprotocol/sdk/-/sdk-1.30.1.tgz",
+      "source": "https://registry.npmjs.org/@modelcontextprotocol/sdk/-/sdk-1.32.1.tgz",
       "notices": [
-        "packages/modelcontextprotocol__sdk@1.30.1/LICENSE"
+        "packages/modelcontextprotocol__sdk@1.32.1/LICENSE"
       ]
     },
     {
@@ -3646,12 +3646,12 @@
     },
     {
       "name": "katex",
-      "version": "0.16.47",
+      "version": "0.18.2",
       "license": "MIT",
       "repository": "https://github.com/KaTeX/KaTeX.git",
-      "source": "https://registry.npmjs.org/katex/-/katex-0.16.47.tgz",
+      "source": "https://registry.npmjs.org/katex/-/katex-0.18.2.tgz",
       "notices": [
-        "packages/katex@0.16.47/LICENSE"
+        "packages/katex@0.18.2/LICENSE"
       ]
     },
     {
@@ -5408,12 +5408,12 @@
     },
     {
       "name": "sharp",
-      "version": "0.35.4",
+      "version": "0.35.5",
       "license": "Apache-2.0",
       "repository": "git+https://github.com/lovell/sharp.git",
-      "source": "https://registry.npmjs.org/sharp/-/sharp-0.35.4.tgz",
+      "source": "https://registry.npmjs.org/sharp/-/sharp-0.35.5.tgz",
       "notices": [
-        "packages/sharp@0.35.4/LICENSE"
+        "packages/sharp@0.35.5/LICENSE"
       ]
     },
     {
@@ -5518,12 +5518,12 @@
     },
     {
       "name": "source-map-js",
-      "version": "1.2.1",
+      "version": "1.2.2",
       "license": "BSD-3-Clause",
       "repository": "7rulnik/source-map-js",
-      "source": "https://registry.npmjs.org/source-map-js/-/source-map-js-1.2.1.tgz",
+      "source": "https://registry.npmjs.org/source-map-js/-/source-map-js-1.2.2.tgz",
       "notices": [
-        "packages/source-map-js@1.2.1/LICENSE"
+        "packages/source-map-js@1.2.2/LICENSE"
       ]
     },
     {
