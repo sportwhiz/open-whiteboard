@@ -1,16 +1,18 @@
 # Open Whiteboard on GoDaddy Node.js Hosting
 
-Upload the ready-made ZIP to GoDaddy, add two app settings, and open your board. GoDaddy installs the dependencies and supplies the managed MySQL connection and server port. Open Whiteboard creates its tables and private sign-in keys when it starts.
+Use [guided setup](https://setup.openwhiteboard.app/) to install Open Whiteboard in your GoDaddy account. Create a temporary key, choose an existing hosting plan, and save your setup passphrase. The installer sets the app’s address and secrets, uploads the verified release, publishes it, and checks that it is running. It does not purchase a plan or change your other apps.
 
-You can start with GoDaddy's Preview address. Choose a custom domain when you are ready to publish.
+The same page has instructions you can copy into Claude, Codex or another coding agent. Credentials stay out of the copied instructions. The agent uses GoDaddy sign-in or a private local credential store and deploys the same verified package.
 
-## Guided deployment
+You need an active GoDaddy Node.js Hosting plan with a free app slot. Setup uses the published address supplied by GoDaddy. Preview remains on its configuration guide until you give it its own app origin; it does not need to be configured to use the published whiteboard. Custom domains are an optional, separate setup.
 
-The new [guided installer](../tools/godaddy-deploy/README.md) creates the app, chooses an existing plan, sets its address and private setup passphrase, and publishes the ready-made package. It includes temporary-token instructions and a copyable setup prompt for Claude, Codex, or another coding agent. The marketing site has a browser-only walkthrough. Its live deploy button will open the hosted installer after the installer and its release pin are qualified.
+After installation, open your whiteboard, create the owner account and enroll an authenticator. Revoke the temporary setup key. In **Administration → Updates**, connect a separate update token if you want to install updates from the app or opt into compatible security patches.
 
-**Release gate:** the published v0.4.0 ZIP fails GoDaddy’s supervisor startup probe. The exact v0.4.1 prerelease has passed fresh installation and restart checks. Update and recovery checks remain open, so the guided installer stays closed until a qualified stable release is pinned. A briefly working app does not establish that a provider deployment completed.
+The [launch evidence](godaddy-launch-checklist.md) records the exact release and live tests. The [installer operations guide](../tools/godaddy-deploy/README.md) covers deployment, failure alerts and recovery.
 
-## Create your app
+## Manual installation
+
+The steps below are for people who prefer configuring the app themselves.
 
 1. Download [open-whiteboard-node.zip](https://github.com/sportwhiz/open-whiteboard/releases/latest/download/open-whiteboard-node.zip) from the latest stable Open Whiteboard release.
 2. In **GoDaddy Node.js Hosting**, create an app and upload the ZIP. Use GoDaddy's managed MySQL database and Node 22.16 or newer within Node 22.
@@ -65,7 +67,7 @@ Older Node packages require a dashboard upload to obtain the new updater. Before
 
 ### Automatic updates
 
-The next qualified Node ZIP includes the GoDaddy updater. It uploads a verified release package to the existing app and publishes it without changing its settings or storage. Automatic installation is off until the owner connects an update token and enables compatible security patches. Feature releases wait for the owner; database or board-format changes require a backup and guided upgrade.
+The current Node ZIP includes the GoDaddy updater. It uploads a verified release package to the existing app and publishes it without changing its settings or storage. Automatic installation is off until the owner connects an update token and enables compatible security patches. Feature releases wait for the owner; database or board-format changes require a backup and guided upgrade.
 
 A GitHub branch connection is a separate deployment method. It does not download Open Whiteboard release ZIPs or keep a cloned installer repository in sync. Use the packaged updater for standard installations. Teams with custom source changes should manage their own deployments.
 

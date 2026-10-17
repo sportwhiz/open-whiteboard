@@ -1,0 +1,29 @@
+{
+  "verifiedAt": "2026-10-17T20:22:37.515Z",
+  "release": {
+    "version": "0.4.2",
+    "commit": "a931201ed2e9622772829bd94947a71da2da9ed9",
+    "sha256": "16c1efd4ad471dcf20e518e8d5d94ea54d37d5b3088bca561ff64a0974c7ac12"
+  },
+  "method": "official GoDaddy CLI 0.2.29 with private JSON files and idempotent REST source upload",
+  "existingPlanUsed": true,
+  "newPurchases": false,
+  "providerPublication": "COMPLETED",
+  "healthReady": true,
+  "accountAndMfa": true,
+  "ownerAndGuestPermissions": true,
+  "boardSave": true,
+  "websocket": true,
+  "oauthMcp": true,
+  "providerConfirmedRestart": {
+    "startupAt": "2026-10-17T20:22:31.614Z",
+    "providerState": "running",
+    "healthReady": true
+  },
+  "browserSignInAndMfa": true,
+  "browserBoardRendered": true,
+  "limitations": [
+    "The test used an existing local broad Hosting PAT through GDDY_PAT. Browser OAuth sign-in and issuance of a restricted nine-scope PAT were not exercised."
+  ],
+  "publishedArtifactMatched": true
+}

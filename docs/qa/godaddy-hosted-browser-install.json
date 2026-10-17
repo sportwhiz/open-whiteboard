@@ -1,0 +1,29 @@
+{
+  "verifiedAt": "2026-10-17T20:33:53.469Z",
+  "installer": "https://setup.openwhiteboard.app/",
+  "workerVersion": "6ed26035-6b57-464d-8982-793a5fb7fccc",
+  "release": {
+    "version": "0.4.2",
+    "commit": "a931201ed2e9622772829bd94947a71da2da9ed9",
+    "sha256": "16c1efd4ad471dcf20e518e8d5d94ea54d37d5b3088bca561ff64a0974c7ac12"
+  },
+  "method": "actual hosted browser wizard",
+  "providerPublication": "COMPLETED",
+  "healthReady": true,
+  "credentialsCleared": true,
+  "accountAndMfa": true,
+  "ownerAndGuestPermissions": true,
+  "boardSave": true,
+  "websocket": true,
+  "oauthMcp": true,
+  "providerConfirmedRestart": {
+    "startupAt": "2026-10-17T20:33:48.342Z",
+    "providerState": "running",
+    "healthReady": true
+  },
+  "updateConnectionVerified": true,
+  "automaticUpdates": false,
+  "limitations": [
+    "Live credential had broad Hosting permissions. Issuance and live use of an exactly nine-scope PAT were not exercised."
+  ]
+}

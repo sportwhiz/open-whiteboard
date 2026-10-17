@@ -1,6 +1,6 @@
 {
-  "version": "0.4.0",
-  "url": "https://github.com/sportwhiz/open-whiteboard/releases/download/v0.4.0/open-whiteboard-node.zip",
-  "sha256": "1ab6debff1ab64d2ca138f1ac73a148afe38b8b7bbbbcc693570038fa5064516",
-  "qualified": false
+  "version": "0.4.2",
+  "url": "https://github.com/sportwhiz/open-whiteboard/releases/download/v0.4.2/open-whiteboard-node.zip",
+  "sha256": "16c1efd4ad471dcf20e518e8d5d94ea54d37d5b3088bca561ff64a0974c7ac12",
+  "qualified": true
 }
