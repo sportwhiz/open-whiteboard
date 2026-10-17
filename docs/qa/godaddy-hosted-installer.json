@@ -25,10 +25,10 @@
     "testIncidentFinallyResolved": true,
     "independentUptimeScheduleEnabled": true,
     "independentLiveEndpointCheck": true,
-    "independentTestRecovery": true
+    "independentTestRecovery": true,
+    "scheduledDigestInboxConfirmed": true
   },
   "unconfirmed": [
-    "Scheduled failure-digest inbox receipt",
     "Independent GitHub notification email delivery"
   ],
   "testMethod": [
@@ -37,7 +37,8 @@
     "The final successful provider request resolved the test incident. Another rejected request before recovery retained its reported state and did not reset the digest cooldown.",
     "All 89 installer tests, including an actual Workers-runtime regression, passed. Desktop and mobile browser smoke tests passed; those browser tests use provider fixtures.",
     "A valid PAT without a User-Agent received HTML 403 from GoDaddy. An explicit User-Agent fixed the live read. Workers also rejects redirect:error; manual redirects are now rejected explicitly without forwarding credentials.",
-    "Only the dedicated installer Worker, its D1 database and the product repository monitor were configured. Existing Cloudflare services and domains were not changed."
+    "Only the dedicated installer Worker, its D1 database and the product repository monitor were configured. Existing Cloudflare services and domains were not changed.",
+    "The operator confirmed receipt of the first scheduled failure digest on October 17, 2026 and supplied its diagnostic-only contents. The displayed release is the installer\u2019s still-blocked v0.4.0 pin; it does not identify the separate v0.4.1 qualification app."
   ],
   "independentMonitorRuns": {
     "outage": "https://github.com/sportwhiz/open-whiteboard/actions/runs/39059619288",
