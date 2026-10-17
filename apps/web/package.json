@@ -88,7 +88,7 @@
     "playwright": "1.62.1",
     "tsx": "4.21.0",
     "typescript": "5.7.2",
-    "vite": "6.4.3",
+    "vite": "8.3.4",
     "vitest": "5.0.2",
     "wrangler": "4.142.0"
   },
