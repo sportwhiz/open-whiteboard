@@ -1,7 +1,7 @@
 {
   "testedAt": "2026-10-17T19:21:08Z",
   "installerUrl": "https://open-whiteboard-godaddy-installer.cool-salad-9f16.workers.dev",
-  "runtimeSourceCommit": "d00351943058309d64bc65564c18bc97053d9ac4",
+  "runtimeSourceCommit": "0f9b8d3e33cc6da0ec0dd432fd21080cb41667a7",
   "runtimeFixPullRequest": "https://github.com/sportwhiz/open-whiteboard/pull/30",
   "releaseGateOpen": false,
   "migrations": [
@@ -38,11 +38,22 @@
     "All 89 installer tests, including an actual Workers-runtime regression, passed. Desktop and mobile browser smoke tests passed; those browser tests use provider fixtures.",
     "A valid PAT without a User-Agent received HTML 403 from GoDaddy. An explicit User-Agent fixed the live read. Workers also rejects redirect:error; manual redirects are now rejected explicitly without forwarding credentials.",
     "Only the dedicated installer Worker, its D1 database and the product repository monitor were configured. Existing Cloudflare services and domains were not changed.",
-    "The operator confirmed receipt of the first scheduled failure digest on October 17, 2026 and supplied its diagnostic-only contents. The displayed release is the installer\u2019s still-blocked v0.4.0 pin; it does not identify the separate v0.4.1 qualification app."
+    "The operator confirmed receipt of the first scheduled failure digest on October 17, 2026 and supplied its diagnostic-only contents. The displayed release is the installer\u2019s still-blocked v0.4.0 pin; it does not identify the separate v0.4.1 qualification app.",
+    "The revised holding page was deployed separately from GitHub CI at 19:21:54 UTC. Cloudflare reports that Worker version at 100% traffic. A fresh fetch of /app.js matched the deployed source byte for byte and contained the revised qualification message. Later documentation-only commits do not require redeploying the unchanged asset."
   ],
   "independentMonitorRuns": {
     "outage": "https://github.com/sportwhiz/open-whiteboard/actions/runs/39059619288",
     "recovery": "https://github.com/sportwhiz/open-whiteboard/actions/runs/39061841165",
     "liveEndpoint": "https://github.com/sportwhiz/open-whiteboard/actions/runs/39061843197"
+  },
+  "runtimeTestedCommit": "d00351943058309d64bc65564c18bc97053d9ac4",
+  "deployment": {
+    "deployedAt": "2026-10-17T19:21:54.819681Z",
+    "workerVersionId": "33f72b9d-39d3-4876-81ac-036f5e9bda47",
+    "trafficPercentage": 100,
+    "assetVerifiedAt": "2026-10-17T19:35:13.367Z",
+    "assetPath": "/app.js",
+    "assetSha256": "cb659501ea18eb2c1618db6ce34490e99d07aa409ac53caddd578141cab09eeb",
+    "assetMatchesSource": true
   }
 }
