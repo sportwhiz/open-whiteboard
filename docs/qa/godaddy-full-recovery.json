@@ -1,0 +1,47 @@
+{
+  "date": "2026-10-17",
+  "release": {
+    "version": "0.4.1",
+    "commit": "66c7ace460ff50f6484e3056a0fef720091d894a",
+    "sha256": "347944203cd01b72b835e279dfe7661743c1a1940f8f8a1ff0c130f688dec59b"
+  },
+  "provider": "GoDaddy Node.js Hosting Deluxe",
+  "backup": {
+    "encrypted": true,
+    "format": "open-whiteboard/installation-recovery",
+    "mysqlTables": 7,
+    "includesPrivateSqliteCatalog": true,
+    "includesManagedInstallationKeys": true,
+    "exclusiveApplicationWriterLock": true
+  },
+  "restore": {
+    "separateEmptyApp": true,
+    "providerDeploymentCompleted": true,
+    "originalReleaseRepublished": true,
+    "freshPasswordSignIn": true,
+    "mfaRequiredAndVerified": true,
+    "existingOwnerSession": true,
+    "settings": true,
+    "boardContentAndDocumentEpochUnchanged": true,
+    "imageBytesIdentical": true,
+    "hostingUpdateConnectionDisconnected": true,
+    "sourceUnchangedAndHealthy": true,
+    "temporaryRecoverySecretsRemovedFromBothApps": true,
+    "verifiedAt": "2026-10-17T20:02:01.087Z"
+  },
+  "localChecks": [
+    "Wrong key, tampering and malformed archives rejected",
+    "Unconfigured Preview exposes no recovery endpoint and opens no database",
+    "Bearer, canonical host and browser-origin boundary checks",
+    "Live writer excludes backup/restore",
+    "Interruption after MySQL commit resumes only the same archive",
+    "Lost success response does not reapply completed restore",
+    "Populated destination refuses another archive",
+    "Fresh sign-in still requires MFA; reused MFA code rejected"
+  ],
+  "limitations": [
+    "Live rehearsal used the private SQLite catalog backend and the exact v0.4.1 package on both apps. Other schemas and the full MySQL catalog are not qualified by this test.",
+    "The post-rehearsal queued-mail suppression safeguard is covered by the local integration test; the live fixture had no pending mail to suppress.",
+    "Backup files, keys, credentials, app identities and operation records remain private."
+  ]
+}

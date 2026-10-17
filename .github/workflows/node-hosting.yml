@@ -64,7 +64,7 @@ jobs:
           import mysql from 'mysql2/promise';
           const db = await mysql.createConnection({host: process.env.DB_HOST, port: Number(process.env.DB_PORT), user: 'root', password: 'disposable-node-root'});
           await db.query('SET GLOBAL log_bin_trust_function_creators=1');
-          for (const name of ['huddle_sql_test', 'huddle_schema_test', 'huddle_source_test', 'huddle_package_test', 'huddle_package_mysql_test', 'huddle_lifecycle_test', 'huddle_migrations_test', 'huddle_variant_test']) {
+          for (const name of ['huddle_sql_test', 'huddle_schema_test', 'huddle_source_test', 'huddle_package_test', 'huddle_package_mysql_test', 'huddle_lifecycle_test', 'huddle_migrations_test', 'huddle_variant_test', 'whiteboard_recovery_source_test', 'whiteboard_recovery_target_test']) {
             await db.query('CREATE DATABASE ??', [name]);
             await db.query("GRANT ALL PRIVILEGES ON ??.* TO 'huddle'@'%'", [name]);
           }
@@ -85,6 +85,10 @@ jobs:
         run: npm ci --omit=dev && npm run build
       - name: Packaged GoDaddy setup and durable restart
         run: HUDDLE_NODE_TEST_PLATFORM=godaddy HUDDLE_MAIL_GATEWAY=off HUDDLE_DATABASE_NAMESPACE=live HUDDLE_NODE_TEST_PACKAGE=1 HUDDLE_NODE_TEST_DATABASE=huddle_package_test pnpm --filter @whiteboard/web run test:node
+      - name: Encrypted recovery and interrupted-restore checks
+        run: |
+          node --test tools/node-recovery/*.test.mjs
+          node tools/node-recovery/recovery.integration.mjs
       - name: Packaged full MySQL setup and durable restart
         run: HUDDLE_DATABASE_NAMESPACE=live HUDDLE_NODE_TEST_PACKAGE=1 HUDDLE_NODE_TEST_DATABASE=huddle_package_mysql_test pnpm --filter @whiteboard/web run test:node
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

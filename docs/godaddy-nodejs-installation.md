@@ -138,3 +138,7 @@ Use disposable local MySQL 8.4 databases ending in `_test`. Run Cloudflare `pnpm
 - [Hosting deployment contract](https://github.com/godaddy/nodejs-hosting-agent-skill/blob/main/skills/godaddy-nodejs-hosting/contract.md)
 - [Managed email gateway](https://github.com/godaddy/nodejs-hosting-agent-skill/blob/main/skills/godaddy-nodejs-hosting/email.md)
 - [Hosting concepts and preview/publish variants](https://developer.godaddy.com/en/docs/api-users/hosting/concepts)
+
+### Maintainer recovery tool
+
+The [full installation recovery tool](../tools/node-recovery/README.md) takes an encrypted, coordinated copy of the private SQLite catalog, MySQL room/image data and managed installation keys while the application is stopped. It restores only into an empty installation with the same schema. The live v0.4.1 rehearsal retained sign-in, MFA, sessions, settings, boards and image bytes; [evidence](qa/godaddy-full-recovery.json). This is a maintenance operation, separate from exporting a board or updating application code.

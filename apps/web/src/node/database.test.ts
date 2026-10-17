@@ -37,6 +37,8 @@ describe("Node MySQL infrastructure", () => {
     };
     expect(buildMysqlPoolOptions(env)).toMatchObject({
       connectionLimit: 5,
+      maxIdle: 4,
+      idleTimeout: 30_000,
       queueLimit: 100,
       multipleStatements: false,
       ssl: { rejectUnauthorized: true },
