@@ -8,7 +8,7 @@ You can start with GoDaddy's Preview address. Choose a custom domain when you ar
 
 The new [guided installer](../tools/godaddy-deploy/README.md) creates the app, chooses an existing plan, sets its address and private setup passphrase, and publishes the ready-made package. It includes temporary-token instructions and a copyable setup prompt for Claude, Codex, or another coding agent. The marketing site has a browser-only walkthrough. Its live deploy button will open the hosted installer after the installer and its release pin are qualified.
 
-**Release gate:** the published v0.4.0 ZIP fails GoDaddy’s supervisor startup probe. The fix has passed live publication in a candidate build. The guided installer blocks that old ZIP until a fixed release is published and pinned. Do not interpret a briefly working app as a completed deployment.
+**Release gate:** the published v0.4.0 ZIP fails GoDaddy’s supervisor startup probe. The exact v0.4.1 prerelease has passed fresh installation and restart checks. Update and recovery checks remain open, so the guided installer stays closed until a qualified stable release is pinned. A briefly working app does not establish that a provider deployment completed.
 
 ## Create your app
 
