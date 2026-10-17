@@ -19,6 +19,8 @@ Open Whiteboard is a whiteboard you host yourself. Put sticky notes and sketches
 
 This is the first public release. Cloudflare is the primary hosting path. The Node adapter has local qualification and live GoDaddy candidate testing. The guided installer is waiting for a fixed public release; see the GoDaddy guide for its release gate. Please report bugs and avoid using an untested installation as the only copy of important work.
 
+Some canvas fonts are downloaded from `fonts.cdnfonts.com` when a board uses them. That provider receives the font request and your network address; board text and sign-in credentials are not sent with it. Self-hosting the app does not currently remove this font dependency. Block that domain if your deployment requires no third-party font requests; those fonts will use fallbacks.
+
 ## Host on Cloudflare
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/sportwhiz/open-whiteboard)

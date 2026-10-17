@@ -11,8 +11,10 @@ export function useStickyTextLayout(host: HTMLElement, state: CanvasState, contr
   const measurements = useRef(new Map<string, { text: HTMLElement; key: string; size: number }>());
   useEffect(() => {
     const loaded = () => setFontsRevision((revision) => revision + 1);
+    let active = true;
+    void document.fonts.ready.then(() => { if (active) loaded(); });
     document.fonts.addEventListener("loadingdone", loaded);
-    return () => document.fonts.removeEventListener("loadingdone", loaded);
+    return () => { active = false; document.fonts.removeEventListener("loadingdone", loaded); };
   }, []);
   useLayoutEffect(() => {
     // Native blocks can mount their inline editor after React's layout pass,
@@ -59,7 +61,7 @@ export function useStickyTextLayout(host: HTMLElement, state: CanvasState, contr
       // The rendered markup includes partial bold/italic changes, which the
       // whole-note toolbar's aggregated marks cannot distinguish.
       const key = JSON.stringify([text.innerHTML, note.w, note.h, note.textScale,
-        note.textStyle, fontsRevision, note.locked, controller.editable()]);
+        note.textStyle, fontsRevision, document.fonts.status, state.editing?.id === note.id, note.locked, controller.editable()]);
       const cached = measurements.current.get(note.id);
       if (cached?.text === text && cached.key === key) {
         next[note.id] = cached.size;
@@ -79,8 +81,11 @@ export function useStickyTextLayout(host: HTMLElement, state: CanvasState, contr
       next[note.id] = low;
       measurements.current.set(note.id, { text, key, size: low });
       // Once text reaches a readable minimum, grow the paper instead of
-      // hiding the end of a longer note. This is a saved, undoable edit.
-      if (low === 12 && text.scrollHeight > available)
+      // hiding the end of a longer note. Only the author grows shared paper,
+      // after fonts settle; observers must never acquire undo entries. Growth
+      // stays in the author's current typing transaction.
+      if (state.editing?.id === note.id && document.fonts.status === "loaded" &&
+          fontsRevision > 0 && low === 12 && text.scrollHeight > available)
         controller.fitAutoNoteHeight(note.id, text.scrollHeight);
     }
     for (const id of measurements.current.keys()) if (!live.has(id)) measurements.current.delete(id);

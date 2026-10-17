@@ -41,7 +41,7 @@
         <input id="token" type="password" required autocomplete="off" spellcheck="false" placeholder="Paste your personal access token" aria-describedby="token-help">
         <p id="token-help" class="hint">GoDaddy calls this a “Personal Access Token.” It is different from your GoDaddy password.</p>
 
-        <p class="privacy">This installer sends the key to GoDaddy and keeps it in memory while this page is open. It does not save the key. These permissions cover your GoDaddy account, so use an installer you trust. You can also run this one locally.</p><p class="privacy">The hosted installer records failed setup steps and sends the maintainer a short error report. Reports contain a random support reference, the release version, and an error category. They exclude your key, passphrase, app name, and raw logs. Records are deleted after 30 days without activity.</p>
+        <p class="privacy">This installer sends the key to GoDaddy and keeps it in memory while this page is open. It does not save the key. These permissions cover your GoDaddy account, so use an installer you trust. You can also run this one locally.</p><p class="privacy">The hosted installer records failed setup steps and sends the maintainer a short error report. Reports contain a random support reference, the release version, and an error category. They exclude your key, passphrase, app name, and raw logs. Records are deleted after 30 days without activity. Before a successful connection, only error-category counts are kept. Network addresses are used for rate limiting and are not saved in these reports.</p>
         <button id="connect" type="submit" disabled>Connect GoDaddy <span aria-hidden="true">→</span></button>
       </form>
       <form id="deploy-form" hidden>

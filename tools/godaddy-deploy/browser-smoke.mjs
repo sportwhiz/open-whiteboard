@@ -8,7 +8,8 @@ const { chromium } = require('playwright');
 const fixture = providerFixture();
 const reports = [];
 let monitoringReady = true;
-const monitor = { ready: async () => monitoringReady, record: async event => { reports.push(event); return true; }, resolve: async () => {} };
+const knownAttempts = new Set();
+const monitor = { authorize: async attempt => { knownAttempts.add(attempt); return true; }, ready: async () => monitoringReady, record: async event => { reports.push(event); return knownAttempts.has(event.attempt); }, resolve: async () => {} };
 const origin = 'http://127.0.0.1:5306';
 const server = createInstallerServer({ api: createApi({ release, fetchImpl: fixture.fetchImpl, monitor }), publicOrigin: origin });
 await new Promise(resolve => server.listen(5306, '127.0.0.1', resolve));
@@ -32,7 +33,7 @@ try {
   await page.getByLabel('Paste your temporary key').fill('wrong-test-token');
   await page.getByRole('button', { name: 'Connect GoDaddy' }).click();
   await page.getByRole('alert').filter({ hasText: 'rejected this token' }).waitFor();
-  assert.match(await page.getByRole('alert').innerText(), /Support reference: [a-f0-9-]{36}/);
+  assert.doesNotMatch(await page.getByRole('alert').innerText(), /Support reference:/);
   assert.deepEqual(Object.keys(reports[0]).sort(), ['action', 'attempt', 'category']);
   fixture.options.noPlans = true;
   await page.getByLabel('Paste your temporary key').fill(token);
@@ -63,6 +64,7 @@ try {
   await page.getByRole('button', { name: 'Deploy to GoDaddy' }).click();
   await page.getByRole('alert').filter({ hasText: 'could not be reached' }).waitFor();
   assert.equal(fixture.created, 1);
+  assert.match(await page.getByRole('alert').innerText(), /Support reference: [a-f0-9-]{36}/);
   await page.getByRole('button', { name: 'Continue deployment' }).click();
   await page.getByRole('heading', { name: 'Reconnect to continue', exact: true }).waitFor();
   assert.equal(fixture.created, 1);

@@ -65,6 +65,8 @@ describe("GoDaddy durable updates", () => {
   let uploadLost = false,
     publishLost = false,
     deploymentStatus = "COMPLETED",
+    importStatus = "COMPLETED",
+    githubDown = false,
     providerStatus = 200,
     corrupt = false;
   let requests: { url: string; init: RequestInit }[];
@@ -91,6 +93,8 @@ describe("GoDaddy durable updates", () => {
     uploadLost = false;
     publishLost = false;
     deploymentStatus = "COMPLETED";
+    importStatus = "COMPLETED";
+    githubDown = false;
     providerStatus = 200;
     corrupt = false;
     vi.stubGlobal(
@@ -120,7 +124,7 @@ describe("GoDaddy durable updates", () => {
             return Response.json({ importId: "import-one" });
           }
           if (url.endsWith("/imports/import-one"))
-            return Response.json({ status: "COMPLETED" });
+            return Response.json({ status: importStatus });
           if (url.endsWith("/deployments")) {
             if (publishLost) {
               publishLost = false;
@@ -138,6 +142,7 @@ describe("GoDaddy durable updates", () => {
             "https://api.github.com/repositories/1404455583/releases/",
           ),
         ).toBe(true);
+        if (githubDown) return new Response("Unavailable", { status: 503 });
         if (url.endsWith("/assets/123")) return Response.json(release);
         if (url.endsWith("/assets/456"))
           return new Response(corrupt ? "tampered" : zip);
@@ -185,6 +190,11 @@ describe("GoDaddy durable updates", () => {
   }
   function row() {
     return db.prepare("SELECT * FROM software_updates LIMIT 1").get() as any;
+  }
+  function expireStep() {
+    const cp = JSON.parse(row().checkpoint);
+    cp.stepStartedAt = Date.now() - 21 * 60_000;
+    db.prepare("UPDATE software_updates SET checkpoint=?").run(JSON.stringify(cp));
   }
   function resetBackoff() {
     const cp = JSON.parse(row().checkpoint);
@@ -411,18 +421,19 @@ describe("GoDaddy durable updates", () => {
   it("offers recovery instead of waiting forever for a provider job or the wrong running version", async () => {
     await start();
     await steps(3);
-    db.prepare("UPDATE software_updates SET created_at=?").run(
-      Date.now() - 21 * 60 * 1000,
-    );
+    expireStep();
     deploymentStatus = "PENDING";
     await steps(1);
     expect(row().status).toBe("uncertain");
     await route("continue", { id: row().id });
     deploymentStatus = "COMPLETED";
     await steps(1);
+    expect(row().status).toBe("verifying");
+    expireStep();
+    await steps(1);
     expect(row().status).toBe("uncertain");
+    // The newly started target verifies itself without another owner click.
     Object.assign(currentRelease, release);
-    await route("continue", { id: row().id });
     await steps(1);
     expect(row().status).toBe("succeeded");
   });
@@ -432,9 +443,7 @@ describe("GoDaddy durable updates", () => {
     providerStatus = 503;
     await steps(1);
     expect(row().status).toBe("verifying");
-    db.prepare("UPDATE software_updates SET created_at=?").run(
-      Date.now() - 21 * 60 * 1000,
-    );
+    expireStep();
     resetBackoff();
     await steps(1);
     expect(row().status).toBe("uncertain");
@@ -447,4 +456,35 @@ describe("GoDaddy durable updates", () => {
     expect(row().status).toBe("succeeded");
     expect(requests.every((r) => !r.init.method || r.init.method === "GET")).toBe(true);
   });
+  it("gives Continue and each new phase a fresh timeout without renewing write keys", async () => {
+    await start(); await steps(2);
+    importStatus = "PENDING";
+    expireStep(); await steps(1);
+    expect(row().status).toBe("uncertain");
+    const before = JSON.parse(row().checkpoint);
+    await route("continue", { id: row().id });
+    await steps(2);
+    expect(row().status).toBe("deploying");
+    expect(JSON.parse(row().checkpoint).stepStartedAt).toBeGreaterThan(before.stepStartedAt);
+    expect(JSON.parse(row().checkpoint).publishKey).toBe(before.publishKey);
+    expireStep(); importStatus = "COMPLETED";
+    await steps(1);
+    deploymentStatus = "PENDING";
+    await steps(1);
+    expect(row().status).toBe("verifying");
+    expect(JSON.parse(row().checkpoint).stepStartedAt).toBeGreaterThan(before.stepStartedAt);
+  });
+  it("retries a failed release check after fifteen minutes instead of a day", async () => {
+    await connect();
+    githubDown = true; await steps(1);
+    expect(db.prepare("SELECT check_error FROM software_update_settings").get()?.check_error).toBeTruthy();
+    requests.length = 0; githubDown = false;
+    await steps(1);
+    expect(requests).toHaveLength(0);
+    db.prepare("UPDATE software_update_settings SET checked_at=?").run(Date.now() - 16 * 60_000);
+    await steps(1);
+    expect(db.prepare("SELECT check_error FROM software_update_settings").get()?.check_error).toBeNull();
+    expect(requests.length).toBeGreaterThan(0);
+  });
+
 });

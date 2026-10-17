@@ -33,6 +33,8 @@ type Checkpoint = {
   importId?: string;
   deploymentId?: string;
   nextAttemptAt?: number;
+  phase?: "package" | "upload" | "import" | "publish" | "deployment" | "verify";
+  stepStartedAt?: number;
 };
 type Job = {
   id: string;
@@ -42,6 +44,12 @@ type Job = {
   created_at: number;
   updated_at: number;
 };
+function enterPhase(checkpoint: Checkpoint, phase: Checkpoint["phase"]) {
+  if (checkpoint.phase !== phase) {
+    checkpoint.phase = phase;
+    checkpoint.stepStartedAt = Date.now();
+  }
+}
 class PackageError extends Error {}
 class ProviderError extends Error {
   constructor(readonly status: number) {
@@ -188,6 +196,8 @@ async function queue(env: NativeEnv, release: Release, actor: string | null) {
     appId: connected.appId,
     uploadKey: crypto.randomUUID(),
     publishKey: crypto.randomUUID(),
+    phase: "package",
+    stepStartedAt: now,
   };
   const result = await env.CATALOG.prepare(
     `INSERT INTO software_updates(id,release,previous_release,version,status,actor_id,created_at,updated_at,checkpoint) SELECT ?,?,?,?,'queued',?,?,?,? WHERE NOT EXISTS(SELECT 1 FROM software_updates WHERE status IN ${ACTIVE})`,
@@ -402,6 +412,7 @@ export async function godaddyUpdateRoutes(
         "UPDATER_NOT_CONNECTED",
       );
     checkpoint.nextAttemptAt = 0;
+    checkpoint.stepStartedAt = Date.now();
     await saveJob(
       env,
       job,
@@ -449,7 +460,7 @@ export async function maintainGoDaddyUpdates(env: NativeEnv) {
   )
     return;
   const job = await env.CATALOG.prepare(
-    "SELECT * FROM software_updates WHERE status IN ('queued','building','deploying','verifying') LIMIT 1",
+    "SELECT * FROM software_updates WHERE status IN ('queued','building','deploying','verifying','uncertain') LIMIT 1",
   ).first<Job>();
   if (!job) {
     if (
@@ -459,7 +470,8 @@ export async function maintainGoDaddyUpdates(env: NativeEnv) {
     )
       return;
     const config = await settings(env);
-    if ((config.checked_at ?? 0) < Date.now() - 86400000)
+    const checkInterval = config.check_error ? 15 * 60_000 : 86400000;
+    if ((config.checked_at ?? 0) < Date.now() - checkInterval)
       await checkReleases(env);
     const latest = await settings(env);
     if (
@@ -490,6 +502,14 @@ export async function maintainGoDaddyUpdates(env: NativeEnv) {
     return;
   }
   const checkpoint = JSON.parse(job.checkpoint) as Checkpoint;
+  const target = parseRelease(JSON.parse(job.release));
+  // A replacement process can finish verification after the old process timed
+  // out. Never resume writes or verify a different version without the owner.
+  if (job.status === "uncertain") {
+    if (!checkpoint.deploymentId || currentRelease.commit !== target.commit ||
+        currentRelease.version !== target.version || currentRelease.schema !== target.schema) return;
+  }
+  checkpoint.stepStartedAt ??= job.updated_at;
   if (
     checkpoint.provider !== "godaddy" ||
     (checkpoint.nextAttemptAt ?? 0) > Date.now()
@@ -513,9 +533,9 @@ export async function maintainGoDaddyUpdates(env: NativeEnv) {
     if (!connected || connected.appId !== checkpoint.appId)
       throw new ProviderError(401);
     const path = `/apps/${identifier(connected.appId)}`;
-    const target = parseRelease(JSON.parse(job.release));
     if (!checkpoint.package) {
       checkpoint.package = await packageMetadata(target);
+      enterPhase(checkpoint, "upload");
       await saveJob(env, job, "building", checkpoint);
       return;
     }
@@ -536,6 +556,7 @@ export async function maintainGoDaddyUpdates(env: NativeEnv) {
         body,
       });
       checkpoint.importId = identifier(result.importId);
+      enterPhase(checkpoint, "import");
       await saveJob(env, job, "building", checkpoint);
       return;
     }
@@ -555,7 +576,7 @@ export async function maintainGoDaddyUpdates(env: NativeEnv) {
         return;
       }
       if (imported.status !== "COMPLETED") {
-        if (Date.now() - job.created_at > 20 * 60 * 1000)
+        if (Date.now() - checkpoint.stepStartedAt > 20 * 60 * 1000)
           await saveJob(
             env,
             job,
@@ -565,6 +586,7 @@ export async function maintainGoDaddyUpdates(env: NativeEnv) {
           );
         return;
       }
+      enterPhase(checkpoint, "publish");
       // Persist publication intent before the request can stop this process.
       await saveJob(env, job, "deploying", checkpoint);
       const result = await provider(connected, `${path}/deployments`, {
@@ -576,6 +598,7 @@ export async function maintainGoDaddyUpdates(env: NativeEnv) {
         body: "{}",
       });
       checkpoint.deploymentId = identifier(result.deploymentId);
+      enterPhase(checkpoint, "deployment");
       await saveJob(env, job, "verifying", checkpoint);
       return;
     }
@@ -594,7 +617,7 @@ export async function maintainGoDaddyUpdates(env: NativeEnv) {
       return;
     }
     if (deployed.status !== "COMPLETED") {
-      if (Date.now() - job.created_at > 20 * 60 * 1000)
+      if (Date.now() - checkpoint.stepStartedAt > 20 * 60 * 1000)
         await saveJob(
           env,
           job,
@@ -604,6 +627,7 @@ export async function maintainGoDaddyUpdates(env: NativeEnv) {
         );
       return;
     }
+    enterPhase(checkpoint, "verify");
     if (
       currentRelease.commit !== target.commit ||
       currentRelease.version !== target.version ||
@@ -612,7 +636,7 @@ export async function maintainGoDaddyUpdates(env: NativeEnv) {
       await saveJob(
         env,
         job,
-        Date.now() - job.created_at > 20 * 60 * 1000
+        Date.now() - checkpoint.stepStartedAt > 20 * 60 * 1000
           ? "uncertain"
           : "verifying",
         checkpoint,
@@ -622,7 +646,7 @@ export async function maintainGoDaddyUpdates(env: NativeEnv) {
     }
     await env.CATALOG.batch([
       env.CATALOG.prepare(
-        "UPDATE software_updates SET status='succeeded',message=NULL,updated_at=? WHERE id=? AND status='verifying'",
+        "UPDATE software_updates SET status='succeeded',message=NULL,updated_at=? WHERE id=? AND status IN ('verifying','uncertain')",
       ).bind(Date.now(), job.id),
       env.CATALOG.prepare(
         "UPDATE software_update_settings SET active_release=? WHERE id='instance'",
@@ -646,7 +670,7 @@ export async function maintainGoDaddyUpdates(env: NativeEnv) {
       error instanceof ProviderError && [401, 403].includes(error.status);
     const rejected =
       error instanceof ProviderError && [400, 404, 422].includes(error.status);
-    const retryWindowElapsed = Date.now() - job.created_at > 20 * 60 * 1000;
+    const retryWindowElapsed = Date.now() - checkpoint.stepStartedAt > 20 * 60 * 1000;
     checkpoint.nextAttemptAt = Date.now() + 60_000;
     await saveJob(
       env,

@@ -110,7 +110,6 @@ export function createSticky(
       displayMode: NoteDisplayMode.EdgelessOnly,
       background: appearance?.background ?? { light: color, dark: color },
       edgeless: {
-        [STICKY_TEXT_STYLE_KEY]: appearance ? storedStickyTextStyle(readStickyTextStyle(appearance.edgeless)) : { size: "auto" },
         collapse: true,
         scale: 1,
         style: {
@@ -120,6 +119,7 @@ export function createSticky(
           shadowType: "--affine-note-shadow-box",
         },
         ...appearance?.edgeless,
+        [STICKY_TEXT_STYLE_KEY]: appearance ? storedStickyTextStyle(readStickyTextStyle(appearance.edgeless)) : { size: "auto" },
         collapsedHeight: size.h / (Number(appearance?.edgeless?.scale) || 1),
       },
     },
@@ -665,7 +665,7 @@ export function createCanvasController(editor: WhiteboardEditorElement) {
     editingText,
     fitAutoNoteHeight(id: string, contentHeight: number) {
       const note = gfx.getElementById<GfxModel>(id);
-      if (!note || !editable() || item(note).locked || !("props" in note)) return;
+      if (editing?.id !== id || !note || !editable() || item(note).locked || !("props" in note)) return;
       const current = item(note);
       if (!current.simpleSticky || current.textStyle.size !== "auto") return;
       const height = Math.ceil((contentHeight + 48) * current.textScale);

@@ -194,3 +194,38 @@ for (const scope of advertisedScopes) {
     }
   });
 }
+
+for (const [stage, action, field] of [['create', 'app-operation', 'operationId'], ['upload', 'import', 'importId'], ['publish', 'deployment', 'deploymentId']]) {
+  test(`Continue refreshes cached failed ${stage} without replacing the app or operation`, async () => {
+    const seen = []; let recovered = false;
+    const deployment = createDeployment({ details: { name: 'test', passphrase }, sleep: async () => {}, call: async (name, values) => {
+      seen.push({ name, values });
+      if (name === stage || name === action) return { [field]: 'saved-id', appId: 'NODEJS-test', status: recovered ? 'COMPLETED' : 'FAILED' };
+      if (name === 'create') return { operationId: 'created', appId: 'NODEJS-test', status: 'COMPLETED' };
+      if (name === 'upload') return { importId: 'uploaded', status: 'COMPLETED' };
+      if (name === 'publish') return { deploymentId: 'published', status: 'COMPLETED' };
+      if (name === 'status') return { running: true };
+      if (name === 'health') return { ready: true };
+      return {};
+    } });
+    await assert.rejects(deployment.run(), /stopped/);
+    await assert.rejects(deployment.run(), /stopped/);
+    recovered = true; await deployment.run();
+    assert.equal(seen.filter(c => c.name === stage).length, 1);
+    assert.equal(seen.filter(c => c.name === 'create').length, 1);
+    assert.equal(seen.filter(c => c.name === action).length, 2);
+    assert(seen.filter(c => c.name === action).every(c => c.values[field] === 'saved-id'));
+  });
+}
+test('per-caller throttling does not consume other callers global allowance', async () => {
+  const { allowRequest } = await import('./rate-limit.mjs');
+  const keys = []; let global = 0;
+  const env = { INSTALLER_LIMIT: { limit: async ({ key }) => { keys.push(key); return { success: keys.length !== 2 }; } }, INSTALLER_GLOBAL_LIMIT: { limit: async () => { global++; return { success: true }; } } };
+  const request = ip => new Request('https://installer.test/api', { headers: { 'CF-Connecting-IP': ip } });
+  assert.equal(await allowRequest(request('192.0.2.1'), env), true);
+  assert.equal(await allowRequest(request('192.0.2.1'), env), false);
+  assert.equal(await allowRequest(request('192.0.2.2'), env), true);
+  assert.equal(keys[0], keys[1]); assert.notEqual(keys[1], keys[2]);
+  assert.equal(global, 2); assert(!keys.join('').includes('192.0.2'));
+  assert.equal(await allowRequest(request('192.0.2.1'), {}), false);
+});

@@ -104,9 +104,17 @@ try {
       await input.waitFor();
       const rect = el => { const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; };
       assert.deepEqual(await input.evaluate(rect), await page.locator('[data-testid="edgeless-note-container"]').first().locator('.inline-editor').evaluate(rect), 'Resized note jumped when editing');
+      // A next note must normalize imported/future style values after copying
+      // appearance, rather than copying the unvalidated object over the result.
+      await page.evaluate(() => {
+        const doc = document.querySelector('whiteboard-editor').doc;
+        const note = doc.getModelsByFlavour('affine:note')[0];
+        doc.updateBlock(note, { edgeless: { ...note.props.edgeless, whiteboardText: { font: 'future', size: 'unknown', align: 'invalid', extra: 'discard' } } });
+      });
       await page.keyboard.press('Tab');
       await page.waitForFunction(() => document.querySelector('whiteboard-editor').doc.getModelsByFlavour('affine:note').length === 3);
       await input.waitFor();
+      assert.deepEqual(await page.evaluate(() => document.querySelector('whiteboard-editor').doc.getModelsByFlavour('affine:note')[2].props.edgeless.whiteboardText), {}, 'Copied style was not normalized');
       await page.keyboard.type('Next idea');
       assert((await texts()).includes('Next idea'), 'Tab did not focus the new note');
       assert.equal(await page.getByLabel('Text size', { exact: true }).inputValue(), 'm', 'Next notes should preserve their source text size');

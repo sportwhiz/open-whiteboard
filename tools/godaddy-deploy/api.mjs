@@ -74,8 +74,8 @@ export function createApi({ release, fetchImpl = fetch, monitor }) {
   }
   return async function api(request) {
     const json = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { ...headers, 'Content-Type': 'application/json' } });
-    let attempt, action;
-    const report = category => monitor?.record({ attempt, action, category }).catch(() => false);
+    let attempt, action, contactedProvider = false;
+    const report = category => monitor?.record({ attempt, action, category }, { aggregateUnverified: contactedProvider }).catch(() => false);
     try {
       if (request.method !== 'POST') return json({ error: 'Use POST.' }, 405);
       if (request.headers.get('origin') !== new URL(request.url).origin || request.headers.get('sec-fetch-site') === 'cross-site') return json({ error: 'Open the installer directly to continue.' }, 403);
@@ -103,6 +103,7 @@ export function createApi({ release, fetchImpl = fetch, monitor }) {
         }
         if (body) outgoing['Content-Type'] = contentType || (patch ? 'application/json-patch+json' : 'application/json');
         let response;
+        contactedProvider = true;
         try {
           response = await fetchImpl(`${GODADDY}${path}`, { method, headers: outgoing, body: contentType ? body : body ? JSON.stringify(body) : undefined, redirect: 'error', signal: AbortSignal.timeout(90_000) });
         } catch { fail('GoDaddy could not be reached. Continue to retry the same step safely.', 502); }
@@ -118,6 +119,7 @@ export function createApi({ release, fetchImpl = fetch, monitor }) {
           const seconds = Math.max(5, Math.min(300, Number(response.headers.get('retry-after')) || 10));
           throw new PublicError(messages[response.status] || 'GoDaddy could not complete this step. Check your app in the GoDaddy dashboard, then continue.', response.status >= 500 ? 502 : response.status, response.status === 429 ? seconds : undefined);
         }
+        await monitor?.authorize(attempt).catch(() => false);
         if (response.status === 204) return {};
         // Never forward upstream logs, errors or secret values to the browser.
         return response.json();

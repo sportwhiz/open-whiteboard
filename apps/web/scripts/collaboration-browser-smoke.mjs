@@ -12,7 +12,11 @@ const peerContext = await browser.newContext({ viewport: { width: 1440, height: 
 for (const context of [ownerContext, peerContext]) await context.addInitScript(() => {
   const NativeSocket = WebSocket; window.testSockets = []; window.presenceSent = 0;
   window.WebSocket = class extends NativeSocket {
-    constructor(...args) { super(...args); window.testSockets.push(this); }
+    constructor(...args) {
+      super(...args);
+      // Disconnect board sync, not Vite's development reload channel.
+      if (![args[1]].flat().includes('vite-hmr')) window.testSockets.push(this);
+    }
     send(data) { if (typeof data === 'string' && JSON.parse(data).type === 'presence') window.presenceSent++; super.send(data); }
   };
 });
@@ -57,6 +61,38 @@ try {
   await peer.waitForFunction(() => document.querySelector('whiteboard-editor').doc.getModelsByFlavour('affine:paragraph')[0].text.toString().includes('OFFLINE'));
   assert.equal(await text(owner), await text(peer));
   await owner.keyboard.press('Escape'); await peer.keyboard.press('Escape');
+  // An observer must not grow someone else's note or acquire local undo items.
+  await owner.evaluate(() => {
+    const doc = document.querySelector('whiteboard-editor').doc;
+    const note = doc.getModelsByFlavour('affine:note')[0];
+    doc.updateBlock(note, { edgeless: { ...note.props.edgeless, whiteboardText: { size: 'auto' } } });
+  });
+  await saved(owner);
+  await peer.waitForFunction(() => document.querySelector('whiteboard-editor').doc.getModelsByFlavour('affine:note')[0].props.edgeless.whiteboardText?.size === 'auto');
+  await peer.evaluate(() => document.querySelector('whiteboard-editor').doc.resetHistory());
+  const height = page => page.evaluate(() => JSON.parse(document.querySelector('whiteboard-editor').doc.getModelsByFlavour('affine:note')[0].props.xywh)[3]);
+  const originalHeight = await height(owner);
+  await owner.bringToFront();
+  await edit(owner);
+  await owner.evaluate(async () => {
+    await document.fonts.ready;
+    Object.defineProperty(document.fonts, 'status', { configurable: true, get: () => 'loading' });
+  });
+  await owner.keyboard.insertText(' A longer shared thought that should grow only on the author’s computer.'.repeat(16));
+  await saved(owner);
+  await owner.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  assert.equal(await height(owner), originalHeight, 'Fallback font measurements changed the shared geometry');
+  await owner.evaluate(() => {
+    delete document.fonts.status;
+    document.fonts.dispatchEvent(new FontFaceSetLoadEvent('loadingdone', { fontfaces: [] }));
+  });
+  await owner.waitForFunction(h => JSON.parse(document.querySelector('whiteboard-editor').doc.getModelsByFlavour('affine:note')[0].props.xywh)[3] > h, originalHeight);
+  const grown = await height(owner);
+  await peer.waitForFunction(h => JSON.parse(document.querySelector('whiteboard-editor').doc.getModelsByFlavour('affine:note')[0].props.xywh)[3] === h, grown);
+  assert.equal(await peer.evaluate(() => document.querySelector('whiteboard-editor').doc.canUndo), false, 'Remote auto-fit created a local undo item');
+  await peer.evaluate(() => document.querySelector('whiteboard-editor').doc.undo());
+  assert.equal(await height(peer), grown);
+  await owner.keyboard.press('Escape');
   const resetZoom = async page => {
     await page.getByRole('button', { name: 'Zoom options', exact: true }).click();
     await page.getByRole('button', { name: '100%', exact: true }).click();
@@ -89,7 +125,7 @@ try {
   await peer.waitForFunction(() => document.querySelector('.editor-canvas')?.inert === true);
   assert(await peer.evaluate(() => document.querySelector('whiteboard-editor').doc.readonly));
   assert.deepEqual(errors, []);
-  console.log('Browser collaboration passed: two real roles, simultaneous text, offline merge, final camera publication, no follow feedback loop, saved personal view, presentation and live revocation.');
+  console.log('Browser collaboration passed: two real roles, simultaneous text, offline merge, font-ready auto-fit and observer undo isolation, final camera publication, no follow feedback loop, saved personal view, presentation and live revocation.');
 } finally {
   if (board) await request(ownerContext, `/api/v1/boards/${board.id}/catalog`, 'DELETE').catch(console.error);
   if (workbook) await request(ownerContext, `/api/v1/workbooks/${workbook.id}`, 'DELETE').catch(console.error);

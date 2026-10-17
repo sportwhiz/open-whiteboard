@@ -1,14 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { createMonitor } from './monitoring.mjs';
 import { createApi } from './api.mjs';
 import { release, providerFixture, token, passphrase } from './fixture.mjs';
 
 function setup(t) {
   const sql = new DatabaseSync(':memory:'); t.after(() => sql.close());
-  sql.exec(readFileSync(new URL('./migrations/0001_alerts.sql', import.meta.url), 'utf8'));
+  for (const file of readdirSync(new URL('./migrations/', import.meta.url)).filter(f => f.endsWith('.sql')).sort()) sql.exec(readFileSync(new URL('./migrations/' + file, import.meta.url), 'utf8'));
   function prepare(query, args = []) {
     return {
       bind: (...values) => prepare(query, values),
@@ -26,6 +26,7 @@ function setup(t) {
   };
   const monitor = createMonitor(env, release.version, () => time);
   const incident = { attempt: crypto.randomUUID(), action: 'publish', category: 'operation_failed' };
+  sql.prepare('INSERT INTO installer_attempts (attempt, updated) VALUES (?, ?)').run(incident.attempt, time);
   return { sql, env, monitor, incident, mail, advance: milliseconds => { time += milliseconds; } };
 }
 const minutes = n => n * 60_000;
@@ -88,7 +89,8 @@ test('mail recovery reopens installation even when all original incidents have r
 test('new incidents respect the hourly email limit and retention', async t => {
   const { monitor, incident, advance, mail, sql } = setup(t);
   await monitor.record(incident); advance(minutes(6)); await monitor.tick();
-  await monitor.record({ ...incident, attempt: crypto.randomUUID() });
+  const another = crypto.randomUUID(); await monitor.authorize(another);
+  await monitor.record({ ...incident, attempt: another });
   advance(minutes(6)); await monitor.tick(); assert.equal(mail.length, 1);
   advance(minutes(60)); await monitor.tick(); assert.equal(mail.length, 2);
   advance(minutes(31 * 24 * 60)); await monitor.tick();
@@ -165,4 +167,67 @@ test('pending jobs and unhealthy responses do not resolve an incident prematurel
   assert.equal(sql.prepare("SELECT resolved FROM installer_incidents WHERE action = 'upload'").get().resolved, 0);
   await request(api, 'import', incident.attempt, { appId: 'NODEJS-test', importId: 'import-one' });
   assert.equal(sql.prepare("SELECT resolved FROM installer_incidents WHERE action = 'upload'").get().resolved, 1);
+});
+
+test('a resolved failure that happens again gets a new grace period and alert', async t => {
+  const { monitor, incident, advance, mail } = setup(t);
+  await monitor.record(incident); advance(minutes(6)); await monitor.tick();
+  await monitor.resolve(incident.attempt, incident.action);
+  advance(minutes(65)); await monitor.record(incident); await monitor.tick();
+  assert.equal(mail.length, 1);
+  advance(minutes(6)); await monitor.tick(); assert.equal(mail.length, 2);
+});
+test('unknown timeouts cannot populate reports and rejected tokens use bounded aggregate counters', async t => {
+  const { monitor, sql, advance, mail } = setup(t); await monitor.tick();
+  const api = createApi({ release, monitor, fetchImpl: async () => new Response('', { status: 401 }) });
+  for (let i = 0; i < 100; i++) {
+    const attempt = crypto.randomUUID();
+    const response = await request(api, 'report-stalled', attempt, { stage: 'health', token: '' });
+    assert.equal((await response.json()).reported, false);
+    await request(api, 'connect', attempt);
+  }
+  assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM installer_incidents').get().n, 0);
+  assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM installer_rejections').get().n, 1);
+  advance(minutes(6)); await monitor.tick();
+  assert.match(mail[0].text, /credential_rejected: 100/);
+});
+test('only a successful hosting response enables timeout reporting for a new attempt', async t => {
+  const { monitor, sql } = setup(t); await monitor.tick();
+  const attempt = crypto.randomUUID();
+  const fixture = providerFixture(); const api = createApi({ release, monitor, fetchImpl: fixture.fetchImpl });
+  await request(api, 'connect', attempt);
+  const result = await request(api, 'report-stalled', attempt, { stage: 'health', token: '' });
+  assert.equal((await result.json()).supportReference, attempt);
+  assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM installer_incidents').get().n, 1);
+});
+test('reporting session and incident capacity are bounded while existing attempts can recover', async t => {
+  const { monitor, incident, sql } = setup(t);
+  const add = sql.prepare('INSERT INTO installer_attempts (attempt, updated) VALUES (?, ?)');
+  for (let i = 1; i < 1000; i++) add.run(crypto.randomUUID(), Date.now());
+  assert.equal(await monitor.authorize(crypto.randomUUID()), false);
+  assert.equal(await monitor.authorize(incident.attempt), true);
+  const insert = sql.prepare("INSERT INTO installer_incidents (attempt, action, category, version, occurred, updated) VALUES (?, 'publish', 'browser_timeout', '1.0.0', ?, ?)");
+  for (let i = 0; i < 5000; i++) insert.run(crypto.randomUUID(), Date.now(), Date.now());
+  assert.equal(await monitor.record(incident), false);
+  assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM installer_incidents').get().n, 5000);
+  assert.equal(sql.prepare("SELECT total FROM installer_rejections WHERE category = 'reporting_capacity'").get().total, 2);
+});
+test('digest includes pending totals and puts API failures ahead of browser reports', async t => {
+  const { monitor, incident, advance, mail, sql } = setup(t);
+  const insert = sql.prepare("INSERT INTO installer_incidents (attempt, action, category, version, occurred, updated) VALUES (?, 'health', 'browser_timeout', '1.0.0', ?, ?)");
+  for (let i = 0; i < 60; i++) insert.run(crypto.randomUUID(), Date.now(), Date.now());
+  await monitor.record(incident); advance(minutes(6)); await monitor.tick();
+  assert.match(mail[0].text, /61 setup step/);
+  assert.ok(mail[0].text.indexOf(incident.attempt) < mail[0].text.indexOf('Category: browser_timeout'));
+});
+
+test('a connected attempt reports release verification failures without another hosting call', async t => {
+  const { monitor, incident, sql } = setup(t); await monitor.tick();
+  const fixture = providerFixture(); fixture.options.badChecksum = true;
+  const api = createApi({ release, monitor, fetchImpl: fixture.fetchImpl });
+  const result = await request(api, 'verify-release', incident.attempt);
+  assert.equal(result.status, 502);
+  assert.equal((await result.json()).supportReference, incident.attempt);
+  assert.equal(sql.prepare('SELECT action FROM installer_incidents').get().action, 'verify-release');
+  assert.equal(fixture.calls.some(c => c.url.includes('api.godaddy.com')), false);
 });

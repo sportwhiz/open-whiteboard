@@ -15,7 +15,10 @@ export function createDeployment({ call, details, onStep = () => {}, onApp = () 
   const startedAt = Date.now();
   const key = stage => state.keys[stage] ||= crypto.randomUUID();
   const request = (action, values = {}) => call(action, { appId: state.appId, ...values });
-  async function poll(action, record, field) {
+  async function poll(action, record, field, refresh = false) {
+    // Continue rechecks the saved operation, including a cached terminal result.
+    // Keep its ID and idempotency key; never silently create a replacement.
+    if (refresh) record = await request(action, { [field]: record[field] });
     for (let i = 0; i < attempts; i++) {
       if (record.status === 'COMPLETED') return record;
       if (['FAILED', 'CANCELLED'].includes(record.status)) throw Object.assign(new Error('GoDaddy stopped this operation. Check the app in your GoDaddy dashboard. Continuing will check the same operation; it will not create another app.'), { supportReference: record.supportReference });
@@ -27,8 +30,9 @@ export function createDeployment({ call, details, onStep = () => {}, onApp = () 
   const actions = {
     release: () => request('verify-release'),
     create: async () => {
+      const resume = Boolean(state.creation);
       state.creation ||= await request('create', { name: details.name, key: key('create') });
-      state.creation = await poll('app-operation', state.creation, 'operationId');
+      state.creation = await poll('app-operation', state.creation, 'operationId', resume);
       if (!state.creation.appId) throw new Error('GoDaddy finished provisioning without returning an app identifier. Check your dashboard before retrying.');
       state.appId = state.creation.appId; onApp(state.appId);
     },
@@ -37,12 +41,14 @@ export function createDeployment({ call, details, onStep = () => {}, onApp = () 
     preview: () => request('configure', { variant: 'PREVIEW', passphrase: details.passphrase, key: key('preview') }),
     live: () => request('configure', { variant: 'PUBLISH', passphrase: details.passphrase, key: key('live') }),
     upload: async () => {
+      const resume = Boolean(state.import);
       state.import ||= await request('upload', { key: key('upload') });
-      state.import = await poll('import', state.import, 'importId');
+      state.import = await poll('import', state.import, 'importId', resume);
     },
     publish: async () => {
+      const resume = Boolean(state.deployment);
       state.deployment ||= await request('publish', { key: key('publish') });
-      state.deployment = await poll('deployment', state.deployment, 'deploymentId');
+      state.deployment = await poll('deployment', state.deployment, 'deploymentId', resume);
     },
     health: async () => {
       for (let i = 0; i < attempts; i++) {
