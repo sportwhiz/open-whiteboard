@@ -1,0 +1,11 @@
+import { build } from '../../apps/web/node_modules/esbuild/lib/main.js';
+import { mkdir, readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+const directory = resolve(process.argv[2] || '');
+if (!process.argv[2]) throw new Error('Supply an extracted official Node release directory.');
+const pkg = JSON.parse(await readFile(resolve(directory, 'package.json'), 'utf8'));
+if (pkg.name !== 'huddle-loom-node' || pkg.main !== 'server.mjs') throw new Error('Expected an extracted Open Whiteboard Node package.');
+await mkdir(directory, { recursive: true });
+await build({ entryPoints: [fileURLToPath(new URL('./maintenance.mjs', import.meta.url))], outfile: resolve(directory, 'server.mjs'), bundle: true, platform: 'node', format: 'esm', target: 'node22', external: ['mysql2/promise'], logLevel: 'error' });
+console.log('Built temporary recovery package. This is not an application release.');
