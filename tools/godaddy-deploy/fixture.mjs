@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { GODADDY } from './api.mjs';
+import application from './fixtures/application.json' with { type: 'json' };
 export const token = 'test-only-godaddy-token';
 export const passphrase = 'test-only-setup-passphrase';
 export const bytes = new TextEncoder().encode('PK fixture release bytes');
@@ -54,14 +55,8 @@ export function providerFixture() {
       return response(keys.get(key), 202);
     }
     if (path === '/app-operations/op-one') return response({ operationId: 'op-one', status: 'COMPLETED', app: { id: 'NODEJS-test' } });
-    // GET /apps/{appId} returns the Application schema, including top-level id.
-    // https://developer.godaddy.com/en/docs/references/rest/hosting/get-app
-    if (path === '/apps/NODEJS-test') return response({
-      id: 'NODEJS-test', name: 'Test whiteboard', appType: 'NODEJS', status: 'ACTIVE',
-      urls: { preview: 'https://host.godaddy.com/nodejs/projects/test/preview', publish: 'https://fixture.c39.airoapp.ai' },
-      createdAt: '2026-10-17T00:00:00Z', updatedAt: '2026-10-17T00:00:00Z',
-      links: [{ rel: 'self', href: `${GODADDY}/apps/NODEJS-test` }],
-    });
+    // Shared redacted live response, verified on October 17, 2026.
+    if (path === '/apps/NODEJS-test') return response(application);
     if (path.startsWith('/apps/NODEJS-test/secrets?')) {
       if (options.rejectConfigureOnce) { options.rejectConfigureOnce = false; return response({ error: 'Expired token' }, 401); }
       assert.equal(method, 'PATCH'); assert.equal(init.headers['Content-Type'], 'application/json-patch+json');

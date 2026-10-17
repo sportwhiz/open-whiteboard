@@ -9,6 +9,7 @@ import {
   maintainGoDaddyUpdates,
 } from "../src/updates/godaddy";
 import { currentRelease } from "../src/updates/build";
+import application from "../../../tools/godaddy-deploy/fixtures/application.json";
 vi.mock("../src/updates/build", () => ({
   currentRelease: {
     version: "1.2.0",
@@ -113,9 +114,8 @@ describe("GoDaddy durable updates", () => {
             });
           if (url.endsWith("/apps/NODEJS-test"))
             return Response.json({
-              id: "NODEJS-test",
-              appType: "NODEJS",
-              urls: { publish: env.AUTH_ORIGIN },
+              ...application,
+              urls: { ...application.urls, publish: env.AUTH_ORIGIN },
             });
           if (url.endsWith("/imports")) {
             if (uploadLost) {

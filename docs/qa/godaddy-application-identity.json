@@ -1,0 +1,54 @@
+{
+  "checkedAt": "2026-10-17T17:49:39.681594+00:00",
+  "method": "GET",
+  "endpoint": "https://api.godaddy.com/v1/hosting/apps/{appId}",
+  "httpStatus": 200,
+  "topLevelFields": [
+    "appType",
+    "createdAt",
+    "id",
+    "links",
+    "name",
+    "source",
+    "status",
+    "updatedAt",
+    "urls"
+  ],
+  "idMatchesRequestedApp": true,
+  "appIdAliasPresent": false,
+  "response": {
+    "id": "NODEJS-test",
+    "name": "Test whiteboard",
+    "appType": "NODEJS",
+    "status": "ACTIVE",
+    "source": "ZIP",
+    "createdAt": "2026-10-17T00:00:00Z",
+    "updatedAt": "2026-10-17T00:00:00Z",
+    "urls": {
+      "preview": "https://host.godaddy.com/nodejs/projects/test/preview",
+      "publish": "https://fixture.c39.airoapp.ai"
+    },
+    "links": [
+      {
+        "rel": "self",
+        "href": "/v1/hosting/apps/NODEJS-test"
+      }
+    ]
+  },
+  "redactions": "App identifier, name, dates and addresses replaced with synthetic fixture values; original top-level field names, status, appType, source and relative self-link shape preserved.",
+  "handlerVerification": {
+    "checkedAt": "2026-10-17T17:50:20.617Z",
+    "outboundRequests": 5,
+    "outboundMethod": "GET",
+    "liveIdMatched": true,
+    "providerOriginConnected": true,
+    "simulatedCustomOriginConnected": true,
+    "configuredIdOverrideRejected": true,
+    "previewRejected": true,
+    "credentialEncryptedLocally": true,
+    "database": "disposable in-memory SQLite",
+    "hostedAppMutations": 0,
+    "actualCustomDomainDeploymentTested": false,
+    "sourceCommit": "a543f36edc69a868b3f9398e2dd450a586231b68"
+  }
+}
