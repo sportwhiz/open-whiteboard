@@ -65,22 +65,29 @@ async function start() {
     clearTimeout(force);
   };
   try {
-    for (let attempt = 0; attempt < 100; attempt++) {
+    const deadline = Date.now() + 60_000;
+    let lastHealthStatus: number | undefined;
+    while (Date.now() < deadline) {
       if (child.exitCode !== null)
         throw new Error(`Packaged server exited: ${diagnostics}`);
+      let ready = false;
       try {
-        const health = await fetch(origin + "/api/v1/auth/bootstrap");
-        if (health.ok) {
-          assert.ok(
-            !diagnostics.includes("Yjs was already imported"),
-            "Packaged server loaded duplicate Yjs runtimes",
-          );
-          return { close };
-        }
+        const health = await fetch(origin + "/healthz", {
+          signal: AbortSignal.timeout(2000),
+        });
+        lastHealthStatus = health.status;
+        ready = health.ok && (await health.json()).ready === true;
       } catch {}
+      if (ready) {
+        assert.ok(
+          !diagnostics.includes("Yjs was already imported"),
+          "Packaged server loaded duplicate Yjs runtimes",
+        );
+        return { close };
+      }
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
-    throw new Error("Packaged server did not become ready");
+    throw new Error(`Packaged server did not become ready within 60 seconds (last health status: ${lastHealthStatus ?? "unreachable"}): ${diagnostics}`);
   } catch (error) {
     await close();
     throw error;
