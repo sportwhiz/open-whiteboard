@@ -2,7 +2,7 @@
 
 Merging the implementation PRs does not enable live GoDaddy installation. This is the remaining launch checklist. Leave every item unchecked until its evidence is recorded below. The owner of this work is the maintainer running the release with their coding agent; merging a PR does not transfer these tasks to an automatic workflow.
 
-Current state: the website opens a preview, the installer pins the failing v0.4.0 ZIP with `qualified: false`, and production alerts and independent uptime monitoring are not activated. Local tests and candidate hosting tests have passed; they do not complete the live checks below.
+Current state: the website opens a preview and the installer still pins v0.4.0 with `qualified: false`. The separate installer Worker and D1 database are deployed, and the operator confirmed receipt of the direct email test. Scheduled incident delivery, recovery and recurrence passed at the service level. Receipt of the scheduled digest and independent uptime email still need confirmation. The exact v0.4.1 prerelease has passed fresh installation and restart checks; update and recovery qualification remains open.
 
 ## 1. Merge the reviewed code
 
@@ -41,10 +41,10 @@ Done when: both source and target release identities, backup/restore results, au
 
 The marketing website is static. The credential-handling installer is a separate service; this launch uses the supplied Cloudflare Worker.
 
-- [ ] Choose its real HTTPS address. Provision D1 for `tools/godaddy-deploy/wrangler.jsonc`, bind the actual database, and apply **all** SQL migrations in `tools/godaddy-deploy/migrations/` in order.
-- [ ] Configure the `EMAIL`, `INSTALLER_LIMIT` and `INSTALLER_GLOBAL_LIMIT` bindings and the five-minute scheduled trigger. Keep request logging disabled.
-- [ ] Configure `ALERT_TO` and `ALERT_FROM` as private Worker secrets using the agreed operator recipient and verified sending domain. Restrict the email destination through private deployment configuration. Never commit those addresses or credentials.
-- [ ] Deploy the installer with its release gate still closed. Send a harmless test email and confirm receipt in the intended inbox before setting `ALERT_DELIVERY_VERIFIED=true`. Local `.dev.vars` values are not deployed automatically.
+- [x] Choose its real HTTPS address. Provision D1 for `tools/godaddy-deploy/wrangler.jsonc`, bind the actual database, and apply **all** SQL migrations in `tools/godaddy-deploy/migrations/` in order.
+- [x] Configure the `EMAIL`, `INSTALLER_LIMIT` and `INSTALLER_GLOBAL_LIMIT` bindings and the five-minute scheduled trigger. Keep request logging disabled.
+- [x] Configure `ALERT_TO` and `ALERT_FROM` as private Worker secrets using the agreed operator recipient and verified sending domain. Restrict the email destination through private deployment configuration. Never commit those addresses or credentials.
+- [x] Deploy the installer with its release gate still closed. Send a harmless test email and confirm receipt in the intended inbox before setting `ALERT_DELIVERY_VERIFIED=true`. Local `.dev.vars` values are not deployed automatically.
 - [ ] Require the hosted installer's `/healthz` to return 200 with `ready: true` after a scheduled run. Exercise a controlled incident, digest delivery, successful recovery and recurrence. Verify emails contain only the documented diagnostic fields.
 - [ ] Configure an independent uptime monitor for that `/healthz` endpoint with an alert route that does not depend on the installer's own email service. Test both outage notification and recovery.
 
@@ -77,9 +77,9 @@ Done when: the public site points at the exact tested installer, and the recipie
 | Fresh live install and restart | Exact published v0.4.1 passed; [sanitized evidence](qa/godaddy-release-v0.4.1.json). Preview isolation and replacement-update behavior remain pending |
 | Source → target stable update and unattended security update | Pending |
 | Backup/restore and interrupted-update recovery | Pending |
-| Hosted installer URL and deployed commit | Pending |
-| D1 migrations and email receipt | Pending; private operator settings stay private |
-| Independent outage/recovery notification | PR #25 merged as `086a873e9e04214e4bcfeb9e02173f3963f5ee71`; [outage exercise](https://github.com/sportwhiz/open-whiteboard/actions/runs/39058451586) opened test issue #26 and [recovery exercise](https://github.com/sportwhiz/open-whiteboard/actions/runs/39058482686) closed it. Inbox receipt and live schedule activation pending |
+| Hosted installer URL and deployed commit | [Dedicated Worker](https://open-whiteboard-godaddy-installer.cool-salad-9f16.workers.dev/), runtime source `d00351943058309d64bc65564c18bc97053d9ac4`; release gate closed. [Runtime fix PR #30](https://github.com/sportwhiz/open-whiteboard/pull/30) merged with all checks passing |
+| D1 migrations and email receipt | All three migrations applied; direct Cloudflare test received and confirmed October 17, 2026. Private recipient, sender and deployment configuration remain outside Git. Two real scheduled runs accepted the controlled incident and its recurrence; recovery and repeat suppression passed. Scheduled digest inbox receipt remains unconfirmed. [Hosted evidence](qa/godaddy-hosted-installer.json) |
+| Independent outage/recovery notification | PR #25 merged as `086a873e9e04214e4bcfeb9e02173f3963f5ee71`; [outage exercise](https://github.com/sportwhiz/open-whiteboard/actions/runs/39058451586) opened test issue #26 and [recovery exercise](https://github.com/sportwhiz/open-whiteboard/actions/runs/39058482686) closed it. The live schedule is enabled. [Live endpoint check](https://github.com/sportwhiz/open-whiteboard/actions/runs/39061843197) and [second recovery exercise](https://github.com/sportwhiz/open-whiteboard/actions/runs/39061841165) passed; test issue #29 is closed. GitHub inbox delivery remains unconfirmed |
 | Hosted browser setup and agent setup | Pending |
 | Public website build and button checks | Pending |
 

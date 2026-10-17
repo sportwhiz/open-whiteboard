@@ -161,7 +161,7 @@ call('release-status').then(status => {
     $('connect-form').hidden = true;
     $('setup-kicker').textContent = 'RELEASE QUALIFICATION';
     $('setup-title').textContent = 'The next GoDaddy release is being prepared.';
-    $('setup-intro').textContent = 'The current download failed a GoDaddy startup check. The fix has passed live testing and needs to be published before this installer opens. You do not need to create a key yet.';
+    $('setup-intro').textContent = 'Installation and update checks are still in progress. Setup will open after those checks pass. You do not need to create a key yet.';
     return;
   }
   $('token').disabled = false;

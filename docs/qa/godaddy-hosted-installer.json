@@ -1,0 +1,47 @@
+{
+  "testedAt": "2026-10-17T19:21:08Z",
+  "installerUrl": "https://open-whiteboard-godaddy-installer.cool-salad-9f16.workers.dev",
+  "runtimeSourceCommit": "d00351943058309d64bc65564c18bc97053d9ac4",
+  "runtimeFixPullRequest": "https://github.com/sportwhiz/open-whiteboard/pull/30",
+  "releaseGateOpen": false,
+  "migrations": [
+    "0001_alerts.sql",
+    "0002_reporting_limits.sql",
+    "0003_registration_budget.sql"
+  ],
+  "checks": {
+    "directEmailInboxConfirmed": true,
+    "privateOperatorSettings": true,
+    "requestLoggingDisabled": true,
+    "authenticatedGoDaddyReadThroughWorker": true,
+    "publishedAppHealthThroughWorker": true,
+    "controlledProviderRejectionRecorded": true,
+    "realScheduledDigestAccepted": true,
+    "healthReadyAfterScheduledRun": true,
+    "successfulRetryResolvesIncident": true,
+    "recurrenceResetsReportedState": true,
+    "realScheduledRecurrenceAccepted": true,
+    "repeatedUnresolvedFailureRemainsReported": true,
+    "testIncidentFinallyResolved": true,
+    "independentUptimeScheduleEnabled": true,
+    "independentLiveEndpointCheck": true,
+    "independentTestRecovery": true
+  },
+  "unconfirmed": [
+    "Scheduled failure-digest inbox receipt",
+    "Independent GitHub notification email delivery"
+  ],
+  "testMethod": [
+    "The direct Cloudflare test message was received and confirmed by the operator.",
+    "Real five-minute Cloudflare scheduled events ran at 19:15:47 and 19:20:47 UTC. The synthetic incident was backdated to bypass the five-minute grace period. For recurrence, the synthetic incident was backdated and the prelaunch digest cooldown was reset. These tests establish scheduled handling and state transitions, not natural elapsed-time expiry of the grace period or hourly cooldown.",
+    "The final successful provider request resolved the test incident. Another rejected request before recovery retained its reported state and did not reset the digest cooldown.",
+    "All 89 installer tests, including an actual Workers-runtime regression, passed. Desktop and mobile browser smoke tests passed; those browser tests use provider fixtures.",
+    "A valid PAT without a User-Agent received HTML 403 from GoDaddy. An explicit User-Agent fixed the live read. Workers also rejects redirect:error; manual redirects are now rejected explicitly without forwarding credentials.",
+    "Only the dedicated installer Worker, its D1 database and the product repository monitor were configured. Existing Cloudflare services and domains were not changed."
+  ],
+  "independentMonitorRuns": {
+    "outage": "https://github.com/sportwhiz/open-whiteboard/actions/runs/39059619288",
+    "recovery": "https://github.com/sportwhiz/open-whiteboard/actions/runs/39061841165",
+    "liveEndpoint": "https://github.com/sportwhiz/open-whiteboard/actions/runs/39061843197"
+  }
+}
