@@ -1,6 +1,6 @@
 {
   "name": "huddle-loom",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "private": true,
   "packageManager": "pnpm@10.30.3",
   "pnpm": {
@@ -8,7 +8,10 @@
       "yjs": "13.6.21",
       "vitest": "5.0.2",
       "tsx>esbuild": "0.28.2",
-      "undici@7.29.0": "7.29.1"
+      "undici@7.29.0": "7.29.1",
+      "katex": "0.18.2",
+      "source-map-js": "1.2.2",
+      "sharp": "0.35.5"
     }
   },
   "scripts": {

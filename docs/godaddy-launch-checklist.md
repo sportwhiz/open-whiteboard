@@ -6,10 +6,10 @@ Current state: the website opens a preview, the installer pins the failing v0.4.
 
 ## 1. Merge the reviewed code
 
-- [ ] Require the latest checks to pass on [product PR #20](https://github.com/sportwhiz/open-whiteboard/pull/20), then merge it.
+- [x] Product PR #20 merged on October 17, 2026 as `cb9472d97ca9a2e101087704c95a6abf11e65ed7` after its checks passed.
 - [x] Merge the preview website: [website PR #3](https://github.com/sportwhiz/huddle-loom-site/pull/3) merged on October 17, 2026 as `80b3e1d9c8c0ff68840fbb68730c41e14a3c9a25`; its Cloudflare build passed. The public GoDaddy link still opens the preview.
-- [ ] After product PR #20 merges, point the website submodule at the actual product commit on main, especially if it was squash-merged. Use a follow-up site PR and require its checks to pass. Merging the preview site first does not require a rollback.
-- [ ] Keep `VITE_GODADDY_INSTALLER_URL` unset. The website may publish its preview at this point; live setup remains closed.
+- [x] Website PR #4 merged as `fa1e649bbaa934f752e4079ddc01217f7a0de374`, pinning product `cb9472d97ca9a2e101087704c95a6abf11e65ed7`. Its Cloudflare production build passed.
+- [x] Keep `VITE_GODADDY_INSTALLER_URL` unset. The website may publish its preview at this point; live setup remains closed.
 - [ ] Resolve the existing MCP SDK high-severity advisories before public launch. Review the upgrade in [maintenance PR #15](https://github.com/sportwhiz/open-whiteboard/pull/15) against the merged code; do not assume another branch's fix is included.
 
 Done when: the merged commits and passing checks are recorded, the security upgrade is included, and the public GoDaddy button still opens an explicitly labeled preview.
@@ -70,7 +70,7 @@ Done when: the public site points at the exact tested installer, and the recipie
 
 | Item | Evidence/status |
 | --- | --- |
-| Product and website merge commits | Product pending; preview site merged as `80b3e1d9c8c0ff68840fbb68730c41e14a3c9a25`; final product pointer pending |
+| Product and website merge commits | Product `cb9472d97ca9a2e101087704c95a6abf11e65ed7`; site `fa1e649bbaa934f752e4079ddc01217f7a0de374`; production build passed |
 | Security advisory resolution | Pending |
 | Qualified stable package/tag/commit/SHA-256 | Pending |
 | Fresh live install and restart | Pending |
