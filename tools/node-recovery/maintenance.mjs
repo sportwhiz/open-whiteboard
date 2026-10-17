@@ -39,6 +39,9 @@ const server = createServer(async (request, response) => {
   }
   if (request.method !== 'POST' || request.url !== '/recovery/' + mode) { response.writeHead(404).end(); request.resume(); return; }
   if (busy) { response.writeHead(409).end(); request.resume(); return; }
+  if (Number(request.headers['content-length'] || 0) > MAX_ARCHIVE) {
+    response.writeHead(413, { Connection: 'close' }).end(); return;
+  }
   busy = true;
   let recovery;
   try {
@@ -47,12 +50,16 @@ const server = createServer(async (request, response) => {
     }
     let bytes;
     if (mode === 'restore') {
+      // Large transfers may take minutes, but a stalled sender cannot hold
+      // the only recovery slot indefinitely. Clear this before database work.
+      request.setTimeout(30_000, () => request.destroy());
       const chunks = []; let length = 0;
       for await (const chunk of request) {
         length += chunk.length;
         if (length > MAX_ARCHIVE) throw new Error('Archive is too large.');
         chunks.push(chunk);
       }
+      request.setTimeout(0);
       bytes = Buffer.concat(chunks);
     } else {
       request.resume();

@@ -166,6 +166,7 @@ export function createNodeHttpServer(
         const port = incoming.socket.localPort;
         if (
           options.isReady &&
+          localHost !== origin.host.toLowerCase() &&
           ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(peer ?? "") &&
           ["localhost", "127.0.0.1", "[::1]"].some(
             (host) => localHost === `${host}:${port}`,

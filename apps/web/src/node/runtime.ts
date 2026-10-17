@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { Buffer } from "node:buffer";
 import { resolve, sep } from "node:path";
-import { realpath, mkdir, stat } from "node:fs/promises";
+import { realpath, mkdir, stat, lstat, unlink } from "node:fs/promises";
 import { createPool } from "mysql2/promise";
 import {
   logicalDatabaseTable,
@@ -392,6 +392,19 @@ export async function startNodeRuntime(config: Environment = process.env) {
           "The catalog directory must be private to the application user.",
         );
       await acquireOwnership();
+      // The recovery marker spans the MySQL commit and SQLite replacement.
+      // Fail closed before migrations, key creation, or any application writes.
+      try {
+        await lstat(resolve(dataDirectory, ".restore-in-progress"));
+        throw new NodeStartupError("schema", "RESTORE_INCOMPLETE", "An interrupted restore must finish before this installation can start. Republish the recovery package and resume the same archive.");
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+      // A completion receipt permits a lost-response retry only while the app
+      // has remained stopped. Once it starts, a replay must pass empty checks.
+      await unlink(resolve(dataDirectory, ".restore-completed")).catch(error => {
+        if (error.code !== "ENOENT") throw error;
+      });
       phase = "schema";
       await migrateNodeDatabase(pool);
       // Refuse switching an initialized legacy MySQL catalog to a fresh SQLite file.

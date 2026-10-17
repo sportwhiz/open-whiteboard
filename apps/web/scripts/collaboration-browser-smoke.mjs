@@ -104,6 +104,23 @@ try {
   await peer.waitForFunction(() => Object.keys(localStorage).some(k => k.startsWith('whiteboard-viewport-v1:') && Math.abs(JSON.parse(localStorage[k]).zoom - 1 / 1.2) < .001));
   const view = () => peer.evaluate(() => JSON.parse(localStorage[Object.keys(localStorage).find(k => k.startsWith('whiteboard-viewport-v1:'))]));
   const ownView = await view();
+  // A background tab may never receive its first animation frame. Closing it
+  // must not replace the personal view with the engine's default camera.
+  const unseen = await peerContext.newPage();
+  await unseen.addInitScript(() => {
+    const frame = window.requestAnimationFrame.bind(window);
+    window.requestAnimationFrame = callback => {
+      if (new Error().stack.includes('fitEditorToContent')) { window.heldInitialFit = true; return 0; }
+      return frame(callback);
+    };
+  });
+  await unseen.goto(new URL(`/boards/${board.id}`, origin).href);
+  await unseen.locator('.creation-rail').waitFor();
+  assert.equal(await unseen.evaluate(() => window.heldInitialFit), true);
+  await unseen.evaluate(() => window.dispatchEvent(new Event('pagehide')));
+  await unseen.close();
+  assert.deepEqual(await view(), ownView, 'An unseen tab overwrote the saved camera');
+
   await resetZoom(owner); await owner.getByRole('button', { name: 'Zoom in', exact: true }).click();
   await owner.waitForFunction(() => document.querySelector('.zoom-value').textContent === '120%');
   await peer.getByRole('button', { name: '2 people online', exact: true }).click();
@@ -116,6 +133,19 @@ try {
   await peer.reload(); await peer.locator('.creation-rail').waitFor();
   await peer.waitForFunction(() => document.querySelector('.zoom-value').textContent === '83%');
   assert.deepEqual(await view(), ownView);
+  for (const gesture of ['toolbar', 'keyboard']) {
+    if (!await peer.getByRole('button', { name: 'Follow', exact: true }).isVisible())
+      await peer.getByRole('button', { name: '2 people online', exact: true }).click();
+    await peer.getByRole('button', { name: 'Follow', exact: true }).click();
+    await peer.locator('.follow-banner').waitFor();
+    await peer.waitForFunction(() => document.querySelector('.zoom-value').textContent === '120%');
+    if (gesture === 'toolbar') await peer.getByRole('button', { name: 'Zoom out', exact: true }).click();
+    else {
+      await peer.locator('.editor-canvas').focus();
+      await peer.keyboard.press(process.platform === 'darwin' ? 'Meta+-' : 'Control+-');
+    }
+    await peer.locator('.follow-banner').waitFor({ state: 'hidden' });
+  }
   await owner.getByRole('button', { name: 'Present', exact: true }).click();
   await owner.getByRole('button', { name: 'Present 1 frame', exact: true }).click();
   await peer.locator('.follow-banner').waitFor();

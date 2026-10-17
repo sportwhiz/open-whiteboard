@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createPool } from '../../apps/web/node_modules/mysql2/promise.js';
 import { build } from '../../apps/web/node_modules/esbuild/lib/main.js';
-import { mkdtemp, symlink, rm, mkdir, readFile, stat } from 'node:fs/promises';
+import { mkdtemp, symlink, rm, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { DatabaseSync } from 'node:sqlite';
 import { resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -101,7 +101,11 @@ try {
   recovery = await openRecovery(b, { afterMysqlCommit() { throw new Error('Controlled interruption'); } });
   await assert.rejects(recovery.restoreSnapshot(restored, digest(encrypted)), /Controlled interruption/);
   await recovery.close(); recovery = null;
+  await assert.rejects(start(b), /interrupted restore/, 'Official runtime must refuse a half-restored installation');
+  const leftover = resolve(b.HUDDLE_DATA_DIRECTORY, 'live/.restore-catalog-00000000-0000-0000-0000-000000000000');
+  await writeFile(leftover, 'interrupted staging', { mode: 0o600 });
   recovery = await openRecovery(b);
+  await assert.rejects(stat(leftover), { code: 'ENOENT' });
   await assert.rejects(recovery.restoreSnapshot(restored, 'a'.repeat(64)), /same interrupted restore/);
   assert.equal((await recovery.restoreSnapshot(restored, digest(encrypted))).restored, true);
   assert.equal((await recovery.restoreSnapshot(restored, digest(encrypted))).resumed, true, 'A lost success response must not repeat the restore');
@@ -129,6 +133,10 @@ try {
   await call('/api/auth/two-factor/verify-totp', { code: totp(seed) });
   await call('/api/v1/auth/bootstrap');
   assert.deepEqual(await call(boardPath + '/semantic'), before);
+  await target.close(); target = null;
+  recovery = await openRecovery(b);
+  await assert.rejects(recovery.restoreSnapshot(restored, digest(encrypted)), /empty installation/, 'A replay after normal app use must not report a successful restore');
+  await recovery.close(); recovery = null;
   console.log('PASS full SQLite/MySQL encrypted recovery, owner/MFA/session/key continuity, board/settings/asset data, live-writer exclusion, interrupted-restore retry, and populated-target refusal.');
 } finally {
   await recovery?.close(); await source?.close(); await target?.close();

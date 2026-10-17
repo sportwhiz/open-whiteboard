@@ -11,6 +11,7 @@ export type Release = {
   protocol: number;
   security: boolean;
   important?: boolean;
+  nodeSha256?: string;
   notes: string;
 };
 export function parseRelease(value: unknown): Release {
@@ -27,6 +28,7 @@ export function parseRelease(value: unknown): Release {
     r.dataFormat < 1 ||
     typeof r.security !== "boolean" ||
     (r.important !== undefined && typeof r.important !== "boolean") ||
+    (r.nodeSha256 !== undefined && !/^[a-f0-9]{64}$/.test(r.nodeSha256)) ||
     typeof r.notes !== "string" ||
     r.notes.length > 12000
   )
@@ -39,6 +41,7 @@ export function parseRelease(value: unknown): Release {
     protocol: r.protocol,
     security: r.security,
     ...(r.important === undefined ? {} : { important: r.important }),
+    ...(r.nodeSha256 === undefined ? {} : { nodeSha256: r.nodeSha256 }),
     notes: r.notes,
   };
 }

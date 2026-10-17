@@ -16,7 +16,7 @@ function callerNetwork(address) {
     return values.slice(0, 4).map(word => word.toString(16)).join(':') + '::/64';
   } catch { return 'unknown'; }
 }
-export async function allowRequest(request, env) {
+export async function allowRequest(request, env, monitor) {
   if (!env.INSTALLER_LIMIT || !env.INSTALLER_GLOBAL_LIMIT) return false;
   // Cloudflare supplies this header. IPv6 callers share their /64 allowance.
   // Neither the address nor the daily digest is stored in diagnostics or logs.
@@ -24,5 +24,30 @@ export async function allowRequest(request, env) {
   const bytes = new TextEncoder().encode(`${new Date().toISOString().slice(0, 10)}:${address}`);
   const key = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(b => b.toString(16).padStart(2, '0')).join('');
   if (!(await env.INSTALLER_LIMIT.limit({ key })).success) return false;
-  return (await env.INSTALLER_GLOBAL_LIMIT.limit({ key: 'installer' })).success;
+  // Reserve a separate bucket for provider-verified sessions. Exhausting the
+  // public admission bucket must not interrupt someone already installing.
+  let credential;
+  if (monitor && request.method === 'POST' && request.headers.get('origin') === new URL(request.url).origin) {
+    const reader = request.clone().body?.getReader();
+    if (reader) {
+      try {
+        const chunks = []; let size = 0;
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          size += value.byteLength;
+          if (size > 12_000) break;
+          chunks.push(value);
+        }
+        if (size <= 12_000) {
+          const bytes = new Uint8Array(size); let offset = 0;
+          for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+          const input = JSON.parse(new TextDecoder().decode(bytes));
+          credential = await monitor.credentialForAttempt(input?.attempt, input?.token);
+        }
+      } catch { /* Invalid requests never receive a reserved bucket. */ }
+      finally { void reader.cancel().catch(() => {}); }
+    }
+  }
+  return (await env.INSTALLER_GLOBAL_LIMIT.limit({ key: credential ? `session:${credential}` : 'installer' })).success;
 }

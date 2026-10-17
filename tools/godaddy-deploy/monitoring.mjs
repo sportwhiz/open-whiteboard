@@ -38,6 +38,19 @@ export function createMonitor(env, version, now = () => Date.now()) {
         return accepted;
       } catch { return false; }
     },
+    async credentialForAttempt(attempt, token) {
+      if (!configured() || !uuid.test(attempt || '') || typeof token !== 'string' || token.length < 8 || token.length > 4096) return null;
+      try {
+        const row = await db.prepare('SELECT credential_key FROM installer_attempts WHERE attempt = ? AND updated > ?').bind(attempt, now() - 24 * 60 * 60_000).first();
+        // An installation can cross midnight; accept only the recorded token,
+        // never the public support reference alone.
+        for (const time of [now(), now() - 24 * 60 * 60_000]) {
+          const key = await reportingCredentialKey(token, time);
+          if (row?.credential_key === key) return key;
+        }
+      } catch { /* New requests retain the shared admission limit. */ }
+      return null;
+    },
     async ready() {
       if (!configured()) return false;
       try {
@@ -58,6 +71,9 @@ export function createMonitor(env, version, now = () => Date.now()) {
           if (aggregateUnverified && category !== 'browser_timeout') await aggregate(category);
           return false;
         }
+        // Resolved details are no longer alertable. Free their capacity before
+        // admission; an attacker still cannot exceed 5,000 unresolved rows.
+        await db.prepare('DELETE FROM installer_incidents WHERE resolved = 1').run();
         const result = await db.prepare(`INSERT INTO installer_incidents (attempt, action, category, version, occurred, updated)
           SELECT ?, ?, ?, ?, ?, ? WHERE (SELECT COUNT(*) FROM installer_incidents) < 5000
             OR EXISTS (SELECT 1 FROM installer_incidents WHERE attempt = ? AND action = ?)

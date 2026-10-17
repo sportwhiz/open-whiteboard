@@ -408,6 +408,16 @@ try {
   assert.equal(updates.deploymentMode, godaddyUpdates ? "godaddy" : "manual-node");
   assert.equal(updates.connected, false);
   await call("/api/v1/admin/updates/policy", { automaticSecurity: true }, 409);
+  if (godaddyUpdates) {
+    for (const action of ['connection', 'policy', 'install', 'continue', 'resolve', 'cancel']) {
+      for (const headers of [ { 'X-Canvas-CSRF': '' }, { Origin: 'https://untrusted.example' } ]) {
+        const denied = await fetch(origin + '/api/v1/admin/updates/' + action, {
+          method: 'POST', headers: { Cookie: [...cookies].map(([k,v]) => `${k}=${v}`).join('; '), Origin: origin, 'X-Canvas-CSRF': csrf, 'Content-Type': 'application/json', ...headers }, body: '{}',
+        });
+        assert.equal(denied.status, 403, `${action} must reject invalid CSRF/origin`);
+      }
+    }
+  }
   const ownerNotice = await call("/api/v1/updates/notice");
   assert.ok(Object.hasOwn(ownerNotice, "notice"));
   assert.equal(JSON.stringify(ownerNotice).includes("hook"), false);
@@ -439,6 +449,8 @@ try {
   const guestNotice = await call("/api/v1/updates/notice");
   assert.ok(Object.hasOwn(guestNotice, "notice"));
   await call("/api/v1/admin/updates", undefined, 403);
+  if (godaddyUpdates) for (const action of ['connection', 'policy', 'install', 'continue', 'resolve', 'cancel'])
+    await call('/api/v1/admin/updates/' + action, {}, 403);
   const privateBoard = await fetch(origin + boardPath + "/semantic", {
     headers: {
       Cookie: [...cookies].map(([key, value]) => `${key}=${value}`).join("; "),
@@ -457,6 +469,32 @@ try {
       .accepted_by !== null,
     true,
   );
+  if (godaddyUpdates) {
+    const adminInvite = await call('/api/v1/admin/local-invitations', { label: 'Update guard administrator', role: 'member' });
+    cookies.clear(); csrf = '';
+    await call('/api/v1/auth/bootstrap');
+    await call('/api/auth/setup/local', { username: 'nodeadmin', name: 'Node administrator', password, invitation: adminInvite.token });
+    await call('/api/v1/auth/bootstrap');
+    const adminFactor = await call('/api/auth/two-factor/enable', { password });
+    await call('/api/auth/two-factor/verify-totp', { code: totp(new URL(adminFactor.totpURI).searchParams.get('secret')!) });
+    const adminId = (await call('/api/v1/auth/bootstrap')).user.id;
+    cookies.clear(); for (const [key, value] of ownerCookies) cookies.set(key, value); csrf = ownerCsrf;
+    await call('/api/v1/admin/people/' + encodeURIComponent(adminId) + '/role', { role: 'admin' });
+    cookies.clear(); csrf = '';
+    await call('/api/v1/auth/bootstrap');
+    await call('/api/auth/sign-in/local', { username: 'nodeadmin', password });
+    const adminSeed = new URL(adminFactor.totpURI).searchParams.get('secret')!;
+    const previousCode = totp(adminSeed);
+    while (totp(adminSeed) === previousCode) await new Promise(resolve => setTimeout(resolve, 250));
+    await call('/api/auth/two-factor/verify-totp', { code: totp(adminSeed) });
+    await call('/api/v1/auth/bootstrap');
+    await call('/api/v1/admin/updates');
+    for (const action of ['connection', 'policy', 'install', 'continue', 'resolve', 'cancel'])
+      await call('/api/v1/admin/updates/' + action, {}, 403);
+    cookies.clear();
+    for (const [key, value] of ownerCookies) cookies.set(key, value);
+    csrf = ownerCsrf;
+  }
   await runtime.close();
   runtime = undefined;
   runtime = await start();

@@ -7,12 +7,20 @@ import type { CanvasController, CanvasState } from "./canvas-controller";
 export function useStickyTextLayout(host: HTMLElement, state: CanvasState, controller: CanvasController) {
   const [sizes, setSizes] = useState<Record<string, number>>({});
   const [fontsRevision, setFontsRevision] = useState(0);
+  const fontRevisions = useRef(new Map<string, number>());
+  const normalizeFamily = (family: string) => family.trim().replace(/^[\'"]|[\'"]$/g, "").toLowerCase();
   const [renderRevision, setRenderRevision] = useState(0);
   const measurements = useRef(new Map<string, { text: HTMLElement; key: string; size: number }>());
   useEffect(() => {
-    const loaded = () => setFontsRevision((revision) => revision + 1);
+    const loaded = (event: Event) => {
+      for (const face of (event as FontFaceSetLoadEvent).fontfaces) {
+        const family = normalizeFamily(face.family);
+        fontRevisions.current.set(family, (fontRevisions.current.get(family) ?? 0) + 1);
+      }
+      setFontsRevision((revision) => revision + 1);
+    };
     let active = true;
-    void document.fonts.ready.then(() => { if (active) loaded(); });
+    void document.fonts.ready.then(() => { if (active) { measurements.current.clear(); setFontsRevision(revision => revision + 1); } });
     document.fonts.addEventListener("loadingdone", loaded);
     return () => { active = false; document.fonts.removeEventListener("loadingdone", loaded); };
   }, []);
@@ -60,8 +68,9 @@ export function useStickyTextLayout(host: HTMLElement, state: CanvasState, contr
       live.add(note.id);
       // The rendered markup includes partial bold/italic changes, which the
       // whole-note toolbar's aggregated marks cannot distinguish.
+      const fontKey = getComputedStyle(text).fontFamily.split(",").map(family => [family, fontRevisions.current.get(normalizeFamily(family)) ?? 0]);
       const key = JSON.stringify([text.innerHTML, note.w, note.h, note.textScale,
-        note.textStyle, fontsRevision, document.fonts.status, state.editing?.id === note.id, note.locked, controller.editable()]);
+        note.textStyle, fontKey, state.editing?.id === note.id ? document.fonts.status : null, state.editing?.id === note.id, note.locked, controller.editable()]);
       const cached = measurements.current.get(note.id);
       if (cached?.text === text && cached.key === key) {
         next[note.id] = cached.size;

@@ -51,6 +51,15 @@ test('maintenance endpoints require the secret, canonical host and matching orig
       if (configured) {
         assert.deepEqual(await status.json(), { mode: 'restore', busy: false, complete: false });
         assert.equal((await send(base + '/recovery/restore', { headers })).status, 404);
+        const oversized = await send(base + '/recovery/restore', { method: 'POST', headers: { ...headers, 'Content-Length': String(129 * 1024 * 1024) } });
+        assert.equal(oversized.status, 413);
+        const stalled = request(base + '/recovery/restore', { method: 'POST', headers });
+        const closed = new Promise(resolve => stalled.on('error', resolve));
+        stalled.write('partial');
+        await new Promise(resolve => setTimeout(resolve, 50));
+        assert.equal((await send(base + '/recovery/status', { headers }).then(r => r.json())).busy, true);
+        await closed;
+        assert.equal((await send(base + '/recovery/status', { headers }).then(r => r.json())).busy, false, 'Idle upload did not release the recovery slot');
         const invalid = await send(base + '/recovery/restore', { method: 'POST', headers, body: 'invalid archive' });
         assert.equal(invalid.status, 409);
         assert.equal((await invalid.text()).includes(key), false);

@@ -38,3 +38,7 @@ The backup uses AES-256-GCM with a fresh nonce. Wrong keys, changed ciphertext, 
 Run `node --test tools/node-recovery/*.test.mjs` after installing repository dependencies. The HTTP tests cover authorization, host/origin checks and an unconfigured Preview.
 
 `node tools/node-recovery/recovery.integration.mjs` requires a built Node package and a disposable local MySQL server. It only accepts `DB_HOST=127.0.0.1` and creates/drops the fixed databases `whiteboard_recovery_source_test` and `whiteboard_recovery_target_test`. The configured test user needs permissions on those two databases. It verifies full recovery using the real packaged app, live-writer exclusion, an interruption between stores, retry identity and refusal to overwrite a populated destination. The Node hosting CI job runs these checks.
+
+An unfinished restore leaves `.restore-in-progress` in the private catalog directory. The application refuses startup while it exists. Keep the recovery package installed and resume the same authenticated archive; do not remove this marker by hand.
+
+A repeated request after a completed restore returns `alreadyCompleted: true` while the application remains stopped. Once the application starts, its completion receipt is invalidated and a restore must pass the empty-destination checks again. The recovery tool removes abandoned staging files only while holding exclusive database ownership. Authenticated uploads have a 30-second inactivity timeout as well as the 30-minute overall request limit.

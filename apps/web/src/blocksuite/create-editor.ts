@@ -135,6 +135,7 @@ export function createEditor(store: Store, workspace: Workspace) {
               ...nativeSelection,
               onSelect(selection) {
                 if (!selection.multiSelect && selection.selected &&
+                    context.gfx.selection.selectedIds.length <= 1 &&
                     (context.gfx.selection.has(context.model.id) || context.gfx.selection.editing)) {
                   // The product editor claims simple stickies synchronously.
                   // Document notes retain the engine's rich block editor.
@@ -181,13 +182,14 @@ export function createEditor(store: Store, workspace: Workspace) {
   return editor;
 }
 
-export function fitEditorToContent(editor: WhiteboardEditorElement, remembered?: BoardViewport | null) {
+export function fitEditorToContent(editor: WhiteboardEditorElement, remembered?: BoardViewport | null, onApplied?: () => void) {
   let secondFrame = 0;
   const firstFrame = requestAnimationFrame(() => {
     secondFrame = requestAnimationFrame(() => {
       const gfx = editor.std.get(GfxControllerIdentifier);
       if (remembered) {
         gfx.viewport.setViewport(remembered.zoom, [remembered.x, remembered.y], false);
+        onApplied?.();
         return;
       }
       const host = editor.closest<HTMLElement>(".editor-canvas");
@@ -196,6 +198,7 @@ export function fitEditorToContent(editor: WhiteboardEditorElement, remembered?:
         smooth: false,
         padding: host ? canvasFitPadding(host) : [96, 88, 80, 88],
       });
+      onApplied?.();
     });
   });
   return () => {

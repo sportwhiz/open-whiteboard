@@ -322,3 +322,27 @@ test('an in-flight check and an expired session cannot start replacement writes'
   await assert.rejects(deployment.run({ retryFailed: true }), /expired/);
   assert.equal(calls, before);
 });
+
+test('empty and oversized requests are client errors, not release-download failures', async () => {
+  const { api, fixture } = setup();
+  for (const body of [undefined, '', 'x'.repeat(12_001)]) {
+    const response = await api(new Request(installerOrigin + '/api', { method: 'POST', headers: { Origin: installerOrigin, 'Content-Type': 'application/json' }, body }));
+    assert.equal(response.status, 400);
+    assert.doesNotMatch(await response.text(), /release|download/i);
+  }
+  assert.equal(fixture.calls.length, 0);
+});
+test('verified installs retain their own quota when public admission is exhausted', async () => {
+  const { allowRequest } = await import('./rate-limit.mjs');
+  const keys = [];
+  const env = {
+    INSTALLER_LIMIT: { limit: async () => ({ success: true }) },
+    INSTALLER_GLOBAL_LIMIT: { limit: async ({ key }) => { keys.push(key); return { success: key.startsWith('session:') }; } },
+  };
+  const monitor = { credentialForAttempt: async (attempt, token) => attempt === 'known' && token === 'verified-token' ? 'a'.repeat(64) : null };
+  const request = token => new Request(installerOrigin + '/api', { method: 'POST', headers: { Origin: installerOrigin }, body: JSON.stringify({ attempt: 'known', token }) });
+  assert.equal(await allowRequest(request('verified-token'), env, monitor), true);
+  assert.equal(await allowRequest(request('wrong-token'), env, monitor), false);
+  assert.equal(await allowRequest(request(undefined), env, monitor), false);
+  assert.deepEqual(keys, ['session:' + 'a'.repeat(64), 'installer', 'installer']);
+});

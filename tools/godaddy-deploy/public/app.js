@@ -148,22 +148,32 @@ $('copy-passphrase').addEventListener('click', async () => {
 });
 
 // Check the public release gate before asking anyone to create a credential.
-$('token').disabled = true;
-call('release-status').then(status => {
-  if (status.monitoringReady === false) {
-    $('connect-form').hidden = true;
-    $('setup-kicker').textContent = 'PLEASE TRY AGAIN LATER';
-    $('setup-title').textContent = 'The installer is temporarily unavailable.';
-    $('setup-intro').textContent = 'We need to restore our setup checks before accepting new installations. You do not need to create a key yet.';
-    return;
-  }
-  if (!status.qualified) {
-    $('connect-form').hidden = true;
-    $('setup-kicker').textContent = 'RELEASE QUALIFICATION';
-    $('setup-title').textContent = 'The next GoDaddy release is being prepared.';
-    $('setup-intro').textContent = 'Installation and update checks are still in progress. Setup will open after those checks pass. You do not need to create a key yet.';
-    return;
-  }
-  $('token').disabled = false;
-  $('connect').disabled = false;
-}).catch(showError);
+const initialSetup = { kicker: $('setup-kicker').textContent, title: $('setup-title').textContent, intro: $('setup-intro').textContent };
+async function checkAvailability() {
+  $('token').disabled = true;
+  $('connect').disabled = true;
+  $('check-availability').disabled = true;
+  $('error').hidden = true;
+  try {
+    const status = await call('release-status');
+    const available = status.monitoringReady !== false && status.qualified;
+    $('connect-form').hidden = !available;
+    $('check-availability').hidden = available;
+    if (!available) {
+      $('setup-kicker').textContent = 'PLEASE TRY AGAIN LATER';
+      $('setup-title').textContent = 'The installer is temporarily unavailable.';
+      $('setup-intro').textContent = 'Setup will open after our installation checks pass. You do not need to create a key yet.';
+      return;
+    }
+    $('setup-kicker').textContent = initialSetup.kicker;
+    $('setup-title').textContent = initialSetup.title;
+    $('setup-intro').textContent = initialSetup.intro;
+    $('token').disabled = false;
+    $('connect').disabled = false;
+  } catch (error) {
+    showError(error);
+    $('check-availability').hidden = false;
+  } finally { $('check-availability').disabled = false; }
+}
+$('check-availability').addEventListener('click', checkAvailability);
+void checkAvailability();

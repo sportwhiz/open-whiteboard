@@ -341,6 +341,7 @@ export function createCanvasController(editor: WhiteboardEditorElement) {
     frame: "frame",
   };
   const fit = (ids?: string[]) => {
+    editor.dispatchEvent(new Event("whiteboard-manual-navigation"));
     const models = ids
       ?.map((id) => gfx.getElementById<GfxModel>(id))
       .filter((model): model is GfxModel => Boolean(model));
@@ -594,7 +595,7 @@ export function createCanvasController(editor: WhiteboardEditorElement) {
         const appearance = "props" in sourceModel
           ? sourceModel.props as { background?: unknown; edgeless?: Record<string, unknown> }
           : undefined;
-        nextId = createSticky(editor, target.x, target.y, source.color, "", source, appearance).id;
+        nextId = createSticky(editor, target.x, target.y, source.color, "", { w: source.w, h: source.w }, appearance).id;
       }
       crud.addElement("connector", {
         mode: ConnectorMode.Orthogonal,
@@ -704,7 +705,7 @@ export function createCanvasController(editor: WhiteboardEditorElement) {
       // necessarily registered in the canvas until this transaction finishes.
       let next!: ReturnType<typeof createSticky>;
       store.transact(() => {
-        next = createSticky(editor, position.x, position.y, old.color, "", old, appearance);
+        next = createSticky(editor, position.x, position.y, old.color, "", { w: old.w, h: old.w }, appearance);
       });
       store.captureSync();
       startEditing(next.id);
@@ -845,6 +846,7 @@ export function createCanvasController(editor: WhiteboardEditorElement) {
     connectNext,
     fit,
     zoom(value: number) {
+      editor.dispatchEvent(new Event("whiteboard-manual-navigation"));
       // Manual zoom wins over any fit-to-content animation still in flight.
       gfx.viewport.smoothZoom(value, undefined, 1);
       gfx.viewport.setZoom(value);
