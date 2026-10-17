@@ -1,88 +1,45 @@
-# GoDaddy public launch checklist
+# GoDaddy launch record
 
-Merging the implementation PRs does not enable live GoDaddy installation. This is the remaining launch checklist. Leave every item unchecked until its evidence is recorded below. The owner of this work is the maintainer running the release with their coding agent; merging a PR does not transfer these tasks to an automatic workflow.
+The maintainer runs these checks before opening public setup. Merging code alone does not publish the installer or the marketing site. The v0.4.2 package, upgrades and hosted setup passed, and public setup is now open.
 
-Current state: the website opens a preview and the installer still pins v0.4.0 with `qualified: false`. The separate installer Worker and D1 database are deployed, and the operator confirmed receipt of the direct email test. Scheduled incident delivery, recovery and recurrence passed at the service level. Receipt of the scheduled failure digest is confirmed; independent GitHub email remains unconfirmed. The exact v0.4.1 prerelease has passed fresh installation and restart checks; update and recovery qualification remains open.
+## Release and application
 
-## 1. Merge the reviewed code
+- [x] Reviewed release source: `v0.4.2`, commit `a931201ed2e9622772829bd94947a71da2da9ed9` ([PR #32](https://github.com/sportwhiz/open-whiteboard/pull/32)). Node tests include packaged GoDaddy and full-MySQL startup, persistence, idle connections and interrupted full recovery.
+- [x] Release workflow [39066101150](https://github.com/sportwhiz/open-whiteboard/actions/runs/39066101150) passed and published the immutable package. The published ZIP matches the exact artifact tested on GoDaddy: SHA-256 `16c1efd4ad471dcf20e518e8d5d94ea54d37d5b3088bca561ff64a0974c7ac12`.
+- [x] A separate coding-agent installation used the official GoDaddy CLI, private JSON input and recoverable REST writes. Provider publication, health, account/MFA setup, board saves, WebSockets, guest authorization, OAuth/MCP and a provider-confirmed restart passed. Browser sign-in and the saved board passed afterward. [Evidence](qa/godaddy-agent-install.json).
+- [x] The previous exact published v0.4.1 package passed fresh installation, sticky editing, Command-D duplication, dragging, zooming, collaboration, images and restart persistence. [Evidence](qa/godaddy-release-v0.4.1.json).
 
-- [x] Product PR #20 merged on October 17, 2026 as `cb9472d97ca9a2e101087704c95a6abf11e65ed7` after its checks passed.
-- [x] Merge the preview website: [website PR #3](https://github.com/sportwhiz/huddle-loom-site/pull/3) merged on October 17, 2026 as `80b3e1d9c8c0ff68840fbb68730c41e14a3c9a25`; its Cloudflare build passed. The public GoDaddy link still opens the preview.
-- [x] Website PR #4 merged as `fa1e649bbaa934f752e4079ddc01217f7a0de374`, pinning product `cb9472d97ca9a2e101087704c95a6abf11e65ed7`. Its Cloudflare production build passed.
-- [x] Keep `VITE_GODADDY_INSTALLER_URL` unset. The website may publish its preview at this point; live setup remains closed.
-- [x] [Product PR #24](https://github.com/sportwhiz/open-whiteboard/pull/24) merged as `22f197cf160b321fbb1aa946336c0bfc15f2db27` after all checks passed. It patches the MCP SDK, KaTeX, source-map-js and Sharp, and refreshes the bundled notices. The dependency audit and GitHub advisory list both report zero open vulnerabilities.
+## Updates and recovery
 
-Done when: the merged commits and passing checks are recorded, the security upgrade is included, and the public GoDaddy button still opens an explicitly labeled preview.
+- [x] A full encrypted backup of v0.4.1 was restored into a separate empty GoDaddy app. Existing sessions, fresh password sign-in, MFA, board identity/content, settings and image bytes survived. Source data was preserved and temporary recovery secrets removed. [Evidence](qa/godaddy-full-recovery.json); [recovery procedure](../tools/node-recovery/README.md).
+- [x] The actual provider `GET /apps/{appId}` response has the top-level `id` required by the updater. Live connections also exercised the check. [Contract evidence](qa/godaddy-application-identity.json).
+- [x] Unattended security update: the reviewed first-updater bootstrap candidate at `cb9472d97ca9a2e101087704c95a6abf11e65ed7` installed the genuine stable v0.4.1 security patch with no install request or browser open. The saved job reached success; fresh sign-in, MFA, settings, board data and exact image bytes passed afterward. The original published v0.4.0 ZIP predates this updater, so this is explicitly a bootstrap-candidate test. [Evidence](qa/godaddy-automatic-update.json).
+- [x] Owner-initiated stable v0.4.1 → v0.4.2 update passed. Discard its initial response, recover the saved job, reject an invalid replacement token without losing the current connection, reconnect the same app, and verify target identity plus retained data. [Evidence](qa/godaddy-manual-update.json).
 
-## 2. Publish and qualify the corrected package
+## Installer and alerts
 
-- [x] Tag `v0.4.1` points to reviewed commit `66c7ace460ff50f6484e3056a0fef720091d894a`; both package versions match. The tag was corrected before publication to include regenerated license notices.
-- [x] [Release workflow 39057713431](https://github.com/sportwhiz/open-whiteboard/actions/runs/39057713431) passed its Cloudflare, Node, manifest and publication jobs. It published `v0.4.1` as a prerelease with genuine dependency security fixes.
-- [x] Downloaded the [published v0.4.1 package](https://github.com/sportwhiz/open-whiteboard/releases/tag/v0.4.1). ZIP SHA-256: `347944203cd01b72b835e279dfe7661743c1a1940f8f8a1ff0c130f688dec59b`. Its embedded version, commit, schema and protocol match the release manifest; patched dependency notices are included.
-- [x] Deployed the exact published v0.4.1 ZIP through the installer API and flow modules to a disposable GoDaddy Deluxe app. Deployment reached `COMPLETED`; published HTTPS health returned 200 with `ready: true`. A deliberately lost publish response resumed the original deployment with the same retry key. [Live evidence](qa/godaddy-release-v0.4.1.json).
-- [x] Completed owner creation, MFA, browser sign-in, board saves, Command-D duplication, sticky editing, dragging, zooming, guest collaboration/authorization, WebSockets, images and OAuth/MCP on the published release. Provider-confirmed restarts retained owner and guest sessions, settings, board data, keys and image bytes.
-- [ ] Confirm actual Preview and Publish data isolation and single-process replacement during a package update. Investigate the background asset-reconciliation retry observed after a restart.
+- [x] The dedicated installer Worker is attached to `https://setup.openwhiteboard.app/`; the marketing site's routing remains separate. HTTPS `/healthz` returns `ready: true`.
+- [x] All three D1 migrations are applied. Email binding, rate limits and five-minute scheduled delivery are configured; request logging is disabled. Recipient and sender are private operator settings.
+- [x] The operator confirmed receipt of both the direct Cloudflare test email and the scheduled installation-failure digest on October 17, 2026. Recovery, recurrence and repeat suppression passed. [Evidence](qa/godaddy-hosted-installer.json).
+- [x] Independent GitHub monitoring checks the branded `/healthz` address every ten minutes. Outage exercises created issues #26 and #29; recovery closed them. The GitHub notifications API confirmed inbox mention delivery. GitHub email delivery is unconfirmed; direct Cloudflare email delivery is confirmed. [Branded endpoint check](https://github.com/sportwhiz/open-whiteboard/actions/runs/39065767294).
+- [x] Pinned v0.4.2 and matching coding-agent instructions, set `qualified: true`, passed 89 installer tests, the desktop/mobile browser suite and Worker dry run, and deployed Worker version `6ed26035-6b57-464d-8982-793a5fb7fccc`. Hosted health and the exact served agent instructions passed.
+- [x] Completed a fresh installation through the actual hosted browser page. Provider completion, owner/MFA setup, update connection, app health and credential clearing passed. Board saves, WebSockets, guest authorization, OAuth/MCP and a provider-confirmed restart also passed. [Evidence](qa/godaddy-hosted-browser-install.json).
 
-Done when: the exact published package passes all live checks and evidence is recorded. Only then promote that release to stable; keep its tag and assets unchanged.
+## Public website
 
-## 3. Prove updates and recovery on real hosting
+- [x] Set the public production installer URL to `https://setup.openwhiteboard.app`, pin the final product source, and pass configuration tests plus the production build.
+- [x] Deployed only `huddle-loom-site`, version `70bdba9c-c1d8-42bb-b1e0-333bcbe772f8`. The public hero, hosting and closing GoDaddy links point to live setup; following the hero link opened the working installer. All three Cloudflare destinations are unchanged. The walkthrough remains preview-only even without its query parameter. Desktop/mobile installer checks passed.
 
-- [x] Took an encrypted coordinated backup of the qualified v0.4.1 app’s private SQLite catalog, seven MySQL tables and installation keys. Restored into a separate empty GoDaddy app, republished the unchanged official ZIP, and verified existing sessions, fresh password sign-in, MFA, settings, matching board content/document epoch and exact image bytes. The original app remained intact. Removed temporary recovery secrets from both apps. [Evidence](qa/godaddy-full-recovery.json); [maintainer recovery tool](../tools/node-recovery/README.md).
-- [x] Verify the live `GET /apps/{appId}` identity contract and current handler. On October 17, 2026, top-level `id` matched the requested app and `appType` was `NODEJS`; both test suites share the redacted response fixture. The handler connected using the provider origin and a simulated custom origin, and rejected a different configured app ID and Preview. [Evidence](qa/godaddy-application-identity.json); all provider calls were read-only.
-- [ ] Exercise this same identity check on the qualified installed package at an actually attached custom domain, then complete the update tests below. The local handler test used a simulated custom origin and does not qualify custom-domain hosting or a live upgrade.
-- [ ] Connect the separate four-scope update token in **Administration → Updates**. Test owner-initiated installation of a second reviewed, compatible stable patch release. Keep the same app, origin, namespaces, database and installation keys.
-- [ ] Verify the replacement runs the target version, commit and schema; the provider deployment is complete; the saved update shows success; and existing accounts, boards, images and settings remain intact.
-- [ ] Rehearse an interrupted request and token replacement. Continue must recover the same saved operation without creating a second app or duplicate publication.
-- [ ] Test the opted-in automatic security-patch path with no browser open, using a genuinely eligible, reviewed security release in the same major/minor series. Do not mark a harmless test release as a security fix to trigger public installations. If no eligible release is available, record this check as outstanding rather than claiming unattended updates are qualified.
+## Tested scope and limits
 
-Done when: both source and target release identities, backup/restore results, automatic-update result and recovery evidence are recorded. A candidate replacement or a simulator run alone does not complete this step.
+The guided flow uses GoDaddy's supplied published address and an existing plan with available capacity. It does not buy hosting or configure custom domains. Preview stays on its setup guide until its actual origin is configured; it does not open the production database while unconfigured. Namespace isolation and single-writer exclusion have real-database tests. An authenticated interactive GoDaddy Preview and an attached custom app domain have not been live-qualified.
 
-## 4. Deploy the separate installer and activate alerts
+Live tests used the existing broad Hosting test PAT. The nine setup and four update permissions match the API operations, but issuing and testing a token limited to exactly those permissions was not exercised. The agent path used `GDDY_PAT`; browser OAuth sign-in was not exercised. A temporary setup token is cleared by the installer; ongoing updates require a separate token, which the owner must replace when it expires.
 
-The marketing website is static. The credential-handling installer is a separate service; this launch uses the supplied Cloudflare Worker.
+The Node idle-connection change retires unused MySQL connections without releasing active ownership locks. Earlier v0.4.1 logs recorded two packet warnings followed by background asset retries; their provider-side cause was not established. Data checks passed. The full recovery tool supports private SQLite catalogs and bounded archives, requires maintenance downtime, and does not provide scheduled backups or automatic data rollback.
 
-- [x] Choose its real HTTPS address. Provision D1 for `tools/godaddy-deploy/wrangler.jsonc`, bind the actual database, and apply **all** SQL migrations in `tools/godaddy-deploy/migrations/` in order.
-- [x] Configure the `EMAIL`, `INSTALLER_LIMIT` and `INSTALLER_GLOBAL_LIMIT` bindings and the five-minute scheduled trigger. Keep request logging disabled.
-- [x] Configure `ALERT_TO` and `ALERT_FROM` as private Worker secrets using the agreed operator recipient and verified sending domain. Restrict the email destination through private deployment configuration. Never commit those addresses or credentials.
-- [x] Deploy the installer with its release gate still closed. Send a harmless test email and confirm receipt in the intended inbox before setting `ALERT_DELIVERY_VERIFIED=true`. Local `.dev.vars` values are not deployed automatically.
-- [x] Require the hosted installer's `/healthz` to return 200 with `ready: true` after a scheduled run. Exercise a controlled incident, digest delivery, successful recovery and recurrence. Verify emails contain only the documented diagnostic fields.
-- [ ] Configure an independent uptime monitor for that `/healthz` endpoint with an alert route that does not depend on the installer's own email service. Test both outage notification and recovery.
+## If something breaks
 
-Done when: the service URL, applied migrations, inbox receipt and independent monitor test are recorded privately where appropriate. A successful send API response is not proof of inbox receipt. The public site still links to the preview.
+Installation failures generate sanitized email reports with a support reference, failed step, error category and release. The independent monitor opens a GitHub issue for an installer outage and closes it after recovery. Agent/manual deployments do not send central installer alerts.
 
-## 5. Enable and test the complete hosted setup
-
-- [ ] Update `tools/godaddy-deploy/release.json` to the qualified stable version, exact ZIP URL and SHA-256. Update `tools/godaddy-deploy/public/agent-prompt.txt` to the same package. Set `qualified: true` only after steps 2 and 3 pass.
-- [ ] Run `pnpm test:godaddy-installer`, `pnpm test:godaddy-installer:browser` and the installer Worker dry run. Review and deploy this installer configuration change.
-- [ ] From a fresh browser, use the actual hosted installer URL to create a disposable app with the exact nine documented Hosting permissions. Finish owner/MFA setup and connect updates. Verify the deployment result, app health, credentials cleared after setup and no duplicate app after a recoverable interruption.
-- [ ] Exercise the copyable coding-agent instructions separately with a fresh temporary credential or GoDaddy sign-in. Confirm they deploy the same qualified package. Keep credentials out of chat and logs; revoke temporary setup tokens afterward. Agent/manual deployments do not send central installer alerts.
-
-Done when: a new person can complete real setup from the hosted page and the agent instructions without undocumented settings. Record the package and installer commit used.
-
-## 6. Switch the public website to live setup
-
-- [ ] Set `VITE_GODADDY_INSTALLER_URL` to the tested HTTPS installer URL in the marketing site's production build environment. It must contain no credentials, query string or fragment.
-- [ ] Update the website's product submodule to include the final installer assets and instructions. Run `npm run test:config` and `npm run build:cloudflare`, then deploy the website. Changing the environment variable alone does not update an existing static bundle.
-- [ ] On `https://openwhiteboard.app/`, check both provider buttons in the hero, hosting and closing sections. The GoDaddy buttons must open real setup; the dedicated walkthrough must remain clearly labeled as a preview. Check mobile layout and the Cloudflare destination too.
-
-Done when: the public site points at the exact tested installer, and the recipient can receive failure alerts and independent outage alerts. Only now announce that GoDaddy deployment is ready to share.
-
-## Evidence and handoff
-
-| Item | Evidence/status |
-| --- | --- |
-| Product and website merge commits | Product `cb9472d97ca9a2e101087704c95a6abf11e65ed7`; site `fa1e649bbaa934f752e4079ddc01217f7a0de374`; production build passed |
-| Security advisory resolution | PR #24 merged; dependency audit and GitHub open-alert list are empty |
-| Qualified stable package/tag/commit/SHA-256 | Published and checksum-verified v0.4.1 prerelease; live qualification and stable promotion pending |
-| Fresh live install and restart | Exact published v0.4.1 passed; [sanitized evidence](qa/godaddy-release-v0.4.1.json). Preview isolation and replacement-update behavior remain pending |
-| Source → target stable update and unattended security update | Pending |
-| Backup/restore and interrupted-update recovery | Pending |
-| Hosted installer URL and deployed commit | [Dedicated Worker](https://open-whiteboard-godaddy-installer.cool-salad-9f16.workers.dev/), deployed source `0f9b8d3e33cc6da0ec0dd432fd21080cb41667a7`, including the revised holding page; live asset verified against source. Release gate closed. [Runtime fix PR #30](https://github.com/sportwhiz/open-whiteboard/pull/30) merged with all checks passing |
-| D1 migrations and email receipt | All three migrations applied; direct Cloudflare test received and confirmed October 17, 2026. Private recipient, sender and deployment configuration remain outside Git. Two real scheduled runs accepted the controlled incident and its recurrence; recovery and repeat suppression passed. The operator also confirmed receipt of the scheduled failure digest. [Hosted evidence](qa/godaddy-hosted-installer.json) |
-| Independent outage/recovery notification | PR #25 merged as `086a873e9e04214e4bcfeb9e02173f3963f5ee71`; [outage exercise](https://github.com/sportwhiz/open-whiteboard/actions/runs/39058451586) opened test issue #26 and [recovery exercise](https://github.com/sportwhiz/open-whiteboard/actions/runs/39058482686) closed it. The live schedule is enabled. [Live endpoint check](https://github.com/sportwhiz/open-whiteboard/actions/runs/39061843197) and [second recovery exercise](https://github.com/sportwhiz/open-whiteboard/actions/runs/39061841165) passed; test issue #29 is closed. GitHub inbox delivery remains unconfirmed |
-| Hosted browser setup and agent setup | Pending |
-| Public website build and button checks | Pending |
-
-If a launch check fails, leave the website on preview. If a serious problem appears after launch, remove `VITE_GODADDY_INSTALLER_URL` and rebuild the site; deploy `qualified: false` on the installer to stop new installations through its direct URL too. Preserve existing installation data and saved operations. Investigate before changing a release pin or asking an affected person to start another app.
-
-Technical references: [installer operations and alerts](../tools/godaddy-deploy/README.md), [GoDaddy hosting and backup constraints](godaddy-nodejs-installation.md), [updates](software-updates.md), and [existing qualification evidence](end-to-end-qa.md).
+For a serious release problem, set the installer's `qualified` flag to `false` and redeploy it. Set `VITE_GODADDY_INSTALLER_URL` to an empty string and rebuild the marketing site to restore the walkthrough. Preserve existing app data and operation IDs; investigate before asking someone to create another app. A release pin change does not alter existing installations.

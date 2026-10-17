@@ -1,0 +1,79 @@
+{
+  "verifiedAt": "2026-10-17T20:29:48.143Z",
+  "source": {
+    "version": "0.4.1",
+    "commit": "66c7ace460ff50f6484e3056a0fef720091d894a",
+    "schema": "f093fc7ab85b56f3a3dfe3638c45b3596bd58579631183e67df08add5bd4b117",
+    "dataFormat": 1,
+    "protocol": 1,
+    "security": false,
+    "notes": ""
+  },
+  "target": {
+    "version": "0.4.2",
+    "commit": "a931201ed2e9622772829bd94947a71da2da9ed9",
+    "schema": "f093fc7ab85b56f3a3dfe3638c45b3596bd58579631183e67df08add5bd4b117",
+    "dataFormat": 1,
+    "protocol": 1,
+    "security": false,
+    "notes": ""
+  },
+  "mode": "owner initiated stable patch update",
+  "initialResponseDiscarded": true,
+  "sameSavedJobRecovered": true,
+  "invalidReplacementPreservedConnection": true,
+  "sameAppReconnection": true,
+  "events": [
+    {
+      "stage": "manual-update",
+      "status": "queued-response-discarded",
+      "at": "2026-10-17T20:28:44.228Z"
+    },
+    {
+      "stage": "manual-update",
+      "status": "same-app-connection-replaced",
+      "at": "2026-10-17T20:28:46.277Z"
+    },
+    {
+      "stage": "update",
+      "status": "0.4.1:queued",
+      "at": "2026-10-17T20:28:46.407Z"
+    },
+    {
+      "stage": "update",
+      "status": "0.4.1:building",
+      "at": "2026-10-17T20:28:56.737Z"
+    },
+    {
+      "stage": "update",
+      "status": "0.4.1:verifying",
+      "at": "2026-10-17T20:29:27.417Z"
+    },
+    {
+      "stage": "update",
+      "status": "0.4.2:verifying",
+      "at": "2026-10-17T20:29:37.790Z"
+    },
+    {
+      "stage": "update",
+      "status": "0.4.2:succeeded",
+      "at": "2026-10-17T20:29:48.143Z"
+    },
+    {
+      "stage": "update",
+      "status": "verified-target-running",
+      "at": "2026-10-17T20:29:48.143Z"
+    }
+  ],
+  "dataVerification": {
+    "freshSignIn": true,
+    "ownerSession": true,
+    "mfa": true,
+    "board": true,
+    "settings": true,
+    "imageBytes": true,
+    "version": "0.4.2",
+    "commit": "a931201ed2e9622772829bd94947a71da2da9ed9",
+    "verifiedAt": "2026-10-17T20:30:31.126Z"
+  }
+}

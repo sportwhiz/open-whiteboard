@@ -73,7 +73,7 @@ Live data-format changes need their own migration/backup design and increase the
 
 ## Node.js / GoDaddy
 
-On GoDaddy, **Administration → Updates** now supports connecting an update token, checking releases, installing a compatible release, and opting into automatic security patches. These controls ship with the next qualified Node package; existing v0.4.0 installations need one manual upgrade first. Other Node providers retain their hosting-dashboard upgrade flow.
+On GoDaddy, **Administration → Updates** now supports connecting an update token, checking releases, installing a compatible release, and opting into automatic security patches. These controls are included in the current Node package. Installations using the original v0.4.0 ZIP need one manual package upgrade first. Other Node providers retain their hosting-dashboard upgrade flow.
 
 The installation wizard uses a temporary token and discards it. Updates use a separately authorized token created on [GoDaddy’s token page](https://developer.godaddy.com/personal-access-token). The Updates screen supplies the link, name, expiry, and four permissions: `hosting.application:read`, `hosting.source:read`, `hosting.source:write`, and `hosting.deployment:execute`. GoDaddy scopes apply across the account; they are not resource-scoped to one app. The whiteboard verifies the selected application against the configured app identifier (or provider origin for legacy installations), encrypts the credential with its installation key, and sends it only to the fixed GoDaddy API host. No purchase, secret-writing, subscription, DNS, log-reading, or delete permission is required. Owners must pass the existing recent-verification checks before changing deployment settings.
 
@@ -87,7 +87,7 @@ Expired or revoked tokens pause the saved operation; reconnect and choose **Cont
 
 New wizard installations set `GODADDY_APP_ID` and `GODADDY_VARIANT` automatically. Older installations can supply their app ID once in Updates. Preview is excluded from automatic publication and must have a separate namespace. Changing the app’s public origin requires reconnecting its update authorization. The token cannot be silently renewed: GoDaddy’s current personal-token flow requires the owner to replace it when it expires (up to one year). Disconnecting removes the encrypted token and disables automatic installation; revoke it in GoDaddy to remove its provider access too.
 
-The provider state machine has deterministic failure/restart tests. A live candidate has been published over a populated GoDaddy test app and its account, boards, and positions survived. A stable-version-to-stable-version unattended rollout still requires the next qualified public release; the installer remains blocked on its old unqualified release pin until then.
+The provider state machine has deterministic failure/restart tests. Live qualification includes a stable v0.4.1 → v0.4.2 owner-initiated update, lost-response recovery and connection replacement, plus an unattended first-updater bootstrap → genuine v0.4.1 security update. Accounts, MFA, boards, settings and image bytes survived. The [launch record](godaddy-launch-checklist.md) links the exact source/target identities and states the bootstrap test’s limits.
 
 ## Local verification
 

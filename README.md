@@ -17,7 +17,7 @@ Open Whiteboard is a whiteboard you host yourself. Put sticky notes and sketches
 - An OAuth-protected MCP server with 21 tools for workflows, workshops, diagrams, search, images, and board editing.
 - Native archives that keep boards editable, plus image exports.
 
-This is the first public release. Cloudflare is the primary hosting path. The Node adapter has local qualification and live GoDaddy candidate testing. The guided installer is waiting for a fixed public release; see the GoDaddy guide for its release gate. Please report bugs and avoid using an untested installation as the only copy of important work.
+Cloudflare and GoDaddy Node.js have guided deployment paths. The [GoDaddy launch record](docs/godaddy-launch-checklist.md) documents live installation, update and recovery tests, along with their limits. Keep backups of important work.
 
 Some canvas fonts are downloaded from `fonts.cdnfonts.com` when a board uses them. That provider receives the font request and your network address; board text and sign-in credentials are not sent with it. Self-hosting the app does not currently remove this font dependency. Block that domain if your deployment requires no third-party font requests; those fonts will use fallbacks.
 
@@ -33,13 +33,13 @@ You need a Cloudflare account with Workers Paid and R2 enabled. Cloudflare Acces
 
 ## Host on GoDaddy Node.js
 
-A [guided GoDaddy installer](tools/godaddy-deploy/README.md) now automates app creation, existing-plan selection, settings, upload, publication, and readiness checks. It includes temporary-key instructions and a copyable coding-agent prompt. The public button is pending a qualified release containing the GoDaddy startup fix; the installer blocks the known failing v0.4.0 package.
+Open [Deploy to GoDaddy Node.js](https://setup.openwhiteboard.app/). Create a temporary key, choose your existing hosting plan, and save a setup passphrase. The installer creates the app, fills in its settings, uploads the verified release and checks publication. You can also copy its instructions into a coding agent.
 
-The next qualified package also adds in-app update controls: connect a separate update token once, then choose automatic compatible security patches or **Update now**. See [GoDaddy updates](docs/software-updates.md#nodejs--godaddy).
+The Node package includes in-app update controls: connect a separate update token once, then choose automatic compatible security patches or **Update now**. See [GoDaddy updates](docs/software-updates.md#nodejs--godaddy).
 
 The manual hosting path is:
 
-Once a fixed release is qualified, download its `open-whiteboard-node.zip`, create a Node.js Hosting app with managed MySQL, and follow the settings and upload steps in the guide below. GoDaddy's Preview link can point to its dashboard wrapper; use the application origin required by the guide, and keep Preview and Publish settings separate. GoDaddy handles dependencies and database connections; the app creates its tables and keys.
+For manual installation, download the latest stable `open-whiteboard-node.zip`, create a Node.js Hosting app with managed MySQL, and follow the settings and upload steps in the guide below. GoDaddy's Preview link can point to its dashboard wrapper; use the application origin required by the guide, and keep Preview and Publish settings separate. GoDaddy handles dependencies and database connections; the app creates its tables and keys.
 
 [GoDaddy installation guide](docs/godaddy-nodejs-installation.md) includes the exact settings and the differences between Preview and Publish. Other Node hosts can use the same package with a full MySQL catalog. The [Node adapter](apps/web/src/node) is a separate source folder; it shares the editor and application services with Cloudflare.
 

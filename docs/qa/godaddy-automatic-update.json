@@ -1,0 +1,80 @@
+{
+  "verifiedAt": "2026-10-17T20:05:25.196Z",
+  "hosting": "GoDaddy Node.js",
+  "mode": "automatic security update; no install request or browser open",
+  "source": {
+    "kind": "reviewed first-updater bootstrap candidate, not the published v0.4.0 ZIP",
+    "version": "0.4.0",
+    "commit": "cb9472d97ca9a2e101087704c95a6abf11e65ed7",
+    "sha256": "aa60d1ef6757296fe9b632b4d848d64ef84cf53ac2c123b1a1b87f8d385f0ce0"
+  },
+  "target": {
+    "version": "0.4.1",
+    "commit": "66c7ace460ff50f6484e3056a0fef720091d894a",
+    "schema": "f093fc7ab85b56f3a3dfe3638c45b3596bd58579631183e67df08add5bd4b117",
+    "dataFormat": 1,
+    "protocol": 1
+  },
+  "events": [
+    {
+      "stage": "automatic-security",
+      "status": "enabled-without-install-request",
+      "at": "2026-10-17T20:04:02.646Z"
+    },
+    {
+      "stage": "update",
+      "status": "0.4.0:waiting",
+      "at": "2026-10-17T20:04:02.793Z"
+    },
+    {
+      "stage": "update",
+      "status": "0.4.0:queued",
+      "at": "2026-10-17T20:04:23.480Z"
+    },
+    {
+      "stage": "update",
+      "status": "0.4.0:building",
+      "at": "2026-10-17T20:04:33.648Z"
+    },
+    {
+      "stage": "update",
+      "status": "0.4.0:deploying",
+      "at": "2026-10-17T20:05:04.574Z"
+    },
+    {
+      "stage": "update",
+      "status": "0.4.1:verifying",
+      "at": "2026-10-17T20:05:14.837Z"
+    },
+    {
+      "stage": "update",
+      "status": "0.4.1:succeeded",
+      "at": "2026-10-17T20:05:25.196Z"
+    },
+    {
+      "stage": "update",
+      "status": "verified-target-running",
+      "at": "2026-10-17T20:05:25.196Z"
+    },
+    {
+      "stage": "automatic-security",
+      "status": "paused",
+      "at": "2026-10-17T20:06:04.725Z"
+    }
+  ],
+  "verifiedAfterUpdate": {
+    "freshSignIn": true,
+    "ownerSession": true,
+    "mfa": true,
+    "board": true,
+    "settings": true,
+    "imageBytes": true,
+    "version": "0.4.1",
+    "commit": "66c7ace460ff50f6484e3056a0fef720091d894a"
+  },
+  "limitations": [
+    "The initial public v0.4.0 package predates the GoDaddy updater; the bootstrap candidate provides that first updater.",
+    "This verifies a genuine security release without creating a false security advisory or modifying release assets.",
+    "The live test used the existing broad Hosting test token; restricted four-scope token issuance was not exercised."
+  ]
+}
