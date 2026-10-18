@@ -27,13 +27,16 @@ async function canvasChrome(page, request, mod) {
   const focused = () => page.evaluate(() => document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.tagName);
   const notes = page.locator('[data-testid="edgeless-note-container"]');
   // Wait until the camera has stopped moving (fit and zoom animate).
+  // Wait until the camera has stopped: still for 5 frames AND for at least
+  // 300ms, so a fit animation that starts late (slow runners) is not missed.
   const settleCamera = () => page.evaluate(() => new Promise(resolve => {
-    let last = '', still = 0;
+    let last = '', still = 0, stillSince = performance.now();
     const tick = () => {
       const { x, y, zoom } = window.auditController.camera();
       const now = `${x.toFixed(2)},${y.toFixed(2)},${zoom.toFixed(4)}`;
-      still = now === last ? still + 1 : 0; last = now;
-      if (still >= 5) resolve(); else requestAnimationFrame(tick);
+      if (now === last) still += 1; else { still = 0; stillSince = performance.now(); }
+      last = now;
+      if (still >= 5 && performance.now() - stillSince >= 300) resolve(); else requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
   }));
