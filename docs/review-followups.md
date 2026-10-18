@@ -1,6 +1,6 @@
 # Review follow-ups — 17 October 2026
 
-This change is for review. It has not been deployed, and the existing v0.4.2 installer release remains pinned.
+These fixes are included in the qualified v0.5.0 release and the hosted installer. The [release record](qa/godaddy-release-v0.5.0.json) covers fresh installation and the owner-initiated v0.4.2 upgrade.
 
 | Finding | Result |
 | --- | --- |
@@ -33,7 +33,7 @@ This change is for review. It has not been deployed, and the existing v0.4.2 ins
 - Automatic rollback remains open. Before removing the warning from the update screen or the site’s GoDaddy card, qualify recovery from a deliberately broken startup on disposable GoDaddy hosting. Review both copies together when that passes.
 - Cross-server recovery needs separate qualification. The schema fingerprint includes MySQL `SHOW CREATE TABLE` output, including charset and collation defaults. A restore onto another MySQL server can refuse a compatible schema. Keep that refusal until normalization has tests across supported server configurations.
 - Merge the product PR before the companion site PR. Use a merge commit to preserve the pinned product commit, or update the site’s submodule to the actual merged `main` commit after a squash/rebase. Verify the site pin is reachable from product `main` before merging the site.
-- These fixes reach GoDaddy installations only after a new qualified release (planned v0.4.3), an updated installer release pin, and the live launch checks. Merging the source alone does not update the existing v0.4.2 ZIP.
+- The v0.5.0 release and installer pin now deliver these fixes. Existing owners can install the feature update from Administration → Updates; merging source alone does not update their installations.
 
 ## Validation
 
