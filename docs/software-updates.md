@@ -87,6 +87,8 @@ Expired or revoked tokens pause the saved operation; reconnect and choose **Cont
 
 New wizard installations set `GODADDY_APP_ID` and `GODADDY_VARIANT` automatically. Older installations can supply their app ID once in Updates. Preview is excluded from automatic publication and must have a separate namespace. Changing the app’s public origin requires reconnecting its update authorization. The token cannot be silently renewed: GoDaddy’s current personal-token flow requires the owner to replace it when it expires (up to one year). Disconnecting removes the encrypted token and disables automatic installation; revoke it in GoDaddy to remove its provider access too.
 
+The v0.4.2 → v0.5.0 owner-initiated feature update also passed on live GoDaddy hosting, retaining the saved board, document epoch, settings and update connection. [Qualification record](qa/godaddy-release-v0.5.0.json).
+
 The provider state machine has deterministic failure/restart tests. Live qualification includes a stable v0.4.1 → v0.4.2 owner-initiated update, lost-response recovery and connection replacement, plus an unattended first-updater bootstrap → genuine v0.4.1 security update. Accounts, MFA, boards, settings and image bytes survived. The [launch record](godaddy-launch-checklist.md) links the exact source/target identities and states the bootstrap test’s limits.
 
 ## Local verification

@@ -1,0 +1,107 @@
+{
+  "verifiedAt": "2026-10-18T23:41:36.036Z",
+  "release": {
+    "version": "0.5.0",
+    "commit": "0efb02748945447ba0f07749ff6837f5ae5d876b",
+    "schema": "f093fc7ab85b56f3a3dfe3638c45b3596bd58579631183e67df08add5bd4b117",
+    "dataFormat": 1,
+    "protocol": 1,
+    "security": false,
+    "nodeSha256": "27df8c3037188c718dcc79d052e59e6a224b49c63f6427ff4747e085219188e1"
+  },
+  "releaseWorkflow": "https://github.com/sportwhiz/open-whiteboard/actions/runs/39176223041",
+  "publishedZipMatchesQualifiedArtifact": true,
+  "freshInstallation": {
+    "method": "Real installer handler against GoDaddy, using the release workflow artifact; published ZIP subsequently verified byte-for-byte identical.",
+    "providerPublication": "COMPLETED",
+    "lostPublicationResponseRecoveredWithSameOperation": true,
+    "healthReady": true,
+    "ownerAndMfa": true,
+    "guestPermissions": true,
+    "websocket": true,
+    "oauthMcp": true,
+    "providerConfirmedRestart": {
+      "startupAt": "2026-10-18T23:34:51.435Z",
+      "providerState": "running",
+      "healthReady": true
+    },
+    "imageBytesSurvivedRestart": true,
+    "updateConnection": true,
+    "runningVersion": "0.5.0",
+    "runningCommit": "0efb02748945447ba0f07749ff6837f5ae5d876b"
+  },
+  "browser": {
+    "verifiedAt": "2026-10-18T23:34:39.636Z",
+    "editing": true,
+    "duplicate": true,
+    "drag": true,
+    "zoom": true,
+    "crossTabSynchronization": true,
+    "reloadPersistence": true,
+    "browserErrors": []
+  },
+  "liveUpdateGuards": {
+    "verifiedAt": "2026-10-18T23:35:40.483Z",
+    "ownerBadCsrfRejected": true,
+    "ownerForeignOriginRejected": true,
+    "guestPolicyMutationRejected": true,
+    "policyUnchanged": true
+  },
+  "upgrade": {
+    "completedAt": "2026-10-18T23:40:38.931Z",
+    "source": {
+      "version": "0.4.2",
+      "commit": "a931201ed2e9622772829bd94947a71da2da9ed9",
+      "schema": "f093fc7ab85b56f3a3dfe3638c45b3596bd58579631183e67df08add5bd4b117",
+      "dataFormat": 1,
+      "protocol": 1,
+      "security": false,
+      "notes": ""
+    },
+    "target": {
+      "version": "0.5.0",
+      "commit": "0efb02748945447ba0f07749ff6837f5ae5d876b",
+      "schema": "f093fc7ab85b56f3a3dfe3638c45b3596bd58579631183e67df08add5bd4b117",
+      "dataFormat": 1,
+      "protocol": 1,
+      "security": false,
+      "notes": ""
+    },
+    "mode": "Owner-initiated feature update",
+    "status": "succeeded",
+    "boardUnchanged": true,
+    "documentEpochUnchanged": true,
+    "settingsUnchanged": true,
+    "connectionRetained": true,
+    "automaticSecurityRemainsOff": true
+  },
+  "hostedInstaller": {
+    "url": "https://setup.openwhiteboard.app/",
+    "workerVersion": "895d8df5-2377-4e21-b320-ba95a5dc61eb",
+    "verifiedAt": "2026-10-18T23:41:36.036Z",
+    "version": "0.5.0",
+    "qualified": true,
+    "monitoringReady": true,
+    "liveConnection": true,
+    "planSelection": true,
+    "credentialFieldCleared": true,
+    "noCredentialInBrowserStorage": true,
+    "disconnect": true,
+    "agentPromptMatches": true,
+    "noAppCreated": true,
+    "browserErrors": []
+  },
+  "validation": {
+    "installerTests": 93,
+    "installerBrowserSuite": "passed",
+    "cloudflareReleaseWorkflow": "passed",
+    "nodeReleaseWorkflow": "passed",
+    "workerDryRun": "passed"
+  },
+  "limitations": [
+    "Automatic rollback after a failed app startup is not provided.",
+    "Live qualification used a broad Hosting token; an exactly minimal-scope token was not exercised.",
+    "GoDaddy Preview and custom domains were not exercised.",
+    "Fresh deployment exercised the real installer handler locally; the hosted browser check verified release readiness, connection, plan selection and credential clearing without creating a second app."
+  ]
+}

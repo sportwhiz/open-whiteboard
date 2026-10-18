@@ -1,6 +1,19 @@
 # GoDaddy launch record
 
-The maintainer runs these checks before opening public setup. Merging code alone does not publish the installer or the marketing site. The v0.4.2 package, upgrades and hosted setup passed, and public setup is now open.
+The active GoDaddy release is **v0.5.0**. The package, owner-initiated upgrade and hosted installer checks passed. Merging source alone does not update a published ZIP or the hosted installer.
+
+## v0.5.0 qualification
+
+- Release source: `0efb02748945447ba0f07749ff6837f5ae5d876b`, preserved on main by [PR #36](https://github.com/sportwhiz/open-whiteboard/pull/36). The [release workflow](https://github.com/sportwhiz/open-whiteboard/actions/runs/39176223041) passed Cloudflare checks, browser suites, Node/MySQL packaging, restart and encrypted-recovery tests.
+- The [published ZIP](https://github.com/sportwhiz/open-whiteboard/releases/download/v0.5.0/open-whiteboard-node.zip) matches the workflow artifact tested on GoDaddy. Its SHA-256 is `27df8c3037188c718dcc79d052e59e6a224b49c63f6427ff4747e085219188e1`; the release manifest carries the same digest.
+- A fresh installation passed owner/MFA setup, guest permissions, WebSockets, OAuth/MCP, browser editing, duplication, dragging, zoom, cross-tab synchronization and reload persistence. A provider-confirmed restart retained sessions, boards, settings and image bytes. A deliberately lost publication response resumed the same operation.
+- The existing v0.4.2 test installation upgraded through its normal owner update controls. The saved board, document epoch, settings and encrypted update connection survived. This is a feature release, with `security: false`; automatic security updates do not install it.
+- The hosted installer now pins v0.5.0, with matching coding-agent instructions. Worker version `895d8df5-2377-4e21-b320-ba95a5dc61eb` passed live readiness, token connection, plan selection, disconnect and credential-clearing checks. Monitoring remained ready; its database, recipient restrictions and private email settings were preserved.
+- Local validation passed 93 installer tests, the desktop/mobile installer browser suite and a Worker deployment dry run.
+
+[Qualification evidence and test boundaries](qa/godaddy-release-v0.5.0.json). Fresh deployment used the real installer handler against GoDaddy; the hosted browser check connected and selected a plan without creating another app. Failed-startup recovery still requires republishing a working package from GoDaddy; automatic rollback has not been qualified.
+
+The remaining sections preserve the original v0.4.2 launch evidence and the operating procedures.
 
 ## Release and application
 
