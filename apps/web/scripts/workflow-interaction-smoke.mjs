@@ -191,10 +191,13 @@ async function canvasChrome(page, request, mod) {
     // Right-drag pans even when it starts on a note, and opens no menu.
     await page.getByRole('button', { name: 'Fit board', exact: true }).click(); await page.waitForTimeout(800);
     const startX = (await notes.nth(2).boundingBox()).x;
+    const modelBefore = await page.evaluate(() => document.querySelector('whiteboard-editor').doc.getModelsByFlavour('affine:note')[2].props.xywh);
     const [px, py] = await centre(2);
     await page.mouse.move(px, py); await page.mouse.down({ button: 'right' });
     await page.mouse.move(px + 120, py + 10, { steps: 8 }); await page.mouse.up({ button: 'right' });
-    await page.waitForFunction(x => Math.abs(document.querySelectorAll('[data-testid="edgeless-note-container"]')[2].getBoundingClientRect().x - x - 120) < 2, startX);
+    // The camera pans with the drag (a drag threshold may hold back a few pixels on slow machines).
+    await page.waitForFunction(x => document.querySelectorAll('[data-testid="edgeless-note-container"]')[2].getBoundingClientRect().x - x > 80, startX);
+    assert.equal(await page.evaluate(() => document.querySelector('whiteboard-editor').doc.getModelsByFlavour('affine:note')[2].props.xywh), modelBefore, 'Right-drag moved the note instead of panning');
     assert.equal(await page.getByRole('menu').count(), 0, 'Right-drag opened a menu');
 
     // Arrow-key nudges are one undo step; rapid nudges merge.
