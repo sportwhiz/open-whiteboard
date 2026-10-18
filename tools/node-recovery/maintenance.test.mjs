@@ -17,11 +17,11 @@ const send = (url, options = {}) => new Promise((resolve, reject) => {
 });
 // A raw client deliberately leaves a chunked body unfinished. Verify the
 // server both delivers its rejection and closes without waiting for the body.
-const rejectedUpload = (port, path, headers, expected) => new Promise((resolve, reject) => {
+const rejectedUpload = (port, path, headers, expected, method = 'POST') => new Promise((resolve, reject) => {
   const socket = createConnection({ host: '127.0.0.1', port });
   let received = '';
   const timeout = setTimeout(() => { socket.destroy(); reject(new Error(`Rejected ${expected} upload kept its socket open`)); }, 2000);
-  socket.on('connect', () => socket.write(`POST ${path} HTTP/1.1\r\n${Object.entries(headers).map(([k, v]) => `${k}: ${v}\r\n`).join('')}Transfer-Encoding: chunked\r\n\r\n7\r\npartial\r\n`));
+  socket.on('connect', () => socket.write(`${method} ${path} HTTP/1.1\r\n${Object.entries(headers).map(([k, v]) => `${k}: ${v}\r\n`).join('')}Transfer-Encoding: chunked\r\n\r\n7\r\npartial\r\n`));
   socket.on('data', chunk => { received += chunk.toString(); });
   socket.on('error', error => { clearTimeout(timeout); reject(error); });
   socket.on('close', () => {
@@ -61,6 +61,10 @@ test('maintenance endpoints require the secret, canonical host and matching orig
       }
       assert.equal(health?.status, 200); assert.deepEqual(await health.json(), { ready: configured, maintenance: true });
       const headers = { Host: 'whiteboard.example', Authorization: 'Bearer ' + token };
+      for (const method of ['GET', 'HEAD']) {
+        await rejectedUpload(port, '/healthz', { Host: 'whiteboard.example' }, 400, method);
+        await rejectedUpload(port, '/recovery/status', headers, 400, method);
+      }
       await rejectedUpload(port, '/recovery/restore', { ...headers, Authorization: 'Bearer wrong' }, 401);
       for (const patch of [{ Authorization: '' }, { Authorization: 'Bearer wrong' }, { Host: 'attacker.example' }, { Origin: 'https://attacker.example' }]) {
         const response = await send(base + '/recovery/restore', { method: 'POST', headers: { ...headers, ...patch }, body: 'untrusted' });

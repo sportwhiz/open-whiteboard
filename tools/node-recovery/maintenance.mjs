@@ -30,6 +30,11 @@ const server = createServer(async (request, response) => {
   response.setHeader('X-Content-Type-Options', 'nosniff');
   response.setHeader('Referrer-Policy', 'no-referrer');
   response.setHeader('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
+  // Read-only endpoints never accept uploads. Otherwise an unauthenticated
+  // health probe could leave a body unfinished after receiving its response.
+  if (['GET', 'HEAD'].includes(request.method) && (request.headers['transfer-encoding'] || Number(request.headers['content-length'] || 0) > 0)) {
+    rejectRequest(request, response, 400); return;
+  }
   const loopback = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(request.socket.remoteAddress);
   const validHost = configured && request.headers.host?.toLowerCase() === origin.host.toLowerCase();
   // GoDaddy starts Preview after an import, before Publish secrets apply. Keep

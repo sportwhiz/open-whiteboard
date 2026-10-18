@@ -17,7 +17,7 @@ This change is for review. It has not been deployed, and the existing v0.4.2 ins
 | Changing `AUTH_ORIGIN` produces a 500 | Fixed: policy/install return a 409 asking the owner to reconnect. |
 | A replayed restore reports success after normal app use | Fixed: app startup invalidates the completion receipt. A repeated request while the app remains stopped explicitly returns `alreadyCompleted`; after app use, empty-destination checks apply again. |
 | Killed restores leave staging files | Fixed: the recovery tool removes matching abandoned regular files after obtaining exclusive ownership. It preserves restore markers. |
-| Stalled maintenance uploads occupy a slot for 30 minutes | Fixed: oversized Content-Length is rejected before reading; a 30-second inactivity deadline releases stalled transfers. Rejected authentication, path, busy and oversized requests close their connections after sending the status, even when the sender leaves its body unfinished. Active authenticated uploads retain the overall 30-minute deadline. |
+| Stalled maintenance uploads occupy a slot for 30 minutes | Fixed: oversized Content-Length is rejected before reading; a 30-second inactivity deadline releases stalled transfers. Rejected authentication, path, busy and oversized requests close their connections after sending the status, even when the sender leaves its body unfinished. Health/status GET and HEAD requests with bodies return 400 and close too; ordinary provider probes remain available. Active authenticated uploads retain the overall 30-minute deadline. |
 | Resolved incidents consume the 5,000-row capacity | Fixed: resolved details are removed before incident admission. Unresolved reporting remains bounded. |
 | Empty request body becomes a release-download error | Fixed: empty and oversized requests return 400 without contacting the provider. |
 | A failed initial availability check requires reload | Fixed: “Check availability again” recovers without losing the page. |
@@ -38,7 +38,7 @@ This change is for review. It has not been deployed, and the existing v0.4.2 ins
 ## Validation
 
 - Application suite: 518 tests across 61 files passed.
-- Installer, monitoring and recovery unit/HTTP tests: 96 passed. The maintenance test also exercises a real 30-second stalled upload, early 413 rejection, and unfinished 401/404/409 requests whose sockets must close within two seconds.
+- Installer, monitoring and recovery unit/HTTP tests: 96 passed. The maintenance test also exercises a real 30-second stalled upload, early 413 rejection, and unfinished 400/401/404/409 requests whose sockets must close within two seconds.
 - Installer browser flow passed, including a failed initial availability check followed by a successful retry.
 - Packaged GoDaddy-mode Node smoke passed owner/MFA setup, guest permissions, CSRF, administrator/owner update guards, boards, WebSockets, OAuth/MCP and durable restart.
 - Encrypted recovery against local MySQL and SQLite passed interrupted-restore startup refusal, staging cleanup, same-archive resume, replay refusal after app use, and preserved board/account/asset data.
