@@ -5,6 +5,7 @@ import { installation, needsStrong, securityState } from "./policy";
 import { checkCanonicalRequest } from "../security/config";
 import { HttpError } from "../security/errors";
 import { sessionIsCurrent, requireAdmission } from "./decisions";
+import { assignColorIfDefault } from "./colors";
 export async function readNativeSession(
   request: Request,
   env: NativeEnv,
@@ -52,7 +53,7 @@ export async function readNativeSession(
     email: value.user.email,
     name: stored.display_name,
     avatarUrl: stored.avatar_url,
-    color: stored.color,
+    color: await assignColorIfDefault(env.CATALOG, value.user.id, stored.color),
     authentication: "native",
     issuer: "urn:canvas:account",
     subject: value.user.id,

@@ -32,7 +32,8 @@
     "build:node": "node scripts/build-node.mjs",
     "typecheck:node": "node scripts/generate-blocksuite-paths.mjs && tsc --noEmit -p tsconfig.node.json",
     "test:node": "tsx scripts/node-smoke.ts",
-    "test:guest-cloudflare": "tsx scripts/guest-cloudflare-smoke.ts"
+    "test:guest-cloudflare": "tsx scripts/guest-cloudflare-smoke.ts",
+    "test:ux": "node scripts/premium-ux-smoke.mjs"
   },
   "dependencies": {
     "@better-auth/passkey": "1.7.7",

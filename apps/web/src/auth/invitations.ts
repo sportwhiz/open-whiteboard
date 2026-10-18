@@ -2,6 +2,7 @@ import type { NativeEnv } from "./types";
 import { nativePrincipal } from "./session";
 import { installation, needsStrong } from "./policy";
 import { starterStatements } from "./content";
+import { readAcceptedInvitationNotifications } from "../catalog.server";
 import {
   acceptInvitation,
   acceptInvitationById,
@@ -9,9 +10,114 @@ import {
 import { HttpError } from "../security/errors";
 import { json, randomToken, sha256 } from "../security/primitives";
 import { auditStatement } from "../security/audit";
+import { clientIp, limit } from "../security/limits";
+
+type InvitationPreview = {
+  kind: "resource" | "membership" | "local";
+  studio: string;
+  inviter: string | null;
+  role: string;
+  resourceType?: "board" | "workbook";
+  title?: string;
+};
+const unavailable = () =>
+  new HttpError(
+    410,
+    "This invitation has expired or was revoked. Ask for a new link.",
+    "INVALID_INVITATION",
+  );
+
+/**
+ * What an invitation offers, so the acceptance screen can name the content,
+ * the access and the person who sent it. Holding the secret link is the
+ * capability to read this; an invitation opened by id (from a notification)
+ * is described only to the account it was addressed to.
+ */
+async function previewInvitation(
+  request: Request,
+  env: NativeEnv,
+): Promise<InvitationPreview> {
+  const body = await json(request);
+  const settings = await installation(env);
+  const studio = settings.title;
+  const token = (value: unknown) =>
+    typeof value === "string" && value.length >= 20 && value.length <= 256
+      ? value
+      : null;
+  if (body.localInvite !== undefined) {
+    // Shown before an account exists, so the link itself is the only proof.
+    await limit(env, "invitation-preview", clientIp(request), 30, 600);
+    const value = token(body.localInvite);
+    if (!value) throw unavailable();
+    const row = await env.CATALOG.prepare(
+      "SELECT l.role, u.display_name AS inviter FROM local_invitations l LEFT JOIN users u ON u.id = l.created_by WHERE l.token_hash = ? AND l.accepted_by IS NULL AND l.revoked_at IS NULL AND l.expires_at > ?",
+    )
+      .bind(await sha256(value), Date.now())
+      .first<{ role: string; inviter: string | null }>();
+    if (!row) throw unavailable();
+    return { kind: "local", studio, inviter: row.inviter, role: row.role };
+  }
+  const identity = await nativePrincipal(request, env, true);
+  await limit(env, "invitation-preview", identity.user.id, 30, 600);
+  const now = new Date().toISOString();
+  if (body.membership !== undefined) {
+    const value = token(body.membership);
+    if (!value) throw unavailable();
+    const row = await env.CATALOG.prepare(
+      "SELECT i.role, u.display_name AS inviter FROM instance_invitations i LEFT JOIN users u ON u.id = i.invited_by WHERE i.token_hash = ? AND i.revoked_at IS NULL AND i.expires_at > ?",
+    )
+      .bind(await sha256(value), now)
+      .first<{ role: string; inviter: string | null }>();
+    if (!row) throw unavailable();
+    return { kind: "membership", studio, inviter: row.inviter, role: row.role };
+  }
+  const byToken = token(body.invite);
+  const byId =
+    typeof body.invitation === "string" && body.invitation.length <= 200
+      ? body.invitation
+      : null;
+  if (!byToken && !byId) throw unavailable();
+  const row = await env.CATALOG.prepare(
+    `SELECT i.email, i.role, i.resource_type AS resourceType, COALESCE(b.title, w.title) AS title, u.display_name AS inviter
+    FROM invitations i LEFT JOIN users u ON u.id = i.invited_by
+    LEFT JOIN boards b ON i.resource_type = 'board' AND b.id = i.resource_id AND b.deleted_at IS NULL
+    LEFT JOIN workbooks w ON i.resource_type = 'workbook' AND w.id = i.resource_id AND w.deleted_at IS NULL
+    WHERE ${byToken ? "i.token_hash = ?" : "i.id = ?"} AND i.revoked_at IS NULL AND i.expires_at > ?`,
+  )
+    .bind(byToken ? await sha256(byToken) : byId, now)
+    .first<{
+      email: string;
+      role: string;
+      resourceType: "board" | "workbook";
+      title: string | null;
+      inviter: string | null;
+    }>();
+  if (
+    !row ||
+    !row.title ||
+    (!byToken &&
+      row.email.toLowerCase() !== identity.user.email.toLowerCase())
+  )
+    throw unavailable();
+  return {
+    kind: "resource",
+    studio,
+    inviter: row.inviter,
+    role: row.role,
+    resourceType: row.resourceType,
+    title: row.title,
+  };
+}
 
 export async function invitationRoutes(request: Request, env: NativeEnv) {
   const url = new URL(request.url);
+  if (url.pathname === "/api/v1/invitations/preview") {
+    if (request.method !== "POST")
+      throw new HttpError(405, "Method not allowed.", "METHOD_NOT_ALLOWED");
+    return Response.json(await previewInvitation(request, env), {
+      headers: { "Cache-Control": "no-store" },
+    });
+  }
   const byId = url.pathname.match(/^\/api\/v1\/invitations\/([^/]+)\/accept$/u);
   if (
     request.method !== "POST" ||
@@ -132,13 +238,19 @@ export async function invitationRoutes(request: Request, env: NativeEnv) {
       );
     return Response.json({ accepted: true, role: invite.role });
   }
-  return Response.json(
-    byId
-      ? await acceptInvitationById(
-          env.CATALOG,
-          identity.principal,
-          decodeURIComponent(byId[1]),
-        )
-      : await acceptInvitation(env.CATALOG, identity.principal, body.token),
-  );
+  const accepted = byId
+    ? await acceptInvitationById(
+        env.CATALOG,
+        identity.principal,
+        decodeURIComponent(byId[1]),
+      )
+    : await acceptInvitation(env.CATALOG, identity.principal, body.token);
+  // However it was accepted, the invitation's notification is answered.
+  await readAcceptedInvitationNotifications(
+    env.CATALOG,
+    identity.principal,
+    accepted.resourceType,
+    accepted.resourceId,
+  ).catch(() => undefined);
+  return Response.json(accepted);
 }

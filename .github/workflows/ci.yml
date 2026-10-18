@@ -48,6 +48,21 @@ jobs:
         run: pnpm --filter @whiteboard/web exec node scripts/run-auth-tests.mjs
       - name: Install Chromium for native OAuth browser regression
         run: pnpm --filter @whiteboard/web exec playwright install --with-deps chromium
+      - name: Canvas and Studio interactions
+        run: |
+          pnpm --filter @whiteboard/web exec wrangler d1 migrations apply canvas-regression-tests-catalog --local --config tests/regression/wrangler.jsonc
+          WHITEBOARD_WRANGLER_CONFIG=tests/regression/wrangler.jsonc pnpm --filter @whiteboard/web exec vite --host 127.0.0.1 --port 5321 --strictPort > /tmp/whiteboard-ux.log 2>&1 &
+          ux_pid=$!
+          trap 'kill "$ux_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:5321/ > /dev/null; then break; fi
+            sleep 1
+          done
+          pnpm --filter @whiteboard/web run test:ux http://127.0.0.1:5321
+          pnpm --filter @whiteboard/web run test:workflow http://127.0.0.1:5321
+          pnpm --filter @whiteboard/web run test:sticky http://127.0.0.1:5321
+          pnpm --filter @whiteboard/web run test:gestures http://127.0.0.1:5321
+          pnpm --filter @whiteboard/web run test:collaboration-browser http://127.0.0.1:5321
       - name: Product guides, verification policy and update notices
         run: |
           HUDDLE_BUILD_TARGET=node pnpm --filter @whiteboard/web exec vite --host 127.0.0.1 --port 5300 --strictPort > /tmp/huddle-ui-fixture.log 2>&1 &

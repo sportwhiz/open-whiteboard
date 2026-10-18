@@ -6,6 +6,7 @@ import type { NativeEnv } from "./types";
 import { bootstrapAuthorized } from "./policy";
 import { derivePasswordHash, hashPassword, verifyPassword } from "./password";
 import { randomToken, sha256 } from "../security/primitives";
+import { chooseAccountColor } from "./colors";
 import { HttpError } from "../security/errors";
 
 export function normalizeUsername(value: unknown) {
@@ -13,12 +14,45 @@ export function normalizeUsername(value: unknown) {
     typeof value !== "string" ||
     !/^[a-zA-Z0-9][a-zA-Z0-9._-]{2,31}$/u.test(value)
   )
-    throw new HttpError(
-      400,
-      "Use 3–32 letters, numbers, dots, underscores or hyphens for your username.",
-      "INVALID_USERNAME",
-    );
+    throw new APIError("BAD_REQUEST", {
+      message:
+        "Use 3–32 letters, numbers, dots, underscores or hyphens, starting with a letter or number.",
+      code: "INVALID_USERNAME",
+    });
   return value.toLowerCase();
+}
+
+const statusNames: Record<
+  number,
+  | "BAD_REQUEST"
+  | "UNAUTHORIZED"
+  | "FORBIDDEN"
+  | "CONFLICT"
+  | "TOO_MANY_REQUESTS"
+> = {
+  400: "BAD_REQUEST",
+  401: "UNAUTHORIZED",
+  403: "FORBIDDEN",
+  409: "CONFLICT",
+  429: "TOO_MANY_REQUESTS",
+};
+/**
+ * Application checks (password policy, breach screening, rate limits) throw
+ * HttpError. Inside a library endpoint an unknown error becomes a generic
+ * 500, so translate it into the library's error with the same status,
+ * message and code for the form to show next to the right field.
+ */
+async function hashNewPassword(value: unknown) {
+  try {
+    return await hashPassword(String(value));
+  } catch (error) {
+    if (error instanceof HttpError)
+      throw new APIError(statusNames[error.status] ?? "SERVICE_UNAVAILABLE", {
+        message: error.message,
+        code: error.code,
+      });
+    throw error;
+  }
 }
 
 // Local identities are explicitly separate from email identities. The reserved
@@ -49,16 +83,18 @@ export function localAccounts(env: NativeEnv): BetterAuthPlugin {
             ? "EXISTS(SELECT 1 FROM installation WHERE id='instance' AND state='unclaimed' AND setup_user_id IS NULL)"
             : "EXISTS(SELECT 1 FROM local_invitations l JOIN installation i ON i.id='instance' AND i.state='ready' WHERE EXISTS(SELECT 1 FROM instance_memberships creator JOIN account_security security ON security.user_id=creator.user_id WHERE creator.user_id=l.created_by AND creator.role IN ('owner','admin') AND security.status='active' AND security.recovery_required=0) AND l.token_hash=? AND l.expires_at>? AND l.accepted_by IS NULL AND l.revoked_at IS NULL AND (SELECT COUNT(*) FROM instance_memberships m WHERE (l.role='guest' AND m.role='guest') OR (l.role<>'guest' AND m.role<>'guest')) < CASE WHEN l.role='guest' THEN i.guest_limit ELSE i.member_limit END)";
           const conditionValues = setup ? [] : [invitation!, Date.now()];
-          const username = normalizeUsername(ctx.body?.username);
           const name =
             typeof ctx.body?.name === "string" ? ctx.body.name.trim() : "";
-          if (
-            !name ||
-            name.length > 80 ||
-            typeof ctx.body?.password !== "string"
-          )
+          if (!name || name.length > 80)
             throw new APIError("BAD_REQUEST", {
-              message: "Enter your name and a password.",
+              message: "Enter your name (up to 80 characters).",
+              code: "INVALID_NAME",
+            });
+          const username = normalizeUsername(ctx.body?.username);
+          if (typeof ctx.body?.password !== "string" || !ctx.body.password)
+            throw new APIError("BAD_REQUEST", {
+              message: "Choose a password.",
+              code: "WEAK_PASSWORD",
             });
           if (
             await env.CATALOG.prepare(
@@ -69,10 +105,12 @@ export function localAccounts(env: NativeEnv): BetterAuthPlugin {
           )
             throw new APIError("CONFLICT", {
               message: "That username is already in use. Choose another.",
+              code: "USERNAME_TAKEN",
             });
-          const password = await hashPassword(ctx.body.password);
+          const password = await hashNewPassword(ctx.body.password);
           const id = `user:${crypto.randomUUID()}`,
             at = new Date().toISOString();
+          const color = await chooseAccountColor(env.CATALOG, id);
           const recoveryCode = randomToken(32);
           // Claim and all identity rows are one transaction. A race or uniqueness
           // conflict rolls back the entire account, including the owner reservation.
@@ -88,8 +126,8 @@ export function localAccounts(env: NativeEnv): BetterAuthPlugin {
               ...conditionValues,
             ),
             env.CATALOG.prepare(
-              "INSERT INTO users(id,issuer,subject,email,display_name,color,created_at,updated_at) SELECT id,'urn:canvas:account',id,email,name,'#3D4A73',?,? FROM auth_users WHERE id = ?",
-            ).bind(at, at, id),
+              "INSERT INTO users(id,issuer,subject,email,display_name,color,created_at,updated_at) SELECT id,'urn:canvas:account',id,email,name,?,?,? FROM auth_users WHERE id = ?",
+            ).bind(color, at, at, id),
             env.CATALOG.prepare(
               "INSERT INTO account_security(user_id,status,auth_version,recovery_required,created_at,updated_at) SELECT id,'pending_verification',1,0,?,? FROM auth_users WHERE id = ?",
             ).bind(at, at, id),
@@ -134,7 +172,6 @@ export function localAccounts(env: NativeEnv): BetterAuthPlugin {
         "/sign-in/local",
         { method: "POST" },
         async (ctx) => {
-          const username = normalizeUsername(ctx.body?.username);
           const password = ctx.body?.password;
           if (
             typeof password !== "string" ||
@@ -143,11 +180,20 @@ export function localAccounts(env: NativeEnv): BetterAuthPlugin {
             throw new APIError("BAD_REQUEST", {
               message: "Enter your password.",
             });
-          const row = await env.CATALOG.prepare(
-            "SELECT a.userId, a.password FROM auth_accounts a JOIN local_accounts l ON l.user_id = a.userId JOIN account_security s ON s.user_id = a.userId WHERE l.username = ? AND a.providerId = 'credential' AND s.status NOT IN ('suspended','deleted','deletion_pending')",
-          )
-            .bind(username)
-            .first<{ userId: string; password: string }>();
+          // A malformed username cannot exist. Answer like a wrong password,
+          // after the same key-derivation work, instead of a format error.
+          const username =
+            typeof ctx.body?.username === "string" &&
+            /^[a-zA-Z0-9][a-zA-Z0-9._-]{2,31}$/u.test(ctx.body.username)
+              ? ctx.body.username.toLowerCase()
+              : null;
+          const row = !username
+            ? null
+            : await env.CATALOG.prepare(
+                "SELECT a.userId, a.password FROM auth_accounts a JOIN local_accounts l ON l.user_id = a.userId JOIN account_security s ON s.user_id = a.userId WHERE l.username = ? AND a.providerId = 'credential' AND s.status NOT IN ('suspended','deleted','deletion_pending')",
+              )
+                .bind(username)
+                .first<{ userId: string; password: string }>();
           const valid = row
             ? await verifyPassword({ hash: row.password, password })
             : (await derivePasswordHash(password), false);
@@ -182,7 +228,7 @@ export function localAccounts(env: NativeEnv): BetterAuthPlugin {
             throw new APIError("BAD_REQUEST", {
               message: "Choose a new password.",
             });
-          const password = await hashPassword(ctx.body.newPassword);
+          const password = await hashNewPassword(ctx.body.newPassword);
           const recoveryCode = randomToken(32);
           const hash = await sha256(code),
             marker = randomToken(18);

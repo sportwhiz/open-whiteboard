@@ -2,6 +2,10 @@ import { createHash } from "node:crypto";
 import { serialize, deserialize } from "node:v8";
 import type { Pool, PoolConnection, RowDataPacket } from "mysql2/promise";
 import { BoardRoom } from "../board-room";
+import { isBackgroundRoomRequest } from "../room-priority";
+
+/** Queue depth beyond which background room reads are turned away. */
+export const BACKGROUND_ROOM_QUEUE_LIMIT = 4;
 
 export interface NodeWebSocketTransport {
   readonly readyState: number;
@@ -396,9 +400,15 @@ export async function createNodeRooms(
     connection.destroy();
     throw error;
   }
-  function enqueue<T>(callback: () => Promise<T>): Promise<T> {
+  function enqueue<T>(
+    callback: () => Promise<T>,
+    background = false,
+  ): Promise<T> {
     if (closed || pending >= 64)
       return Promise.reject(new Error("Room runtime is busy or unavailable"));
+    // Background reads (search) never wait behind or crowd out live edits.
+    if (background && pending >= BACKGROUND_ROOM_QUEUE_LIMIT)
+      return Promise.reject(new Error("Room runtime is busy with live work"));
     pending++;
     const result = tail
       .then(async () => {
@@ -509,7 +519,7 @@ export async function createNodeRooms(
               if (!previous.has(socket)) socket.close(1011, "Upgrade failed");
             throw error;
           }
-        }),
+        }, isBackgroundRoomRequest(input, init)),
     };
   }
   return {

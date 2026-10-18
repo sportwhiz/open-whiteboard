@@ -1,8 +1,11 @@
+import { useFindSetting } from "./useFindSetting";
 import { UpdatesPanel } from "./admin/UpdatesPanel";
 import { MarkerColorField } from "./MarkerColorField";
 import { securityEventLabel } from "./security-event-label";
 import { openTour } from "./onboarding-events";
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
+import { matchSettingsRoutes, matchSettingTargets, SETTING_TARGETS, type SettingTarget } from "./settings-search";
+import { requestNavigation } from "./admin/FormSaveBar";
 import { UiIcon, type UiIconName } from "./UiIcon";
 import { ThemeMenu } from "./theme";
 import {
@@ -57,47 +60,55 @@ const routes: {
   icon: UiIconName;
   admin?: boolean;
   owner?: boolean;
+  /** Words people search for that are not in the title. */
+  keywords?: string;
 }[] = [
-  { path: "/settings/account", label: "Account and security", icon: "lock" },
-  { path: "/settings/connections", label: "Connected apps", icon: "apps" },
-  { path: "/settings/people", label: "People", icon: "people", admin: true },
+  { path: "/settings/account", label: "Account and security", icon: "lock", keywords: "profile name email password passkeys mfa two-factor 2fa authenticator recovery codes devices sessions sign out security" },
+  { path: "/settings/connections", label: "Connected apps", icon: "apps", keywords: "mcp chatgpt claude oauth integrations api access tokens connectors" },
+  { path: "/settings/people", label: "People", icon: "people", admin: true, keywords: "users members accounts invite approve suspend roles admins permissions bulk" },
   {
     path: "/settings/invitations",
     label: "Invitations",
     icon: "share",
     admin: true,
+    keywords: "invite invites invitation links email pending",
   },
   {
     path: "/settings/sign-in",
     label: "Sign-in settings",
     icon: "lock",
     owner: true,
+    keywords: "authentication registration password magic links email sign-in links mfa two-factor 2fa require policy sessions timeout providers github google oidc sso reauthentication verification",
   },
   {
     path: "/settings/clients",
     label: "App clients",
     icon: "apps",
     owner: true,
+    keywords: "oauth clients mcp apps dynamic registration secrets",
   },
   {
     path: "/settings/usage",
     label: "Usage and limits",
     icon: "activity",
     admin: true,
+    keywords: "limits quotas storage boards members guests email per day",
   },
   {
     path: "/settings/activity",
     label: "Security activity",
     icon: "history",
     admin: true,
+    keywords: "audit log security events history",
   },
-  { path: "/settings/updates", label: "Updates", icon: "history", admin: true },
-  { path: "/settings/system", label: "System", icon: "settings", admin: true },
+  { path: "/settings/updates", label: "Updates", icon: "history", admin: true, keywords: "version upgrade release software" },
+  { path: "/settings/system", label: "System", icon: "settings", admin: true, keywords: "email smtp mail setup configuration migrations backups recovery jobs health" },
 ];
 export function Settings({ section }: { section: string }) {
   const [confirming, setConfirming] = useState(
     new URLSearchParams(location.search).get("stepUp") === "true",
   );
+  const [navigationQuery, setNavigationQuery] = useState("");
   const role = authSnapshot()?.account?.role;
   const available = routes.filter(
     (route) =>
@@ -107,6 +118,66 @@ export function Settings({ section }: { section: string }) {
   const active = available.find(
     (route) => route.path === `/settings/${section}`,
   );
+  useEffect(() => {
+    const previous = document.title;
+    document.title = `${active?.label ?? "Settings"} · Open Whiteboard`;
+    return () => { document.title = previous; };
+  }, [active?.label]);
+  useEffect(() => {
+    const shortcut = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "/" || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.target instanceof Element && event.target.closest("input, textarea, select, [contenteditable='true'], [role='dialog']")) return;
+      const search = searchRef.current;
+      if (!search || !search.getClientRects().length) return;
+      event.preventDefault();
+      search.focus();
+    };
+    window.addEventListener("keydown", shortcut);
+    return () => window.removeEventListener("keydown", shortcut);
+  }, []);
+  const searching = navigationQuery.trim().length > 0;
+  // A search result opens its section and goes straight to the setting.
+  const findHref = (path: string) => `${path}?find=${encodeURIComponent(navigationQuery.trim())}`;
+  useFindSetting(".identity-content", section);
+  const matchingRoutes = matchSettingsRoutes(available, navigationQuery);
+  // Individual settings this person can reach, labelled by whose they are.
+  const matchingSettings = matchSettingTargets(SETTING_TARGETS.filter(target => !target.path || available.some(route => route.path === target.path)), navigationQuery);
+  const openSetting = (target: SettingTarget) => {
+    if (target.action === "theme") {
+      const summary = document.querySelector<HTMLElement>(".identity-header .theme-menu > summary");
+      summary?.click();
+      summary?.focus();
+      return;
+    }
+    requestNavigation(`${target.path}?find=${encodeURIComponent(target.find)}`);
+  };
+  const searchRef = useRef<HTMLInputElement>(null);
+  const resultsRef = useRef<HTMLDivElement>(null);
+  const resultLinks = () => Array.from(resultsRef.current?.querySelectorAll<HTMLAnchorElement>("a[href]") ?? []);
+  const onSearchKey = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      if (searching && matchingSettings[0]) openSetting(matchingSettings[0]);
+      else if (searching && matchingRoutes[0]) requestNavigation(findHref(matchingRoutes[0].path));
+    } else if (event.key === "ArrowDown") {
+      event.preventDefault();
+      resultLinks()[0]?.focus();
+    } else if (event.key === "Escape" && navigationQuery) {
+      event.preventDefault();
+      setNavigationQuery("");
+    }
+  };
+  const onResultKey = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!["ArrowDown", "ArrowUp", "Home", "End", "Escape"].includes(event.key)) return;
+    const links = resultLinks();
+    const index = links.indexOf(document.activeElement as HTMLAnchorElement);
+    if (index < 0) return;
+    event.preventDefault();
+    if (event.key === "Escape") { searchRef.current?.focus(); return; }
+    if (event.key === "ArrowUp" && index === 0) { searchRef.current?.focus(); return; }
+    const next = event.key === "Home" ? 0 : event.key === "End" ? links.length - 1 : event.key === "ArrowDown" ? Math.min(links.length - 1, index + 1) : index - 1;
+    links[next]?.focus();
+  };
   return (
     <main className="identity-settings">
       {confirming && (
@@ -124,36 +195,64 @@ export function Settings({ section }: { section: string }) {
         <Brand />
         <div className="identity-actions">
           <button onClick={() => openTour()}>Quick tour</button>
-          <a className="identity-back-link" href="/">
-            Back to boards
+          <a className="identity-back-link" href="/" aria-label="Back to boards">
+            <UiIcon name="back" />
+            <span className="label-long" aria-hidden="true">Back to boards</span>
+            <span className="label-short" aria-hidden="true">Boards</span>
           </a>
           <ThemeMenu />
         </div>
       </header>
       <div className="identity-layout">
-        <nav className="identity-nav" aria-label="Settings">
-          {available.map((route, index) => (
-            <div key={route.path}>
-              {index === 2 && (
-                <div className="identity-nav-label">Administration</div>
-              )}
-              <a
-                href={route.path}
-                aria-current={active?.path === route.path ? "page" : undefined}
-              >
-                <UiIcon name={route.icon} />
-                {route.label}
-              </a>
-            </div>
-          ))}
+        <nav className={`identity-nav ${searching ? "searching" : ""}`} aria-label="Settings">
+          <label className="settings-search">
+            <UiIcon name="search" />
+            <input ref={searchRef} type="search" aria-label="Find settings" aria-describedby="settings-search-hint" aria-controls="settings-search-results" placeholder="Find settings" value={navigationQuery} onChange={event => setNavigationQuery(event.target.value)} onKeyDown={onSearchKey} />
+            {!searching ? <kbd aria-hidden="true">/</kbd> : null}
+          </label>
+          <span id="settings-search-hint" className="sr-only">Search titles and topics such as password or invitations. Press Enter to open the first result, or the down arrow to move through results.</span>
+          <p className="sr-only" role="status">{searching ? `${matchingRoutes.length} ${matchingRoutes.length === 1 ? "section matches" : "sections match"}` : ""}</p>
+          <div id="settings-search-results" className="identity-nav-links" ref={resultsRef} onKeyDown={onResultKey}>
+            {searching && !matchingRoutes.length && !matchingSettings.length ? <p className="settings-no-match">No settings match “{navigationQuery.trim()}”.</p> : null}
+            {matchingSettings.map((target, index) => (
+              <div key={`${target.section}:${target.label}`}>
+                <a
+                  href={target.action ? "#" : `${target.path}?find=${encodeURIComponent(target.find)}`}
+                  className={`setting-result ${index === 0 ? "first-result" : ""}`}
+                  onClick={event => { if (target.action) { event.preventDefault(); openSetting(target); } }}
+                >
+                  <UiIcon name={target.action === "theme" ? "sun" : target.section === "Your account" ? "lock" : "settings"} />
+                  <span><small>{target.section}</small>{target.label}</span>
+                  {index === 0 ? <kbd aria-hidden="true">↵</kbd> : null}
+                </a>
+              </div>
+            ))}
+            {matchingRoutes.map((route, index) => (
+              <div key={route.path}>
+                {!searching && (route.admin || route.owner) && !matchingRoutes.slice(0, index).some(item => item.admin || item.owner) && (
+                  <div className="identity-nav-label">Administration</div>
+                )}
+                <a
+                  href={searching ? findHref(route.path) : route.path}
+                  aria-current={active?.path === route.path ? "page" : undefined}
+                  className={searching && index === 0 && !matchingSettings.length ? "first-result" : undefined}
+                >
+                  <UiIcon name={route.icon} />
+                  <span>{route.label}</span>
+                  {searching && index === 0 && !matchingSettings.length ? <kbd aria-hidden="true">↵</kbd> : null}
+                </a>
+              </div>
+            ))}
+          </div>
         </nav>
         <section className="identity-content">
           <label className="identity-mobile-nav">
-            Settings section
+            {/* Phones: the picker's value names the section; keep it compact. */}
+            <span className="sr-only">Settings section</span>
             <select
               aria-label="Settings section"
               value={active?.path ?? ""}
-              onChange={(event) => location.assign(event.target.value)}
+              onChange={(event) => requestNavigation(event.target.value)}
             >
               {available.map((route) => (
                 <option value={route.path} key={route.path}>
@@ -318,7 +417,9 @@ function AccountPanel() {
           title="Email address"
           description={
             data.localUsername && !data.emailVerified
-              ? "Add and verify an address for email invitations and password recovery once Studio email is connected."
+              ? authSnapshot()?.email
+                ? "Add an address to get email notifications and reset your password by email. You sign in with your username either way."
+                : "You can add an address for email notifications and password resets after an administrator connects Studio email."
               : "Your current address stays in use until the new one is confirmed."
           }
         >
@@ -350,7 +451,7 @@ function AccountPanel() {
           <>
             <Row
               title="Account recovery key"
-              description="Recover your username account without email. Replacing the key immediately invalidates the old one; save the new key in your password manager."
+              description="Gets you back into this account if you forget your password or lose your devices, without email. Replacing it makes the old key stop working."
             >
               <button
                 disabled={action.busy}
@@ -436,7 +537,11 @@ function AccountPanel() {
         </Row>
         <Row
           title="Recovery codes"
-          description="Shown once when generated. Each code works once and starts restricted factor recovery."
+          description={
+            data.twoFactorEnabled
+              ? "One-time codes for signing in when you don’t have your authenticator app. Replacing them makes the old codes stop working."
+              : "One-time codes for signing in without your authenticator app. You get them when you set one up."
+          }
         >
           <button
             disabled={!data.twoFactorEnabled || action.busy}

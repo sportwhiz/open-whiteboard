@@ -126,3 +126,27 @@ export function attachRightButtonNavigation(
     cancel();
   };
 }
+
+/** A pending fit animation must not overwrite manual panning. Each move
+ * replaces that animation with a single frame, accumulating movements even
+ * when several pointer events arrive before the next frame. */
+export function createViewportPan(viewport: {
+  centerX: number; centerY: number; zoom: number;
+  smoothTranslate(x: number, y: number, steps: number): void;
+  setCenter(x: number, y: number): void;
+}) {
+  let target: { x: number; y: number } | null = null;
+  return {
+    move(dx: number, dy: number) {
+      target ??= { x: viewport.centerX, y: viewport.centerY };
+      target.x += dx / viewport.zoom;
+      target.y += dy / viewport.zoom;
+      viewport.smoothTranslate(target.x, target.y, 1);
+    },
+    end() {
+      // Commit the last position before a second gesture can begin.
+      if (target) viewport.setCenter(target.x, target.y);
+      target = null;
+    },
+  };
+}

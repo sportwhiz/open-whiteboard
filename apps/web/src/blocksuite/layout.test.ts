@@ -3,6 +3,11 @@ import {
   arrangeBoxes,
   findOpenPosition,
   connectedPosition,
+  canArrange,
+  readingOrder,
+  facingPorts,
+  nextNotePlacement,
+  duplicatePlacement,
   CONNECTION_PORTS,
 } from "./layout";
 
@@ -40,9 +45,9 @@ describe("selection arrangement", () => {
       result[2].x - result[1].x - result[1].w,
     );
   });
-  it("orders a tidy grid by visual position and leaves room for the largest object", () => {
+  it("orders a tidy grid in reading order (a, b share a row) and leaves room for the largest object", () => {
     const result = arrangeBoxes(boxes, "grid");
-    expect(result.map((b) => b.id)).toEqual(["b", "a", "c"]);
+    expect(result.map((b) => b.id)).toEqual(["a", "b", "c"]);
     expect(result[1].x - result[0].x).toBe(152);
     expect(result[2].y - result[0].y).toBe(122);
   });
@@ -92,5 +97,109 @@ describe("connected branch placement", () => {
     expect(next.w).toBe(160);
     expect(next.h).toBe(240);
     expect(source.x).toBe(500);
+  });
+});
+
+describe("arrange eligibility", () => {
+  it("allows notes and shapes inside frames", () => {
+    expect(canArrange({ kind: "note", locked: false, inGroup: false })).toBe(true);
+    expect(canArrange({ kind: "shape", locked: false, inGroup: false })).toBe(true);
+  });
+  it("keeps locked objects, group members, connectors and containers in place", () => {
+    expect(canArrange({ kind: "note", locked: true, inGroup: false })).toBe(false);
+    expect(canArrange({ kind: "note", locked: false, inGroup: true })).toBe(false);
+    for (const kind of ["connector", "frame", "group", "mindmap"])
+      expect(canArrange({ kind, locked: false, inGroup: false })).toBe(false);
+  });
+});
+
+describe("keyboard reading order", () => {
+  it("reads rows top to bottom and left to right, tolerating uneven rows", () => {
+    const box = (id: string, x: number, y: number) => ({ id, x, y, w: 200, h: 200 });
+    const order = readingOrder([box("c", 500, 30), box("a", 0, 0), box("d", 0, 300), box("b", 250, -20)]);
+    expect(order.map((item) => item.id)).toEqual(["a", "b", "c", "d"]);
+  });
+  it("is stable for identical positions", () => {
+    const same = [{ id: "b", x: 0, y: 0, w: 10, h: 10 }, { id: "a", x: 0, y: 0, w: 10, h: 10 }];
+    expect(readingOrder(same).map((item) => item.id)).toEqual(["a", "b"]);
+  });
+});
+
+describe("connector ports between two objects", () => {
+  const box = (x: number, y: number, w = 200, h = 200) => ({ x, y, w, h });
+  it("joins side by side objects on their facing sides", () => {
+    expect(facingPorts(box(0, 0), box(500, 0))).toEqual({ source: [1, 0.5], target: [0, 0.5] });
+    expect(facingPorts(box(500, 40), box(0, 0))).toEqual({ source: [0, 0.5], target: [1, 0.5] });
+  });
+  it("joins stacked objects top to bottom", () => {
+    expect(facingPorts(box(0, 0), box(30, 400))).toEqual({ source: [0.5, 1], target: [0.5, 0] });
+    expect(facingPorts(box(0, 400), box(0, 0))).toEqual({ source: [0.5, 0], target: [0.5, 1] });
+  });
+  it("weighs distance by object size", () => {
+    // A wide banner just below a note is below it, not beside it.
+    expect(facingPorts(box(0, 0, 200, 100), box(-300, 160, 900, 80)).source).toEqual([0.5, 1]);
+  });
+});
+
+describe("tidy into a grid", () => {
+  it("keeps a rough row as one row, in reading order", () => {
+    const boxes = [{ id: "A", x: 0, y: 10, w: 200, h: 200 }, { id: "B", x: 260, y: 0, w: 200, h: 200 }, { id: "C", x: 520, y: 30, w: 200, h: 200 }];
+    const tidy = arrangeBoxes(boxes, "grid");
+    expect(tidy.map((box) => box.id)).toEqual(["A", "B", "C"]);
+    expect(new Set(tidy.map((box) => box.y)).size).toBe(1);
+  });
+  it("wraps scattered objects into a square grid in reading order", () => {
+    const boxes = [
+      { id: "C", x: 0, y: 600, w: 100, h: 100 }, { id: "A", x: 0, y: 0, w: 100, h: 100 },
+      { id: "B", x: 400, y: 20, w: 100, h: 100 }, { id: "D", x: 300, y: 900, w: 100, h: 100 },
+    ];
+    expect(arrangeBoxes(boxes, "grid").map((box) => box.id)).toEqual(["A", "B", "C", "D"]);
+  });
+});
+
+describe("next note placement", () => {
+  const note = (id: string, x: number, y: number) => ({ id, x, y, w: 200, h: 200 });
+  it("goes right of the source, clear of objects and other frames", () => {
+    const { box, frameHeight } = nextNotePlacement(note("a", 0, 0), [note("b", 232, 0)], [{ id: "f2", x: 500, y: -40, w: 400, h: 400 }], null);
+    expect(box.x).toBe(232);
+    expect(box.y).toBe(232);
+    expect(frameHeight).toBeNull();
+  });
+  it("wraps to the next row inside a full frame and grows the frame", () => {
+    const frame = { id: "f", x: -24, y: -60, w: 700, h: 300 };
+    const notes = [note("a", 0, 0), note("b", 232, 0), note("c", 464, 0)];
+    const { box, frameHeight } = nextNotePlacement(notes[2], notes, [], frame);
+    expect(box.x).toBe(0);
+    expect(box.y).toBe(232);
+    expect(frameHeight).toBe(232 + 200 + 24 + 60);
+  });
+  it("stays inside its frame instead of marching into the next one", () => {
+    const frame = { id: "f", x: -24, y: -60, w: 480, h: 600 };
+    const { box } = nextNotePlacement(note("a", 232, 0), [note("a", 232, 0), note("z", 0, 0)], [], frame);
+    expect(box.x + box.w).toBeLessThanOrEqual(frame.x + frame.w);
+  });
+});
+
+describe("duplicate placement", () => {
+  it("puts the copy beside the original, past anything in the way", () => {
+    expect(duplicatePlacement({ x: 0, y: 0, w: 200, h: 200 }, [])).toEqual({ dx: 232, dy: 0 });
+    expect(duplicatePlacement({ x: 0, y: 0, w: 200, h: 200 }, [{ id: "n", x: 232, y: 0, w: 200, h: 200 }])).toEqual({ dx: 232, dy: 232 });
+  });
+});
+
+describe("next note in a narrow frame", () => {
+  it("puts a note wider than the frame on the next row instead of far below", () => {
+    const frame = { id: "f", x: 0, y: 0, w: 240, h: 400 };
+    const source = { id: "s", x: 16, y: 60, w: 208, h: 208 };
+    const { box, frameHeight } = nextNotePlacement(source, [source], [frame], frame);
+    expect(box.y).toBe(source.y + source.h + 32);
+    expect(frameHeight).toBe(box.y + box.h + 24);
+  });
+  it("still wraps normally when a row fits", () => {
+    const frame = { id: "f", x: 0, y: 0, w: 1000, h: 400 };
+    const source = { id: "s", x: 24, y: 60, w: 208, h: 208 };
+    const { box } = nextNotePlacement(source, [source], [frame], frame);
+    expect(box.y).toBe(source.y);
+    expect(box.x).toBe(source.x + source.w + 32);
   });
 });

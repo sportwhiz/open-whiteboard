@@ -5,7 +5,13 @@ import { WelcomeBoard } from "./WelcomeBoard";
 import { BrandMark } from "./BrandMark";
 import { PRODUCT_NAME, PRODUCT_WORDMARK } from "./product";
 import { ThemeMenu } from "./theme";
-import { api, ApiError, bootstrapAuth } from "./auth-client";
+import {
+  api,
+  ApiError,
+  authSnapshot,
+  bootstrapAuth,
+  type AuthBootstrap,
+} from "./auth-client";
 import { useDialogFocus } from "./useDialogFocus";
 import "./auth.css";
 
@@ -64,6 +70,7 @@ export function Field({
   autoFocus = false,
   step,
   inputMode,
+  error,
 }: {
   label: string;
   name: string;
@@ -76,6 +83,8 @@ export function Field({
   autoFocus?: boolean;
   step?: number | string;
   inputMode?: "text" | "numeric";
+  /** A problem with this field, shown under it and announced with it. */
+  error?: string;
 }) {
   const [visible, setVisible] = useState(false);
   const fieldId = useId();
@@ -95,7 +104,8 @@ export function Field({
           autoFocus={autoFocus}
           step={step}
           inputMode={inputMode}
-          aria-describedby={hint ? `${fieldId}-hint` : undefined}
+          aria-describedby={[hint && !error ? `${fieldId}-hint` : "", error ? `${fieldId}-error` : ""].filter(Boolean).join(" ") || undefined}
+          aria-invalid={error ? true : undefined}
         />
         {password && (
           <button
@@ -107,7 +117,8 @@ export function Field({
           </button>
         )}
       </div>
-      {hint && <small id={`${fieldId}-hint`}>{hint}</small>}
+      {hint && !error && <small id={`${fieldId}-hint`}>{hint}</small>}
+      {error && <small className="field-error" id={`${fieldId}-error`}>{error}</small>}
     </label>
   );
 }
@@ -161,12 +172,33 @@ export async function passkeyAction(kind: "sign-in" | "add", name?: string) {
     kind === "sign-in"
       ? await client.signIn.passkey()
       : await client.passkey.addPasskey({ name });
-  if (result.error)
-    throw new Error(
-      result.error.message ??
+  if (result.error) {
+    // Application errors arrive as { error, code }; library ones as { message }.
+    const failure = result.error as {
+      message?: string;
+      error?: string;
+      code?: string;
+      status?: number;
+    };
+    throw new ApiError(
+      failure.message ??
+        failure.error ??
         "The passkey operation was canceled or could not be completed.",
+      failure.code ?? "PASSKEY_FAILED",
+      failure.status ?? 400,
     );
+  }
   return result.data;
+}
+/** The confirmation a protected change needs, given this account's methods. */
+export function stepUpMethods(account: AuthBootstrap["account"] | undefined) {
+  const totp = Boolean(account?.twoFactorEnabled);
+  const passkey = Boolean(account?.hasPasskey);
+  // Accounts that must use a second factor confirm with it; a password alone
+  // only refreshes the verification time of a session without one.
+  const factor = Boolean(account?.secondFactorReason) && (totp || passkey);
+  const password = !factor && account?.hasPassword !== false;
+  return { totp: factor && totp, passkey, password };
 }
 export function StepUp({
   onComplete,
@@ -179,26 +211,37 @@ export function StepUp({
   useDialogFocus(dialog, true, () => {
     if (!busy) onCancel();
   });
+  const methods = stepUpMethods(authSnapshot()?.account);
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const typed = methods.totp || methods.password;
+  const description = methods.totp
+    ? methods.passkey
+      ? "Enter the six-digit code from your authenticator app, or use your passkey."
+      : "Enter the six-digit code from your authenticator app."
+    : methods.password
+      ? methods.passkey
+        ? "Enter your password, or use your passkey."
+        : "Enter your password to continue."
+      : methods.passkey
+        ? "Use your passkey to continue."
+        : "Sign out, then sign in again to confirm it’s you.";
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setBusy(true);
     setError("");
     try {
-      if (password) await api("/api/v1/account/step-up", { password });
-      if (code) await api("/api/auth/two-factor/verify-totp", { code });
-      if (!password && !code)
-        throw new Error(
-          "Enter a password or authenticator code, or use a passkey.",
-        );
-      const updated = await bootstrapAuth(true);
-      if (updated.account?.needsMfa) {
-        setError("Confirm your authenticator code or use a passkey to finish.");
-        return;
+      if (methods.totp) {
+        if (!code.trim())
+          throw new Error("Enter the code from your authenticator app.");
+        await api("/api/auth/two-factor/verify-totp", { code: code.trim() });
+      } else {
+        if (!password) throw new Error("Enter your password.");
+        await api("/api/v1/account/step-up", { password });
       }
+      await bootstrapAuth(true);
       onComplete();
     } catch (failure) {
       setError(
@@ -210,6 +253,15 @@ export function StepUp({
       setBusy(false);
     }
   };
+  const usePasskey = () => {
+    setBusy(true);
+    setError("");
+    void passkeyAction("sign-in")
+      .then(() => bootstrapAuth(true))
+      .then(onComplete)
+      .catch((failure) => setError(failure.message))
+      .finally(() => setBusy(false));
+  };
   return (
     <div className="identity-dialog-backdrop">
       <section
@@ -219,47 +271,68 @@ export function StepUp({
         role="dialog"
         aria-modal="true"
         aria-labelledby="step-up-title"
+        aria-describedby="step-up-description"
       >
         <h2 id="step-up-title">Confirm it’s you</h2>
-        <p>Use your authenticator or passkey for a protected change.</p>
+        <p id="step-up-description">{description}</p>
         <Feedback error={error} />
         <form onSubmit={submit}>
-          <Field
-            label="Password"
-            name="confirm-password"
-            type="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={setPassword}
-            required={false}
-          />
-          <Field
-            label="Authenticator code"
-            name="confirm-code"
-            autoComplete="one-time-code"
-            value={code}
-            onChange={setCode}
-            required={false}
-          />
-          <Submit busy={busy}>Confirm identity</Submit>
+          {methods.totp ? (
+            <Field
+              label="Authenticator code"
+              name="confirm-code"
+              autoComplete="one-time-code"
+              inputMode="numeric"
+              value={code}
+              onChange={setCode}
+              autoFocus
+            />
+          ) : methods.password ? (
+            <Field
+              label="Password"
+              name="confirm-password"
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={setPassword}
+              autoFocus
+            />
+          ) : null}
+          {typed && methods.passkey && (
+            <button
+              className="identity-secondary"
+              type="button"
+              disabled={busy}
+              onClick={usePasskey}
+            >
+              Use a passkey instead
+            </button>
+          )}
+          <div className="identity-dialog-actions">
+            <button
+              className="identity-secondary"
+              type="button"
+              disabled={busy}
+              onClick={onCancel}
+            >
+              Cancel
+            </button>
+            {typed ? (
+              <button className="identity-primary" type="submit" disabled={busy}>
+                {busy ? "Checking…" : "Confirm"}
+              </button>
+            ) : methods.passkey ? (
+              <button
+                className="identity-primary"
+                type="button"
+                disabled={busy}
+                onClick={usePasskey}
+              >
+                {busy ? "Waiting for passkey…" : "Use your passkey"}
+              </button>
+            ) : null}
+          </div>
         </form>
-        <button
-          className="identity-secondary"
-          disabled={busy}
-          onClick={() => {
-            setBusy(true);
-            void passkeyAction("sign-in")
-              .then(() => bootstrapAuth(true))
-              .then(onComplete)
-              .catch((failure) => setError(failure.message))
-              .finally(() => setBusy(false));
-          }}
-        >
-          Use a passkey
-        </button>
-        <button className="identity-link" disabled={busy} onClick={onCancel}>
-          Cancel
-        </button>
       </section>
     </div>
   );
@@ -268,40 +341,52 @@ export function useAction(refresh: () => Promise<unknown>) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  // Which form the latest result belongs to. A scoped result is shown by that
+  // form (for example inside its save bar), not in the page-level feedback.
+  const [scope, setScope] = useState<string | undefined>();
   const [retry, setRetry] = useState<(() => Promise<unknown>) | null>(null);
   const run = async (
     task: () => Promise<unknown>,
     success = "Changes saved.",
-  ) => {
-    if (busy) return;
+    options: { scope?: string } = {},
+  ): Promise<boolean> => {
+    if (busy) return false;
     setBusy(true);
     setError("");
     setNotice("");
+    setScope(options.scope);
     try {
       await task();
       await refresh();
       setNotice(success);
+      return true;
     } catch (failure) {
       if (failure instanceof ApiError && failure.code === "STEP_UP_REQUIRED")
-        setRetry(() => () => run(task, success));
+        setRetry(() => () => run(task, success, options));
       else
         setError(
           failure instanceof Error
             ? failure.message
             : "This action could not be completed.",
         );
+      return false;
     } finally {
       setBusy(false);
     }
   };
+  const clear = () => { setError(""); setNotice(""); };
   return {
     busy,
     error,
     notice,
+    scope,
     run,
+    clear,
+    /** The latest result, if it belongs to the given form. */
+    resultFor: (name: string) => scope === name ? { error, notice } : { error: "", notice: "" },
     feedback: (
       <>
-        <Feedback error={error} notice={notice} />
+        {scope ? null : <Feedback error={error} notice={notice} />}
         {retry && (
           <StepUp
             onComplete={() => {

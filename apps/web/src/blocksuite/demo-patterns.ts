@@ -1,3 +1,4 @@
+import { STICKY_PALETTE, type StickyFamilyId } from "./sticky-palette";
 /** Plain geometry keeps previews and native editable patterns in agreement. */
 export type DemoPatternId = "update-flow" | "fifty-notes";
 export type PatternBox = { id: string; x: number; y: number; w: number; h: number };
@@ -23,7 +24,8 @@ export type DemoPattern = {
   frames: Array<PatternBox & { title: string; children: string[] }>;
   edges: PatternEdge[];
 };
-const indigo = "#ded6ff", saffron = "#fff0a6", moss = "#d2f2d0", blue = "#cceaff", peach = "#ffd6b0";
+const paper = (id: StickyFamilyId) => STICKY_PALETTE.find((family) => family.id === id)!.light;
+const indigo = paper("purple"), saffron = paper("yellow"), moss = paper("green"), blue = paper("blue"), peach = paper("orange");
 const step = (id: string, x: number, y: number, text: string, color = blue): PatternNode =>
   ({ id, x, y, w: 280, h: 160, text, color, kind: "shape", shape: "roundedRect" });
 const edge = (source: string, target: string, sourcePort: [number, number] = [1, .5], targetPort: [number, number] = [0, .5]): PatternEdge =>
@@ -79,7 +81,7 @@ export const FIFTY_NOTES_PATTERN: DemoPattern = {
   nodes: Array.from({ length: 50 }, (_, index) => ({
     id: `idea-${index + 1}`, kind: "sticky" as const, text: "",
     x: 48 + (index % 10) * 232, y: 80 + Math.floor(index / 10) * 232,
-    w: 208, h: 208, color: [saffron, peach, "#ffd2df", indigo, blue, moss][Math.floor(index / 10)],
+    w: 208, h: 208, color: [saffron, peach, paper("pink"), indigo, blue, moss][Math.floor(index / 10)],
   })),
   frames: [{ id: "ideas-frame", x: 0, y: 0, w: 2432, h: 1264, title: "50 ideas · Room for every thought", children: Array.from({ length: 50 }, (_, index) => `idea-${index + 1}`) }],
   edges: [],

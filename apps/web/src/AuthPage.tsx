@@ -1,7 +1,14 @@
 import { EmailSetup } from "./EmailSetup";
 import { PRODUCT_NAME } from "./product";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { api, returnPath, type AuthBootstrap } from "./auth-client";
+import {
+  api,
+  ApiError,
+  authSnapshot,
+  returnPath,
+  studioTitle,
+  type AuthBootstrap,
+} from "./auth-client";
 import { UiIcon } from "./UiIcon";
 import {
   AuthFrame,
@@ -26,6 +33,7 @@ export function FactorEnrollment({
   const [qr, setQr] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [passwordError, setPasswordError] = useState("");
   const [saved, setSaved] = useState(false);
   const [stage, setStage] = useState<"scan" | "recovery" | "verify">("scan");
   const [passwordMethod, setPasswordMethod] = useState<boolean | undefined>(
@@ -91,6 +99,7 @@ export function FactorEnrollment({
     }
     setBusy(true);
     setError("");
+    setPasswordError("");
     try {
       if (!enrollment) {
         setEnrollment(
@@ -110,11 +119,14 @@ export function FactorEnrollment({
         await onComplete();
       }
     } catch (failure) {
-      setError(
-        failure instanceof Error
-          ? failure.message
-          : "Enrollment could not be completed.",
-      );
+      if (failure instanceof ApiError && failure.code === "INVALID_PASSWORD")
+        setPasswordError(failure.message);
+      else
+        setError(
+          failure instanceof Error
+            ? failure.message
+            : "Enrollment could not be completed.",
+        );
     } finally {
       setBusy(false);
       setPassword("");
@@ -164,11 +176,15 @@ export function FactorEnrollment({
                   type="password"
                   autoComplete="current-password"
                   value={password}
-                  onChange={setPassword}
+                  onChange={(value) => {
+                    setPassword(value);
+                    setPasswordError("");
+                  }}
                   required={passwordMethod === true}
+                  error={passwordError}
                   hint={
                     passwordMethod === true
-                      ? "Confirm your Open Whiteboard password to continue."
+                      ? "Enter the password you use to sign in."
                       : "If you sign in with a provider or passkey and have no Open Whiteboard password, leave this blank."
                   }
                 />
@@ -256,8 +272,9 @@ export function FactorEnrollment({
                   Keep a way back in
                 </h2>
                 <p>
-                  Save these recovery codes somewhere private. Each works once
-                  if you lose access to your authenticator.
+                  Recovery codes let you sign in if you lose your phone or
+                  authenticator app. Each code works once. Save them somewhere
+                  private, such as your password manager.
                 </p>
                 <div className="identity-codes">
                   {enrollment.backupCodes.map((item) => (
@@ -309,6 +326,51 @@ export function FactorEnrollment({
 }
 
 type View = "sign-in" | "sign-up" | "reset" | "magic" | "challenge";
+type InvitationPreview = {
+  kind: "resource" | "membership" | "local";
+  studio: string;
+  inviter: string | null;
+  role: string;
+  resourceType?: "board" | "workbook";
+  title?: string;
+};
+const accessVerb: Record<string, string> = {
+  owner: "manage",
+  editor: "edit",
+  commenter: "comment on",
+  viewer: "view",
+};
+const roleLabel: Record<string, string> = {
+  owner: "Owner",
+  admin: "Administrator",
+  member: "Member",
+  guest: "Guest",
+};
+type FieldErrors = Partial<
+  Record<"name" | "username" | "password" | "secret", string>
+>;
+// Server error codes that belong to one field of the form on screen.
+const fieldForCode: Record<string, keyof FieldErrors> = {
+  WEAK_PASSWORD: "password",
+  PASSWORD_TOO_SHORT: "password",
+  PASSWORD_TOO_LONG: "password",
+  INVALID_PASSWORD_LENGTH: "password",
+  INVALID_USERNAME: "username",
+  USERNAME_TAKEN: "username",
+  INVALID_NAME: "name",
+  BOOTSTRAP_REQUIRED: "secret",
+};
+/** The server's password rule, checked before a slow round trip. */
+function passwordProblem(value: string) {
+  const length = [...value].length;
+  return length < 15
+    ? `Use at least 15 characters (${length} so far). A short phrase of a few words works well.`
+    : length > 128
+      ? "Use at most 128 characters."
+      : "";
+}
+/** Marks a recovery key that was shown but never confirmed as saved. */
+const UNSAVED_RECOVERY_KEY = "ow:recovery-key-unconfirmed";
 type Confirmation = {
   requiresPassword: boolean;
   purpose: "approve-email-change" | "verify-new-address" | "verify-address";
@@ -316,9 +378,12 @@ type Confirmation = {
 export function AuthPage({
   bootstrap,
   refresh,
+  signedOut = false,
 }: {
   bootstrap: AuthBootstrap;
   refresh: () => Promise<AuthBootstrap>;
+  /** The previous session on this tab ended without the person asking. */
+  signedOut?: boolean;
 }) {
   const [view, setView] = useState<View>(
     bootstrap.setup && bootstrap.unlocked && !bootstrap.setupReserved
@@ -333,22 +398,34 @@ export function AuthPage({
   const [backup, setBackup] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
+  const [notice, setNotice] = useState(
+    signedOut
+      ? "You’ve been signed out. Your session ended or your access changed — sign in again to continue."
+      : "",
+  );
   const [confirmation, setConfirmation] = useState<Confirmation>();
   const [resendAt, setResendAt] = useState(0);
   const [now, setNow] = useState(Date.now());
   const [localRecovery, setLocalRecovery] = useState(false);
   const [recoveryKey, setRecoveryKey] = useState("");
   const [savedRecovery, setSavedRecovery] = useState(false);
+  const [recoverySaved, setRecoverySaved] = useState(false);
   const [workspaceName, setWorkspaceName] = useState(
     (bootstrap.setup && bootstrap.title === "Canvas"
       ? PRODUCT_NAME
       : bootstrap.title) ?? PRODUCT_NAME,
   );
   const [stepUp, setStepUp] = useState(false);
+  // The action to run again once the person confirms it's them.
+  const [afterStepUp, setAfterStepUp] = useState<
+    (() => Promise<unknown>) | null
+  >(null);
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const [setupWithEmail, setSetupWithEmail] = useState(false);
   const [enrollmentMethod, setEnrollmentMethod] = useState<
     "authenticator" | null
   >(null);
+  const studio = studioTitle(bootstrap) ?? "this Studio";
   const query = new URLSearchParams(
     `${location.search.slice(1)}&${location.hash.slice(1)}`,
   );
@@ -409,20 +486,119 @@ export function AuthPage({
         steps: setupSteps,
       }
     : undefined;
+  const [preview, setPreview] = useState<InvitationPreview>();
+  const [previewError, setPreviewError] = useState("");
+  const canPreview = Boolean(
+    localInvite ||
+      (invitation && account?.verified && !account.needsMfa),
+  );
+  useEffect(() => {
+    if (!canPreview) return;
+    const body = localInvite
+      ? { localInvite }
+      : query.get("membership")
+        ? { membership: query.get("membership") }
+        : query.get("invitation")
+          ? { invitation: query.get("invitation") }
+          : { invite: query.get("invite") };
+    let live = true;
+    void api<InvitationPreview>("/api/v1/invitations/preview", body)
+      .then((value) => {
+        if (live) setPreview(value);
+      })
+      .catch((failure) => {
+        if (live)
+          setPreviewError(
+            failure instanceof Error
+              ? failure.message
+              : "This invitation is unavailable.",
+          );
+      });
+    return () => {
+      live = false;
+    };
+  }, [canPreview, localInvite]);
+  // People joining with a private link see where they are, too.
+  const inviteSteps = account?.needsMfa
+    ? ["Your account", "Recovery key", "Protect it", "Welcome"]
+    : ["Your account", "Recovery key", "Welcome"];
+  const inviteProgress = (current: number) =>
+    localInvite ? { current, steps: inviteSteps } : undefined;
+  const [recoveryReminder, setRecoveryReminder] = useState(() => {
+    try {
+      return sessionStorage.getItem(UNSAVED_RECOVERY_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    if (!recoveryKey || savedRecovery) return;
+    // The key exists only in this page's memory (never stored in the
+    // browser), so ask before a reload or close throws it away, and leave a
+    // note that it was not confirmed for the screens that follow.
+    const keep = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", keep);
+    try {
+      sessionStorage.setItem(UNSAVED_RECOVERY_KEY, "1");
+    } catch {}
+    return () => window.removeEventListener("beforeunload", keep);
+  }, [recoveryKey, savedRecovery]);
+  const dismissRecoveryReminder = () => {
+    setRecoveryReminder(false);
+    try {
+      sessionStorage.removeItem(UNSAVED_RECOVERY_KEY);
+    } catch {}
+  };
+  const reminder =
+    recoveryReminder && !recoveryKey ? (
+      <p className="identity-message" role="status">
+        Your recovery key wasn’t confirmed as saved. After you’re in, create a
+        new one in Settings → Account and security.{" "}
+        <button
+          type="button"
+          className="identity-link"
+          onClick={dismissRecoveryReminder}
+        >
+          Dismiss
+        </button>
+      </p>
+    ) : null;
   const work = async (task: () => Promise<unknown>) => {
     if (busy) return;
     setBusy(true);
     setError("");
+    setFieldErrors({});
+    // Keep a typed password when the answer points at one field, so it can
+    // be corrected (or a taken username changed) without retyping it.
+    let keepPassword = false;
     try {
       await task();
     } catch (failure) {
-      if (
-        failure instanceof Error &&
-        "code" in failure &&
-        failure.code === "STEP_UP_REQUIRED"
-      )
+      const code =
+        failure instanceof Error && "code" in failure
+          ? String(failure.code)
+          : "";
+      const candidate = fieldForCode[code];
+      // Only answer in a field that is on screen; otherwise show it above.
+      const field =
+        candidate &&
+        (candidate === "secret"
+          ? setup && !unlocked
+          : candidate === "password"
+            ? view === "sign-up" || localRecovery || proofPage
+            : view === "sign-up")
+          ? candidate
+          : undefined;
+      if (code === "STEP_UP_REQUIRED") {
+        setAfterStepUp(() => task);
         setStepUp(true);
-      else
+      } else if (field && failure instanceof Error) {
+        setFieldErrors({ [field]: failure.message });
+        keepPassword = true;
+      } else
         setError(
           failure instanceof Error
             ? failure.message
@@ -430,7 +606,7 @@ export function AuthPage({
         );
     } finally {
       setBusy(false);
-      setPassword("");
+      if (!keepPassword) setPassword("");
       setCode("");
     }
   };
@@ -508,6 +684,8 @@ export function AuthPage({
         return;
       }
       if (localRecovery) {
+        if (passwordProblem(password))
+          throw new ApiError(passwordProblem(password), "WEAK_PASSWORD", 400);
         const result = await api<{ recoveryCode: string }>(
           "/api/auth/recover/local",
           { username: email, code, newPassword: password },
@@ -568,8 +746,20 @@ export function AuthPage({
       if (
         view === "sign-up" &&
         (setup || localInvite) &&
-        bootstrap.localAccounts
+        bootstrap.localAccounts &&
+        !setupWithEmail
       ) {
+        // Same rules as the server, answered before the slow password check.
+        if (!name.trim())
+          throw new ApiError("Enter your name.", "INVALID_NAME", 400);
+        if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{2,31}$/u.test(email))
+          throw new ApiError(
+            "Use 3–32 letters, numbers, dots, underscores or hyphens, starting with a letter or number.",
+            "INVALID_USERNAME",
+            400,
+          );
+        if (passwordProblem(password))
+          throw new ApiError(passwordProblem(password), "WEAK_PASSWORD", 400);
         const result = await api<{ recoveryCode: string }>(
           "/api/auth/setup/local",
           {
@@ -579,14 +769,22 @@ export function AuthPage({
             ...(localInvite ? { invitation: localInvite } : {}),
           },
         );
+        setSavedRecovery(false);
         setRecoveryKey(result.recoveryCode);
         await refresh();
         return;
       }
       if (view === "sign-up") {
-        await api("/api/auth/sign-up/email", { name, email, password });
+        if (passwordProblem(password))
+          throw new ApiError(passwordProblem(password), "WEAK_PASSWORD", 400);
+        const address = email.trim();
+        await api("/api/auth/sign-up/email", { name, email: address, password });
+        // Outside setup the answer is the same whether or not the address
+        // may join, so never claim that a message was sent.
         setNotice(
-          "Check your inbox to confirm your address and choose your password. Then return here to sign in.",
+          setup
+            ? `We sent a confirmation link to ${address}. Open it to finish creating your owner account.`
+            : `If ${address} can join ${studio}, a confirmation link is on its way. Nothing after a few minutes? Ask a Studio administrator to invite you.`,
         );
         setView("sign-in");
         return;
@@ -624,14 +822,29 @@ export function AuthPage({
   const signOut = () =>
     work(async () => {
       await api("/api/auth/sign-out", {});
+      setView("sign-in");
+      setBackup(false);
+      setEnrollmentMethod(null);
+      setEmail("");
+      setNotice("");
+      // Start the next person at the plain sign-in page. A used private link
+      // can't be used again; an email invitation stays open for the account
+      // it was meant for.
+      if (location.pathname !== "/login" && (localInvite || !invitation)) {
+        history.replaceState(null, "", "/login");
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      }
       await refresh();
     });
   if (recoveryKey && !savedRecovery)
     return (
       <AuthFrame
-        title="Keep your recovery key"
+        title="Save your recovery key"
         illustration="security"
-        description="Save this key in your password manager. It lets you recover your account without email if you lose your password or device."
+        progress={
+          setup ? { current: 1, steps: setupSteps } : inviteProgress(1)
+        }
+        description="If you forget your password or lose your devices, this key gets you back into your account. No email needed."
       >
         <p className="identity-recovery-key">
           <code style={{ overflowWrap: "anywhere" }}>{recoveryKey}</code>
@@ -648,15 +861,31 @@ export function AuthPage({
           Copy recovery key
         </button>
         <Feedback notice={notice} />
+        <p className="identity-hint">
+          This is the only time the key is shown. Keep it in your password
+          manager. You can replace it any time in Settings → Account and
+          security; the old key then stops working.
+        </p>
+        <label className="identity-check">
+          <input
+            type="checkbox"
+            checked={recoverySaved}
+            onChange={(event) => setRecoverySaved(event.target.checked)}
+          />
+          I’ve saved my recovery key somewhere safe.
+        </label>
         <button
           className="identity-primary"
+          disabled={!recoverySaved}
           onClick={() => {
             setSavedRecovery(true);
             setRecoveryKey("");
+            setRecoverySaved(false);
             setNotice("");
+            dismissRecoveryReminder();
           }}
         >
-          I’ve saved my recovery key
+          Continue
         </button>
       </AuthFrame>
     );
@@ -691,7 +920,8 @@ export function AuthPage({
             autoComplete="new-password"
             value={password}
             onChange={setPassword}
-            hint="Use 15–128 characters. Choose a unique phrase."
+            hint="Use 15–128 characters. A short phrase of a few words works well."
+            error={fieldErrors.password}
           />
           <Submit busy={busy}>Recover account</Submit>
         </form>
@@ -868,7 +1098,11 @@ export function AuthPage({
             type="password"
             autoComplete="off"
             value={secret}
-            onChange={setSecret}
+            onChange={(value) => {
+              setSecret(value);
+              setFieldErrors({});
+            }}
+            error={fieldErrors.secret}
             hint={
               bootstrap.setupPassword
                 ? "This is the SETUP_PASSWORD setting from deployment, not your account password."
@@ -930,21 +1164,40 @@ export function AuthPage({
   if (localInvite && account?.verified && !account.needsMfa)
     return (
       <AuthFrame
-        title="Welcome to your Studio"
-        description="Your account is ready. Shared boards will appear when their owners give you access."
+        title={`Welcome to ${studioTitle(bootstrap) ?? "your Studio"}`}
+        illustration="collaborate"
+        progress={inviteProgress(inviteSteps.length - 1)}
+        description="Your account is ready. Boards and workbooks appear in your Studio as soon as someone shares them with you."
       >
-        <a className="identity-primary" href="/">
+        {reminder}
+        <a className="identity-primary identity-button-link" href="/">
           Open Studio
         </a>
       </AuthFrame>
     );
-  if (invitation && account?.verified && !account.needsMfa)
+  if (invitation && account?.verified && !account.needsMfa) {
+    const inviter = preview?.inviter ?? "Someone";
+    const heading =
+      preview?.kind === "resource" && preview.title
+        ? `${inviter} invited you to ${accessVerb[preview.role] ?? "open"} “${preview.title}”`
+        : preview?.kind === "membership"
+          ? `${inviter} invited you to join ${preview.studio}`
+          : "Join your shared space";
+    const detail =
+      preview?.kind === "resource"
+        ? preview.resourceType === "workbook"
+          ? `Workbook · You’ll be able to ${accessVerb[preview.role] ?? "open"} every board in it, except boards its owner keeps private.`
+          : `Board · You’ll be able to ${accessVerb[preview.role] ?? "open"} it.`
+        : preview?.kind === "membership"
+          ? `You’ll join as ${roleLabel[preview.role] ?? preview.role}.`
+          : previewError ||
+            "Accept to receive the access selected by the person who invited you.";
     return (
       <AuthFrame
-        title="Join your shared space"
+        title={heading}
         icon="people"
         illustration="collaborate"
-        description="Accept to receive the access selected by the person who invited you."
+        description={detail}
       >
         <Feedback error={error} notice={notice} />
         <div className="identity-account-summary">
@@ -956,12 +1209,15 @@ export function AuthPage({
         </div>
         <button
           className="identity-primary"
-          disabled={busy}
+          disabled={busy || Boolean(previewError)}
           onClick={() =>
             void work(async () => {
               const membership = query.get("membership");
               const byId = query.get("invitation");
-              const result = await api<{ boardId?: string }>(
+              const result = await api<{
+                boardId?: string;
+                workbookId?: string;
+              }>(
                 membership
                   ? "/api/v1/membership/accept"
                   : byId
@@ -972,18 +1228,23 @@ export function AuthPage({
               location.replace(
                 result.boardId
                   ? `/boards/${encodeURIComponent(result.boardId)}`
-                  : "/",
+                  : result.workbookId
+                    ? `/?workbook=${encodeURIComponent(result.workbookId)}`
+                    : "/",
               );
             })
           }
         >
-          Accept invitation
+          {preview?.kind === "resource" && preview.title
+            ? `Accept and open ${preview.resourceType === "workbook" ? "workbook" : "board"}`
+            : "Accept invitation"}
         </button>
         <button className="identity-link" onClick={() => void signOut()}>
           Use a different account
         </button>
       </AuthFrame>
     );
+  }
   if (
     account &&
     !setup &&
@@ -1027,6 +1288,7 @@ export function AuthPage({
         progress={progress}
         description="Review your starting settings. You can adjust them later in administration."
       >
+        {reminder}
         <Feedback error={error} />
         <Field
           label="Studio name"
@@ -1097,21 +1359,36 @@ export function AuthPage({
         </button>
       </AuthFrame>
     );
-  if (enroll)
+  if (enroll) {
+    const reason = ownership
+      ? "Installation ownership requires a passkey or authenticator app."
+      : setup
+        ? "As the Studio owner, you’ll use a passkey or authenticator app in addition to your password."
+        : account?.secondFactorReason === "role"
+          ? `Your role in ${studio} is ${account.role === "owner" ? "Owner" : "Administrator"}, and administrators use a passkey or authenticator app in addition to their password.`
+          : account?.secondFactorReason === "studio"
+            ? `${studioTitle(bootstrap) ?? "Your Studio"} now asks everyone to use a passkey or authenticator app in addition to their password.`
+            : "Add a passkey or authenticator app to keep your account safe.";
+    const addPasskey = () =>
+      work(async () => {
+        await passkeyAction("add", "My passkey");
+        await passkeyAction("sign-in");
+        await complete();
+      });
     return (
       <AuthFrame
         title="Protect your account"
         illustration="security"
-        progress={progress}
-        description={
-          ownership
-            ? "Installation ownership requires a working strong sign-in method."
-            : "Add a passkey or authenticator to keep your studio safe. This is required for owners and administrators."
-        }
+        progress={progress ?? inviteProgress(2)}
+        description={`${reason} It takes about a minute.`}
       >
+        {reminder}
         {enrollmentMethod === "authenticator" ? (
           <>
-            <FactorEnrollment onComplete={refresh} />
+            <FactorEnrollment
+              onComplete={refresh}
+              hasPassword={account?.hasPassword}
+            />
             <button
               className="identity-link"
               onClick={() => setEnrollmentMethod(null)}
@@ -1124,13 +1401,7 @@ export function AuthPage({
             <button
               className="identity-method"
               disabled={busy}
-              onClick={() =>
-                void work(async () => {
-                  await passkeyAction("add", "My passkey");
-                  await passkeyAction("sign-in");
-                  await complete();
-                })
-              }
+              onClick={() => void addPasskey()}
             >
               <UiIcon name="key" />
               <span>
@@ -1171,8 +1442,37 @@ export function AuthPage({
           </div>
         )}
         <Feedback error={error} />
+        {!setup && !ownership && (
+          <div className="identity-inline-links">
+            <span className="identity-signed-in-as">
+              Signed in as {bootstrap.user?.name ?? bootstrap.user?.email}
+            </span>
+            <button
+              className="identity-link"
+              disabled={busy}
+              onClick={() => void signOut()}
+            >
+              Sign out
+            </button>
+          </div>
+        )}
+        {stepUp && (
+          <StepUp
+            onComplete={() => {
+              setStepUp(false);
+              const retry = afterStepUp;
+              setAfterStepUp(null);
+              if (retry) void work(retry);
+            }}
+            onCancel={() => {
+              setStepUp(false);
+              setAfterStepUp(null);
+            }}
+          />
+        )}
       </AuthFrame>
     );
+  }
   const title = proofPage
     ? location.pathname === "/recover"
       ? "Choose a new password"
@@ -1190,40 +1490,66 @@ export function AuthPage({
           : view === "magic"
             ? "Sign in by email"
             : setup
-              ? "Create your owner account"
+              ? bootstrap.setupReserved
+                ? "Continue setting up"
+                : "Create your owner account"
               : invitation
                 ? "Sign in to join"
                 : "Welcome back";
+  const signUpTitle = localInvite
+    ? preview?.inviter
+      ? `${preview.inviter} invited you to ${preview.studio}`
+      : `Join ${studioTitle(bootstrap) ?? "this Studio"}`
+    : title;
+  // Strangers only see "Create account" when the Studio lets them register.
+  // With invitation-only registration it appears for invitation links, which
+  // name the address that may register.
   const canRegister = localInvite
     ? true
     : setup
       ? !bootstrap.setupReserved && (bootstrap.localAccounts || bootstrap.email)
-      : bootstrap.email && bootstrap.registration !== "closed";
+      : Boolean(
+          bootstrap.email &&
+            (bootstrap.registration === "public" ||
+              (bootstrap.registration === "invite" && invitation)),
+        );
+  const usernameSignUp =
+    bootstrap.localAccounts &&
+    (setup || localInvite) &&
+    view === "sign-up" &&
+    !setupWithEmail;
+  // "Back to sign in" only where an account to sign in to can exist.
+  const offerSignIn =
+    view !== "sign-in" && !localInvite && !(setup && !bootstrap.setupReserved);
   const emailForm =
     proofPage ||
     challenge ||
     Boolean(bootstrap.email || bootstrap.localAccounts);
   return (
     <AuthFrame
-      title={title}
-      progress={progress}
+      title={view === "sign-up" ? signUpTitle : title}
+      progress={progress ?? (view === "sign-up" ? inviteProgress(0) : undefined)}
       icon={challenge ? "lock" : invitation ? "people" : "key"}
       illustration={
         challenge ? "security" : invitation ? "collaborate" : "notes"
       }
       description={
         challenge
-          ? "Use your authenticator or passkey to continue."
+          ? backup
+            ? "Enter one of the recovery codes you saved when you set up your authenticator app. Each code works once."
+            : "Enter the six-digit code from your authenticator app, or use a passkey."
           : proofPage
             ? "This action happens only when you confirm it."
             : setup && bootstrap.setupReserved
               ? "An owner account has already started setup. Sign in to that account to resume."
               : setup
-                ? "Choose how you’ll sign in. This account will own the studio and manage who can join."
+                ? usernameSignUp
+                  ? "You’ll sign in with a username and password. No email needed. This account owns the Studio and decides who can join."
+                  : "You’ll confirm this email address, then sign in with it. This account owns the Studio and decides who can join."
                 : view === "sign-up"
                   ? localInvite
-                    ? "Choose a username and password for this Studio. No email is needed."
-                    : "Create an account to join this studio."
+                    ? `Choose a username and password${preview ? ` to join as ${preview.role === "guest" ? "a guest" : "a member"}` : ""}. No email needed.`
+                    : `Create an account to join ${studio}.`
                   : view === "reset"
                     ? "We’ll send you a link to choose a new password."
                     : view === "magic"
@@ -1240,7 +1566,7 @@ export function AuthPage({
           : undefined
       }
     >
-      <Feedback error={error} notice={notice} />
+      <Feedback error={error || previewError} notice={notice} />
       {location.pathname === "/verify" && !confirmation && !error && (
         <p role="status">Checking your confirmation link…</p>
       )}
@@ -1256,7 +1582,8 @@ export function AuthPage({
                 autoComplete="new-password"
                 value={password}
                 onChange={setPassword}
-                hint="Use 15–128 characters. Choose a unique phrase."
+                hint="Use 15–128 characters. A short phrase of a few words works well."
+                error={fieldErrors.password}
               />
             )
           ) : challenge ? (
@@ -1276,14 +1603,16 @@ export function AuthPage({
                   name="signup-name"
                   autoComplete="name"
                   value={name}
-                  onChange={setName}
+                  onChange={(value) => {
+                    setName(value);
+                    setFieldErrors({ ...fieldErrors, name: undefined });
+                  }}
+                  error={fieldErrors.name}
                 />
               )}
               <Field
                 label={
-                  bootstrap.localAccounts &&
-                  (setup || localInvite) &&
-                  view === "sign-up"
+                  usernameSignUp
                     ? "Choose a username"
                     : bootstrap.localAccounts && view === "sign-in"
                       ? "Username or email address"
@@ -1291,15 +1620,23 @@ export function AuthPage({
                 }
                 name="login-email"
                 type={
-                  bootstrap.localAccounts &&
-                  (view === "sign-in" ||
-                    ((setup || localInvite) && view === "sign-up"))
+                  usernameSignUp ||
+                  (bootstrap.localAccounts && view === "sign-in")
                     ? "text"
                     : "email"
                 }
-                autoComplete="username"
+                autoComplete={usernameSignUp ? "username" : view === "sign-up" ? "email" : "username"}
                 value={email}
-                onChange={setEmail}
+                onChange={(value) => {
+                  setEmail(value);
+                  setFieldErrors({ ...fieldErrors, username: undefined });
+                }}
+                hint={
+                  usernameSignUp
+                    ? "3–32 letters or numbers. Dots, underscores and hyphens work too."
+                    : undefined
+                }
+                error={fieldErrors.username}
               />
               {["sign-in", "sign-up"].includes(view) && (
                 <Field
@@ -1310,12 +1647,16 @@ export function AuthPage({
                     view === "sign-up" ? "new-password" : "current-password"
                   }
                   value={password}
-                  onChange={setPassword}
+                  onChange={(value) => {
+                    setPassword(value);
+                    setFieldErrors({ ...fieldErrors, password: undefined });
+                  }}
                   hint={
                     view === "sign-up"
-                      ? "Use 15–128 characters. Choose a unique phrase."
+                      ? "Use 15–128 characters. A short phrase of a few words works well."
                       : undefined
                   }
+                  error={fieldErrors.password}
                 />
               )}
             </>
@@ -1341,6 +1682,24 @@ export function AuthPage({
           </Submit>
         </form>
       )}
+      {setup &&
+        view === "sign-up" &&
+        bootstrap.localAccounts &&
+        bootstrap.email && (
+          <button
+            type="button"
+            className="identity-link"
+            onClick={() => {
+              setSetupWithEmail(!setupWithEmail);
+              setEmail("");
+              setFieldErrors({});
+            }}
+          >
+            {setupWithEmail
+              ? "Use a username instead"
+              : "Use an email address instead"}
+          </button>
+        )}
       {!proofPage && (
         <>
           {(challenge ||
@@ -1359,12 +1718,35 @@ export function AuthPage({
             </button>
           )}
           {challenge ? (
-            <button
-              className="identity-link"
-              onClick={() => setBackup(!backup)}
-            >
-              {backup ? "Use authenticator" : "Use a recovery code"}
-            </button>
+            <div className="identity-inline-links">
+              <button
+                className="identity-link"
+                onClick={() => {
+                  setBackup(!backup);
+                  setCode("");
+                  setError("");
+                }}
+              >
+                {backup ? "Use your authenticator app" : "Use a recovery code"}
+              </button>
+              <button
+                className="identity-link"
+                disabled={busy}
+                onClick={() => {
+                  if (account) void signOut();
+                  else {
+                    // The password step never created a session; the pending
+                    // second-factor cookie expires on its own in minutes.
+                    setView("sign-in");
+                    setBackup(false);
+                    setCode("");
+                    setError("");
+                  }
+                }}
+              >
+                {account ? "Use a different account" : "Back"}
+              </button>
+            </div>
           ) : (
             <>
               {((bootstrap.providers?.length ?? 0) > 0 || bootstrap.access) &&
@@ -1420,16 +1802,19 @@ export function AuthPage({
               {(bootstrap.email || bootstrap.localAccounts) && (
                 <div className="identity-inline-links">
                   {view !== "sign-in" ? (
-                    <button
-                      className="identity-link"
-                      onClick={() => {
-                        setView("sign-in");
-                        setError("");
-                        setNotice("");
-                      }}
-                    >
-                      Back to sign in
-                    </button>
+                    offerSignIn && (
+                      <button
+                        className="identity-link"
+                        onClick={() => {
+                          setView("sign-in");
+                          setError("");
+                          setNotice("");
+                          setFieldErrors({});
+                        }}
+                      >
+                        Back to sign in
+                      </button>
+                    )
                   ) : (
                     <>
                       <button
@@ -1445,7 +1830,10 @@ export function AuthPage({
                       {canRegister && (
                         <button
                           className="identity-link"
-                          onClick={() => setView("sign-up")}
+                          onClick={() => {
+                            setView("sign-up");
+                            setNotice("");
+                          }}
                         >
                           Create account
                         </button>
@@ -1461,6 +1849,12 @@ export function AuthPage({
                     </button>
                   )}
                 </div>
+              )}
+              {view === "sign-in" && !setup && !canRegister && !invitation && (
+                <p className="identity-hint identity-join-hint">
+                  New to {studio}? Ask a Studio administrator to send you an
+                  invitation.
+                </p>
               )}
               {!bootstrap.localAccounts &&
                 !bootstrap.email &&

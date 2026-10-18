@@ -1,5 +1,5 @@
 import { RefNodeSlotsProvider } from "@blocksuite/affine/inlines/reference";
-import { canvasFitPadding } from "./canvas-layout";
+import { fitCanvas } from "./canvas-layout";
 import type { BoardViewport } from "./board-viewport";
 import {
   CommunityCanvasTextFonts,
@@ -13,7 +13,7 @@ import {
   ThemeService,
 } from "@blocksuite/affine/shared/services";
 import { themeToVar } from "@toeverything/theme/v2";
-import { ColorScheme } from "@blocksuite/affine/model";
+import { ColorScheme, DefaultTheme, type Color } from "@blocksuite/affine/model";
 import { StdIdentifier } from "@blocksuite/std";
 import type { ExtensionType, Store, Workspace } from "@blocksuite/affine/store";
 import { GfxControllerIdentifier, type GfxViewInteractionConfig } from "@blocksuite/std/gfx";
@@ -27,8 +27,8 @@ import {
 
 import type { WhiteboardEditorElement } from "./editor-container";
 import { getViewExtensions } from "./view-extensions";
-import { CanvasShapeTool, StickyTool } from "./canvas-controller";
-import { legacyStickyPaper } from "./sticky-paper";
+import { CanvasConnectorTool, CanvasShapeTool, StickyTool } from "./canvas-controller";
+import { notePaperColor } from "./sticky-palette";
 import { CanvasFontLoader } from "./canvas-font-loader";
 import { CanvasNavigationTool } from "./canvas-navigation-tool";
 import {
@@ -37,18 +37,23 @@ import {
   createParseDocUrlService,
 } from "./services";
 
-/** Early boards stored the product's neutral line colors as light-only hex.
- * Adapt those defaults at render time, keeping the saved document unchanged. */
+/** Note blocks resolve their paper with the note background as fallback;
+ * only those colours are sticky paper. Shape fills, strokes, text and
+ * connector colours never pass through the sticky palette. */
+const notePaper = (color: Color, fallback: Color | undefined): Color =>
+  notePaperColor(color, fallback, DefaultTheme.noteBackgrounColor);
+
+/** Early boards stored the product's neutral line colors as light-only hex,
+ * and sticky paper under several older palettes. Adapt those at render time to
+ * the current theme, keeping the saved document unchanged. */
 class CanvasThemeService extends ThemeService {
   override generateColorProperty(
-    ...args: Parameters<ThemeService["generateColorProperty"]>
+    ...[color, fallback, ...rest]: Parameters<ThemeService["generateColorProperty"]>
   ) {
-    const paper = legacyStickyPaper(args[0]);
-    if (paper) return paper;
-    return super.generateColorProperty(...args);
+    return super.generateColorProperty(notePaper(color, fallback), fallback, ...rest);
   }
-  override getColorValue(...args: Parameters<ThemeService["getColorValue"]>) {
-    const value = super.getColorValue(...args);
+  override getColorValue(...[color, fallback, ...rest]: Parameters<ThemeService["getColorValue"]>) {
+    const value = super.getColorValue(notePaper(color, fallback), fallback, ...rest);
     if (this.edgelessTheme !== ColorScheme.Dark) return value;
     return value === "#5c6980"
       ? "#aab7cf"
@@ -121,6 +126,7 @@ export function createEditor(store: Store, workspace: Workspace) {
     CanvasNavigationTool,
     StickyTool,
     CanvasShapeTool,
+    CanvasConnectorTool,
     {
       setup: (di) => {
         // BlockSuite 0.22 exposes the config type, but not this DI identifier
@@ -129,11 +135,29 @@ export function createEditor(store: Store, workspace: Workspace) {
         const nativeNote = di.provider().get(noteInteraction);
         di.override(noteInteraction, {
           ...nativeNote,
+          // Sticky notes keep their proportions when resized from a corner,
+          // as in other whiteboards; the side handles still stretch them.
+          handleResize(context) {
+            const native = nativeNote.handleResize?.(context);
+            const model = context.model as unknown as { children?: Array<{ flavour: string }> };
+            const sticky = (model.children ?? []).length <= 1 && (model.children ?? []).every((child) => child.flavour === "affine:paragraph");
+            return {
+              ...native,
+              beforeResize(resize) {
+                native?.beforeResize?.(resize);
+                // Stickies start at 208px, below the engine's 218px document-note
+                // minimum, which also skewed the locked ratio.
+                if (sticky) resize.set({ ...nativeNote.resizeConstraint, minWidth: 120, minHeight: 92, lockRatio: ["top-left", "top-right", "bottom-left", "bottom-right"] });
+              },
+            };
+          },
           handleSelection(context) {
             const nativeSelection = nativeNote.handleSelection?.(context);
             return {
               ...nativeSelection,
               onSelect(selection) {
+                // Secondary clicks must select/context-menu, never enter text editing.
+                if (selection.event.button !== 0 || selection.event.ctrlKey) return selection.default(selection);
                 if (!selection.multiSelect && selection.selected &&
                     context.gfx.selection.selectedIds.length <= 1 &&
                     (context.gfx.selection.has(context.model.id) || context.gfx.selection.editing)) {
@@ -194,10 +218,7 @@ export function fitEditorToContent(editor: WhiteboardEditorElement, remembered?:
       }
       const host = editor.closest<HTMLElement>(".editor-canvas");
       // Show the complete composition, including documents outside a frame.
-      gfx.fitToScreen({
-        smooth: false,
-        padding: host ? canvasFitPadding(host) : [96, 88, 80, 88],
-      });
+      if (host && gfx.gfxElements.length) fitCanvas(host, gfx.viewport, gfx.elementsBound, false);
       onApplied?.();
     });
   });

@@ -1,14 +1,9 @@
 import * as Y from 'yjs';
 
 import { NativeWorkspace } from './runtime/workspace';
+import { stickyPaper } from './sticky-palette';
 
-const NOTE_COLORS = [
-  { light: '#fde68a', dark: '#704200' },
-  { light: '#ffc58f', dark: '#843b06' },
-  { light: '#c9f8c1', dark: '#3b5315' },
-  { light: '#ceecff', dark: '#004b7b' },
-  { light: '#ddd6fe', dark: '#312e81' },
-];
+const NOTE_COLORS = (['yellow', 'orange', 'green', 'blue', 'purple'] as const).map(stickyPaper);
 
 export type HeadlessBoard = {
   workspace: NativeWorkspace;

@@ -1,5 +1,7 @@
 import { softwarePasskey } from "./passkey-fixture";
 import { conformance } from "./auth-conformance";
+import { sharingConformance } from "./auth-sharing-conformance";
+import { adminConformance } from "./auth-admin-conformance";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import {
@@ -420,6 +422,123 @@ await client.call("/api/v1/account/delete", { confirm: address }, 409);
 console.log(
   "Native Worker/D1 account, admission, permissions, admin, suspension, owner guards and CSRF passed.",
 );
+// Invited local (username) accounts: validation answers in the form, each
+// account gets its own marker color, and a Studio-wide second-factor
+// requirement never locks a member out of the required enrollment.
+{
+  database.exec("DELETE FROM request_limits");
+  const localInvite = async () =>
+    (
+      await client.call("/api/v1/admin/local-invitations", {
+        label: `Local member ${Date.now()}`,
+        role: "member",
+      })
+    ).token as string;
+  const invitation = await localInvite();
+  const local = new Client();
+  await local.call("/api/v1/auth/bootstrap");
+  const username = `local${Date.now().toString(36)}`;
+  const shortPassword = await local.call(
+    "/api/auth/setup/local",
+    { name: "Local Member", username, password: "too short", invitation },
+    400,
+  );
+  assert.equal(shortPassword.code, "WEAK_PASSWORD");
+  assert.match(shortPassword.message, /15–128 characters/u);
+  const badUsername = await local.call(
+    "/api/auth/setup/local",
+    { name: "Local Member", username: "a", password, invitation },
+    400,
+  );
+  assert.equal(badUsername.code, "INVALID_USERNAME");
+  const malformedSignIn = await local.call(
+    "/api/auth/sign-in/local",
+    { username: "a", password },
+    401,
+  );
+  assert.match(malformedSignIn.message, /username or password/u);
+  const created = await local.call("/api/auth/setup/local", {
+    name: "Local Member",
+    username,
+    password,
+    invitation,
+  });
+  assert.match(created.recoveryCode, /^[A-Za-z0-9_-]{43}$/u);
+  const second = new Client();
+  await second.call("/api/v1/auth/bootstrap");
+  await second.call("/api/auth/setup/local", {
+    name: "Second Local",
+    username: `${username}b`,
+    password,
+    invitation: await localInvite(),
+  });
+  const localUser = (await local.call("/api/v1/auth/bootstrap")).user;
+  const secondUser = (await second.call("/api/v1/auth/bootstrap")).user;
+  for (const user of [localUser, secondUser])
+    assert.doesNotMatch(user.color, /^#(3d4a73|4262ff)$/iu);
+  assert.notEqual(localUser.color, secondUser.color);
+  await local.call("/api/v1/catalog");
+
+  // Owner requires a second factor for everyone while the member's session
+  // is older than the verification window.
+  await client.call("/api/v1/admin/settings", { mfa_required: 1 }, 200, "PATCH");
+  const stale = new Date(Date.now() - 2 * 3600_000).toISOString();
+  database
+    .prepare("UPDATE auth_sessions SET authenticatedAt = ? WHERE userId = ?")
+    .run(stale, localUser.id);
+  const required = await local.call("/api/v1/auth/bootstrap");
+  assert.equal(required.account.needsMfa, true);
+  assert.equal(required.account.secondFactorReason, "studio");
+  assert.equal(required.account.hasPassword, true);
+  assert.equal(required.account.hasPasskey, false);
+  await local.call("/api/v1/catalog", undefined, 403);
+  // A passkey enrollment from a stale session still asks for step-up first.
+  await local.call(
+    "/api/auth/passkey/generate-register-options",
+    undefined,
+    403,
+  );
+  // The password typed on the enrollment screen is the step-up...
+  const wrong = await local.call(
+    "/api/auth/two-factor/enable",
+    { password: "not the right password at all" },
+    401,
+  );
+  assert.equal(wrong.code, "INVALID_PASSWORD");
+  const enrollment = await local.call("/api/auth/two-factor/enable", {
+    password,
+  });
+  assert.equal(enrollment.backupCodes.length, 10);
+  // ...and refreshes only the verification time, never the assurance.
+  const refreshed = database
+    .prepare(
+      "SELECT authenticatedAt, assurance FROM auth_sessions WHERE userId = ?",
+    )
+    .get(localUser.id) as { authenticatedAt: string; assurance: string };
+  assert.ok(Date.parse(refreshed.authenticatedAt) > Date.parse(stale));
+  assert.notEqual(refreshed.assurance, "strong");
+  await local.call("/api/v1/catalog", undefined, 403);
+  await local.call("/api/auth/two-factor/verify-totp", {
+    code: await codeFor(
+      new URL(enrollment.totpURI).searchParams.get("secret")!,
+    ),
+  });
+  assert.equal(
+    (await local.call("/api/v1/auth/bootstrap")).account.needsMfa,
+    false,
+  );
+  await local.call("/api/v1/catalog");
+  // A stolen stale session without the password cannot enroll its own factor.
+  database
+    .prepare("UPDATE auth_sessions SET authenticatedAt = ? WHERE userId = ?")
+    .run(stale, secondUser.id);
+  await second.call("/api/auth/two-factor/enable", {}, 403);
+  await client.call("/api/v1/admin/settings", { mfa_required: 0 }, 200, "PATCH");
+  database.exec("DELETE FROM request_limits");
+  console.log(
+    "Native Worker/D1 local accounts: form validation, distinct colors and required second-factor enrollment from a stale session passed.",
+  );
+}
 // Exercise the full invited-user lifecycle with real encrypted mail proofs.
 database.exec("DELETE FROM request_limits");
 async function latestToken(email: string, subject: string) {
@@ -602,6 +721,17 @@ await conformance({
   webhookSecret: fixture.MAIL_WEBHOOK_SECRET!,
   fixture,
 });
+database.exec("DELETE FROM request_limits");
+await sharingConformance({
+  origin,
+  owner: client,
+  member,
+  board,
+  database,
+  memberId: memberBootstrap.user.id,
+  memberEmail,
+});
+await adminConformance({ origin, owner: client, database });
 // Optional email sign-in requires an explicit confirmation and remains subject to MFA.
 database.exec("DELETE FROM request_limits");
 const magic = new Client();

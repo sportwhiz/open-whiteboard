@@ -151,6 +151,144 @@ async function transferContent(
   ]);
   return { transferred: resources.length };
 }
+/** An audit row written only if the given local invitation now exists. */
+function invitationAuditStatement(
+  env: NativeEnv,
+  actorId: string,
+  action: string,
+  targetId: string,
+  existingInvitationId: string,
+  role: string,
+) {
+  return env.CATALOG.prepare(
+    "INSERT INTO security_audit (id, actor_id, action, target_id, outcome, metadata, created_at) SELECT ?, ?, ?, ?, 'success', ?, ? WHERE EXISTS(SELECT 1 FROM local_invitations WHERE id = ?)",
+  ).bind(
+    randomToken(18),
+    actorId,
+    action,
+    targetId,
+    JSON.stringify({ role }),
+    new Date().toISOString(),
+    existingInvitationId,
+  );
+}
+/**
+ * Replace a lost private invitation link. Tokens are stored hashed and shown
+ * once, so the only recovery is a new link: one batch issues the replacement
+ * (same label and role, a fresh seven days) and revokes the original, and
+ * neither happens unless both can.
+ */
+export async function reissueLocalInvitation(
+  env: NativeEnv,
+  actorId: string,
+  previousId: string,
+) {
+  const token = randomToken(32);
+  const id = randomToken(18);
+  const now = Date.now();
+  const previous = await env.CATALOG.prepare(
+    "SELECT role FROM local_invitations WHERE id = ?",
+  )
+    .bind(previousId)
+    .first<{ role: string }>();
+  const [issued] = await env.CATALOG.batch([
+    // The original is excluded from the active count: it is revoked below.
+    env.CATALOG.prepare(
+      "INSERT INTO local_invitations(id,token_hash,label,role,created_by,created_at,expires_at) SELECT ?,?,label,role,?,?,? FROM local_invitations WHERE id=? AND accepted_by IS NULL AND revoked_at IS NULL AND (SELECT COUNT(*) FROM local_invitations WHERE accepted_by IS NULL AND revoked_at IS NULL AND expires_at>? AND id<>?)<100",
+    ).bind(
+      id,
+      await sha256(token),
+      actorId,
+      now,
+      now + 7 * 86400000,
+      previousId,
+      now,
+      previousId,
+    ),
+    env.CATALOG.prepare(
+      "UPDATE local_invitations SET revoked_at=? WHERE id=? AND accepted_by IS NULL AND revoked_at IS NULL AND EXISTS(SELECT 1 FROM local_invitations WHERE id=?)",
+    ).bind(now, previousId, id),
+    invitationAuditStatement(
+      env,
+      actorId,
+      "local_invitation.reissued",
+      previousId,
+      id,
+      previous?.role ?? "member",
+    ),
+  ]);
+  if (!issued.meta.changes) {
+    const state = await env.CATALOG.prepare(
+      "SELECT accepted_by, revoked_at FROM local_invitations WHERE id = ?",
+    )
+      .bind(previousId)
+      .first<{ accepted_by: string | null; revoked_at: number | null }>();
+    if (!state)
+      throw new HttpError(404, "Invitation not found.", "NOT_FOUND");
+    if (state.accepted_by || state.revoked_at)
+      throw new HttpError(
+        409,
+        state.accepted_by
+          ? "This invitation has already been accepted."
+          : "This invitation was revoked. Create a new invitation instead.",
+        "INVITATION_CONFLICT",
+      );
+    throw new HttpError(
+      409,
+      "Revoke unused invitations before creating more.",
+      "INVITATION_LIMIT",
+    );
+  }
+  return { id, token, replaces: previousId };
+}
+const roleLabels: Record<string, string> = {
+  owner: "Owner",
+  admin: "Administrator",
+  member: "Member",
+  guest: "Guest",
+};
+/**
+ * Tell a person why they were signed out after an administrator changed
+ * their Studio role. Written only if the role change committed.
+ */
+export function roleChangeNotification(
+  env: NativeEnv,
+  input: { targetId: string; actorName: string; from: string; to: string },
+) {
+  const actor = input.actorName.trim() || "An administrator";
+  const to = roleLabels[input.to] ?? input.to;
+  const from = roleLabels[input.from] ?? input.from;
+  const change =
+    input.to === "admin"
+      ? `${actor} made you an Administrator.`
+      : `${actor} changed your Studio role from ${from} to ${to}.`;
+  const access =
+    input.to === "guest"
+      ? " You can still open the boards and workbooks shared with you."
+      : input.from === "admin"
+        ? " You no longer have access to Studio administration."
+        : "";
+  const id = `notification:${crypto.randomUUID()}`;
+  return env.CATALOG.prepare(
+    "INSERT INTO notifications (id, user_id, board_id, kind, title, body, href, event_key, created_at) SELECT ?, ?, NULL, 'account', ?, ?, '/settings/account', ?, ? WHERE EXISTS(SELECT 1 FROM instance_memberships WHERE user_id = ? AND role = ?)",
+  ).bind(
+    id,
+    input.targetId,
+    `Your Studio role changed to ${to}`,
+    `${change}${access} You were signed out so the change could take effect.`,
+    `role:${input.targetId}:${id}`,
+    new Date().toISOString(),
+    input.targetId,
+    input.to,
+  );
+}
+/** Active accounts that would have to set up a second factor if it became required. */
+export async function mfaImpact(env: NativeEnv) {
+  const row = await env.CATALOG.prepare(
+    "SELECT COUNT(*) AS count FROM account_security s JOIN instance_memberships m ON m.user_id = s.user_id LEFT JOIN auth_users a ON a.id = s.user_id WHERE s.status = 'active' AND COALESCE(a.twoFactorEnabled, 0) = 0 AND NOT EXISTS(SELECT 1 FROM auth_passkeys p WHERE p.userId = s.user_id)",
+  ).first<{ count: number }>();
+  return { withoutSecondFactor: Number(row?.count ?? 0) };
+}
 export async function adminRoutes(
   request: Request,
   env: NativeEnv,
@@ -169,7 +307,9 @@ export async function adminRoutes(
       return Response.json({
         invitations: (
           await env.CATALOG.prepare(
-            "SELECT id,label,role,created_at,expires_at,accepted_by,revoked_at FROM local_invitations ORDER BY created_at DESC LIMIT 100",
+            // Usable invitations first, so replaced links in the history never
+            // push a pending invitation out of the page.
+            "SELECT id,label,role,created_at,expires_at,accepted_by,revoked_at FROM local_invitations ORDER BY CASE WHEN accepted_by IS NULL AND revoked_at IS NULL THEN 0 ELSE 1 END, created_at DESC LIMIT 200",
           ).all()
         ).results,
       });
@@ -209,21 +349,33 @@ export async function adminRoutes(
       return Response.json({ id, token });
     }
   }
+  const localInvitationReissue = url.pathname.match(
+    /^\/api\/v1\/admin\/local-invitations\/([A-Za-z0-9_-]+)\/reissue$/u,
+  );
+  if (localInvitationReissue && request.method === "POST") {
+    await limit(env, "local-invitations", principal.id, 30, 3600);
+    return Response.json(
+      await reissueLocalInvitation(env, principal.id, localInvitationReissue[1]),
+      { status: 201 },
+    );
+  }
   const localInvitation = url.pathname.match(
     /^\/api\/v1\/admin\/local-invitations\/([A-Za-z0-9_-]+)\/revoke$/u,
   );
   if (localInvitation && request.method === "POST") {
-    await env.CATALOG.prepare(
-      "UPDATE local_invitations SET revoked_at=? WHERE id=? AND accepted_by IS NULL",
+    const revoked = await env.CATALOG.prepare(
+      "UPDATE local_invitations SET revoked_at=? WHERE id=? AND accepted_by IS NULL AND revoked_at IS NULL",
     )
       .bind(Date.now(), localInvitation[1])
       .run();
-    await audit(
-      env.CATALOG,
-      principal.id,
-      "local_invitation.revoked",
-      localInvitation[1],
-    );
+    // Revoking twice (a double click, a second tab) is not a second event.
+    if (revoked.meta.changes)
+      await audit(
+        env.CATALOG,
+        principal.id,
+        "local_invitation.revoked",
+        localInvitation[1],
+      );
     return Response.json({ revoked: true });
   }
   const p = page(url);
@@ -261,7 +413,7 @@ export async function adminRoutes(
         "INVALID_INPUT",
       );
     const rows = await env.CATALOG.prepare(
-      `SELECT u.id, COALESCE((SELECT username FROM local_accounts WHERE user_id=u.id),u.email) AS email, (SELECT username FROM local_accounts WHERE user_id=u.id) AS localUsername, u.display_name AS name, s.status, s.auth_version AS authVersion, m.role, a.emailVerified AS verified, a.twoFactorEnabled AS twoFactorEnabled, u.created_at AS createdAt
+      `SELECT u.id, COALESCE((SELECT username FROM local_accounts WHERE user_id=u.id),u.email) AS email, (SELECT username FROM local_accounts WHERE user_id=u.id) AS localUsername, u.display_name AS name, s.status, s.auth_version AS authVersion, m.role, a.emailVerified AS verified, a.twoFactorEnabled AS twoFactorEnabled, (SELECT COUNT(*) FROM auth_passkeys WHERE userId = u.id) AS passkeys, u.created_at AS createdAt
       FROM users u JOIN account_security s ON s.user_id = u.id LEFT JOIN instance_memberships m ON m.user_id = u.id LEFT JOIN auth_users a ON a.id = u.id
       WHERE u.id > ? AND (COALESCE((SELECT username FROM local_accounts WHERE user_id=u.id),u.email) LIKE ? OR u.display_name LIKE ?) AND ((? = 'current' AND s.status <> 'deleted') OR s.status = ?) ORDER BY u.id LIMIT ?`,
     )
@@ -400,13 +552,20 @@ export async function adminRoutes(
           "Only the owner can appoint an administrator.",
           "OWNER_REQUIRED",
         );
-      if (
-        !(await env.CATALOG.prepare(
+      // Choosing the current role changes nothing, so nobody is signed out.
+      if (target.role === body.role) return Response.json({ updated: false });
+      const [changed] = await env.CATALOG.batch([
+        env.CATALOG.prepare(
           "UPDATE instance_memberships SET role = ? WHERE user_id = ? AND role <> ? RETURNING user_id",
-        )
-          .bind(body.role, targetId, "owner")
-          .first())
-      )
+        ).bind(body.role, targetId, "owner"),
+        roleChangeNotification(env, {
+          targetId,
+          actorName: principal.name ?? "",
+          from: target.role ?? "member",
+          to: String(body.role),
+        }),
+      ]);
+      if (!changed.results.length)
         throw new HttpError(
           409,
           "Admit this account before changing its role.",
@@ -559,11 +718,15 @@ export async function adminRoutes(
     if (!invite || (invite.role === "admin" && me.role !== "owner"))
       throw new HttpError(404, "Pending invitation not found.", "NOT_FOUND");
     if (inviteMatch[2] === "revoke") {
-      await env.CATALOG.prepare(
-        "UPDATE instance_invitations SET revoked_at = ? WHERE id = ? AND accepted_by IS NULL",
+      const revoked = await env.CATALOG.prepare(
+        "UPDATE instance_invitations SET revoked_at = ? WHERE id = ? AND accepted_by IS NULL AND revoked_at IS NULL",
       )
         .bind(new Date().toISOString(), id)
         .run();
+      if (revoked.meta.changes)
+        await audit(env.CATALOG, principal.id, "invitation.revoked", id, "success", {
+          role: invite.role,
+        });
       return Response.json({ revoked: true });
     }
     await limit(env, "invitation-resend", id, 3, 3600);
@@ -600,6 +763,7 @@ export async function adminRoutes(
         settings: settingsDto(await installation(env)),
         mailReady: mailReady(env),
         providers: await providerInventory(env),
+        mfaImpact: await mfaImpact(env),
       });
     if (request.method === "PATCH") {
       const body = await json(request);
@@ -746,7 +910,8 @@ export async function adminRoutes(
     });
   if (url.pathname === "/api/v1/admin/activity" && request.method === "GET") {
     const rows = await env.CATALOG.prepare(
-      "SELECT id, actor_id, action, target_id, outcome, metadata, created_at FROM security_audit WHERE (? = '' OR (created_at, id) < (SELECT created_at, id FROM security_audit WHERE id = ?)) AND action LIKE ? ORDER BY created_at DESC, id DESC LIMIT ?",
+      // Names for actor and target, so rows read "Alex changed Mia's role".
+      "SELECT s.id, s.actor_id, s.action, s.target_id, s.outcome, s.metadata, s.created_at, actor.display_name AS actor_name, target.display_name AS target_name FROM security_audit s LEFT JOIN users actor ON actor.id = s.actor_id LEFT JOIN users target ON target.id = s.target_id WHERE (? = '' OR (s.created_at, s.id) < (SELECT created_at, id FROM security_audit WHERE id = ?)) AND s.action LIKE ? ORDER BY s.created_at DESC, s.id DESC LIMIT ?",
     )
       .bind(
         p.cursor,

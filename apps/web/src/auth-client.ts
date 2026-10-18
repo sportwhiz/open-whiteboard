@@ -43,6 +43,10 @@ export type AuthBootstrap = {
     recoveryRequired: boolean;
     twoFactorEnabled: boolean;
     setupUser: boolean;
+    /** Why this account needs a second factor, when it does. */
+    secondFactorReason?: "role" | "studio" | "personal" | null;
+    hasPassword?: boolean;
+    hasPasskey?: boolean;
     authVersion: number;
     expiresAt: string;
     onboarding: number;
@@ -76,6 +80,13 @@ export function subscribeAuth(listener: () => void) {
 }
 export function authSnapshot() {
   return snapshot;
+}
+// Installations created before naming was part of setup carry this default.
+const UNNAMED_STUDIO = "Canvas";
+/** The Studio name the owner chose at setup, when this deployment has one. */
+export function studioTitle(value: AuthBootstrap | undefined = snapshot) {
+  const title = value?.mode === "native" ? value.title?.trim() : "";
+  return title && title !== UNNAMED_STUDIO ? title : undefined;
 }
 export function cacheIdentity(userId?: string) {
   const guest = guestSession();
@@ -150,6 +161,44 @@ const sessionChanges = new Set([
   "/api/auth/change-password",
   "/api/v1/account/password",
 ]);
+// Requests after which being signed out is what the person asked for.
+const intentionalExits = new Set([
+  "/api/auth/sign-out",
+  "/api/v1/account/logout-all",
+  "/api/v1/account/secure",
+  "/api/v1/account/delete",
+  "/api/v1/account/recovery-complete",
+  "/api/auth/change-password",
+  "/api/v1/account/password",
+]);
+const LAST_ACCOUNT = "ow:last-account";
+const INTENTIONAL_EXIT = "ow:signed-out";
+function tabStorage() {
+  try {
+    return sessionStorage;
+  } catch {
+    return undefined;
+  }
+}
+function noteIntentionalExit() {
+  tabStorage()?.setItem(INTENTIONAL_EXIT, "1");
+}
+/**
+ * The account last signed in on this tab, and whether its session ended
+ * without the person asking (expiry, a role change, an administrator).
+ */
+export function previousAccount() {
+  const storage = tabStorage();
+  return {
+    id: storage?.getItem(LAST_ACCOUNT) ?? undefined,
+    intentional: storage?.getItem(INTENTIONAL_EXIT) === "1",
+  };
+}
+export function rememberAccount(id: string) {
+  const storage = tabStorage();
+  storage?.setItem(LAST_ACCOUNT, id);
+  storage?.removeItem(INTENTIONAL_EXIT);
+}
 export async function apiFetch(
   input: RequestInfo | URL,
   init: RequestInit = {},
@@ -210,6 +259,7 @@ export async function apiFetch(
       return response;
     }
   }
+  if (response.ok && intentionalExits.has(url.pathname)) noteIntentionalExit();
   if (response.ok && sessionChanges.has(url.pathname)) {
     const challenge =
       url.pathname === "/api/auth/sign-in/email" &&

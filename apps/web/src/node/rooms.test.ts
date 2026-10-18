@@ -4,7 +4,9 @@ import {
   installRoomWebSocketCompatibility,
   NodeRoomClient,
   createNodeRooms,
+  BACKGROUND_ROOM_QUEUE_LIMIT,
 } from "./rooms";
+import { ROOM_PRIORITY_HEADER } from "../room-priority";
 import type { Pool, PoolConnection } from "mysql2/promise";
 
 function connectionFixture() {
@@ -124,6 +126,30 @@ describe("MySQL room storage", () => {
       "Another Open Whiteboard Node server",
     );
     expect(connection.destroy).toHaveBeenCalledOnce();
+  });
+});
+describe("Node room queue priority", () => {
+  it("turns background reads away while live room work is queued, but keeps accepting live work", async () => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const connection = {
+      query: vi.fn(async () => [[]]),
+      execute: vi.fn(async () => { await held; return [[{ owned: 0 }]]; }),
+    };
+    const ownership = {
+      connection, lockName: "test", healthy: true,
+      onLoss: () => () => undefined, fail: vi.fn(), close: vi.fn(async () => undefined),
+    };
+    const rooms = await createNodeRooms({} as Pool, {} as D1Database, ownership as never);
+    const stub = rooms.getByName("board:queue");
+    const background = () => stub.fetch("https://board-room/snapshot", { headers: { [ROOM_PRIORITY_HEADER]: "background" } });
+    const live = Array.from({ length: BACKGROUND_ROOM_QUEUE_LIMIT }, () => stub.fetch("https://board-room/snapshot").catch((error: Error) => error));
+    await expect(background()).rejects.toThrow("busy with live work");
+    const more = stub.fetch("https://board-room/snapshot").catch((error: Error) => error);
+    release();
+    // Every queued live request ran (and failed the fake lock check) rather than being turned away.
+    for (const result of [...live, more]) expect(String(await result)).toContain("lost its process lock");
+    await rooms.close();
   });
 });
 describe("Node WebSocket upgrade compatibility", () => {

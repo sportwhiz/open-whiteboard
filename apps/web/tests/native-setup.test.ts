@@ -545,7 +545,7 @@ describe("fresh native owner setup with GitHub", () => {
     });
     await expect(
       call("/api/v1/setup/unlock", { secret: "an arbitrary visitor phrase" }),
-    ).rejects.toThrow("setup password");
+    ).rejects.toThrow("setup passphrase");
   });
 
   async function localOwner() {
@@ -665,11 +665,15 @@ describe("fresh native owner setup with GitHub", () => {
       owner,
       { email: "teammate", role: "editor" },
     );
-    const accepted = await invitationRoutes(
-      request("/api/v1/invitations/accept", { token: shared.token }),
-      env,
-    );
-    expect(accepted?.status).toBe(200);
+    // An admitted Studio account is granted access directly, no link.
+    expect(shared).toMatchObject({ granted: true });
+    expect(
+      db
+        .prepare(
+          "SELECT COUNT(*) n FROM notifications WHERE user_id=? AND kind='share'",
+        )
+        .get(identity.user.id)!.n,
+    ).toBe(1);
     expect(
       db
         .prepare(

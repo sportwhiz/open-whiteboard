@@ -21,3 +21,14 @@ export function canvasPointAt(
     return null;
   return { x: point.x - bounds.left, y: point.y - bounds.top };
 }
+
+/** The object drawn on top at a point, ignoring frames (their open interior
+ * is canvas). The engine returns hits sorted bottom-most first. */
+export function topmostObject<T>(hits: readonly T[]): T | null {
+  for (let i = hits.length - 1; i >= 0; i--) {
+    const hit = hits[i] as unknown;
+    const frame = Boolean(hit && typeof hit === "object" && "flavour" in hit && (hit as { flavour: string }).flavour === "affine:frame");
+    if (!frame) return hits[i];
+  }
+  return null;
+}

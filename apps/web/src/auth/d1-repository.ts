@@ -1,5 +1,6 @@
 import type { IdentityRepository, AppIdentity } from "./repository";
 import type { SecurityState } from "./types";
+import { chooseAccountColor } from "./colors";
 
 export class D1IdentityRepository implements IdentityRepository {
   constructor(private readonly database: D1Database) {}
@@ -13,10 +14,11 @@ export class D1IdentityRepository implements IdentityRepository {
   }
   async provision(user: AppIdentity) {
     const at = new Date().toISOString();
+    const color = await chooseAccountColor(this.database, user.id);
     await this.database.batch([
       this.database
         .prepare(
-          "INSERT OR IGNORE INTO users (id,issuer,subject,email,display_name,avatar_url,color,created_at,updated_at) VALUES (?, 'urn:canvas:account', ?, ?, ?, ?, '#4262ff', ?, ?)",
+          "INSERT OR IGNORE INTO users (id,issuer,subject,email,display_name,avatar_url,color,created_at,updated_at) VALUES (?, 'urn:canvas:account', ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(
           user.id,
@@ -24,6 +26,7 @@ export class D1IdentityRepository implements IdentityRepository {
           user.email.toLowerCase(),
           user.name.slice(0, 80),
           user.image ?? null,
+          color,
           at,
           at,
         ),

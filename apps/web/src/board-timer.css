@@ -12,3 +12,7 @@
 .board-timer.complete { border-color: var(--success); }
 .board-timer > p { max-width: 240px; margin: 0; padding: 8px 14px 12px; font-size: 12px; color: var(--danger); }
 @media (max-width: 900px) { .app-shell .board-timer { bottom: 86px; } }
+/* Phones: above the bottom creation rail. */
+@media (max-width: 600px) { .app-shell .board-timer { bottom: 140px; } }
+/* Keyboard focus stays on the pause control while its request runs. */
+.board-timer .board-timer-action[aria-disabled="true"] { opacity: .55; cursor: default; }

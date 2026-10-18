@@ -35,6 +35,21 @@ function visibleTarget(current: TourStep): HTMLElement | undefined {
     ? (element?.querySelector<HTMLElement>("h2") ?? element)
     : element;
 }
+const AUTO_TOUR = "huddle-tour:auto-shown";
+function autoTourShown() {
+  try {
+    return sessionStorage.getItem(AUTO_TOUR);
+  } catch {
+    return null;
+  }
+}
+function rememberAutoTour(journey: Journey) {
+  try {
+    sessionStorage.setItem(AUTO_TOUR, journey);
+  } catch {
+    /* Without tab storage every page may offer its own guide. */
+  }
+}
 function pageJourney(path: string, role: string): Journey | undefined {
   if (
     path.startsWith("/boards/") ||
@@ -199,6 +214,11 @@ export function OnboardingHost({
   }, [activeJourney, route.pathname]);
   useEffect(() => {
     if (!activeJourney || open || seen & tourBits[activeJourney]) return;
+    // One guide opens by itself per visit. Moving on to settings or a board
+    // right after the Studio guide shouldn't start another one; those stay
+    // a click away under "Quick tour" and open by themselves on a later visit.
+    if (!localOnly && autoTourShown() && autoTourShown() !== activeJourney)
+      return;
     const readySelector =
       activeJourney === "board"
         ? ".canvas-bottom-right"
@@ -216,6 +236,7 @@ export function OnboardingHost({
         )
       )
         return;
+      if (!localOnly) rememberAutoTour(activeJourney);
       start(activeJourney);
     };
     const timer = window.setTimeout(ready, 900);

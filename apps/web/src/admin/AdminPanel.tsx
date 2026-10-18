@@ -1,6 +1,10 @@
+import { FormSaveBar } from "./FormSaveBar";
+import { bulkFailureMessage, bulkTargets, invalidLimit, policyFieldForError, type BulkKind } from "./form-state";
 import { LocalInvitations } from "./LocalInvitations";
+import { EmailInvitationList, type CreatedInvitation } from "./EmailInvitations";
+import { MfaRequirementConfirm, RoleChangeConfirm } from "./AdminConfirmations";
 import { EmailSetup } from "../EmailSetup";
-import { securityEventLabel } from "../security-event-label";
+import { groupSecurityEvents, relativeTime, securityEventLabel, securityEventPeople, type SecurityEvent } from "../security-event-label";
 import {
   useEffect,
   useRef,
@@ -21,6 +25,7 @@ type Person = {
   verified: number;
   localUsername?: string;
   twoFactorEnabled: number;
+  passkeys?: number;
   createdAt: string;
 };
 type Invite = {
@@ -47,15 +52,7 @@ type Client = {
   trusted: boolean;
   revokedAt: string | null;
 };
-type Event = {
-  id: string;
-  actor_id: string | null;
-  target_id: string | null;
-  action: string;
-  outcome: string;
-  metadata: string;
-  created_at: string;
-};
+type Event = SecurityEvent;
 type Job = {
   id: string;
   kind: string;
@@ -78,6 +75,7 @@ type PageData = {
     allowedOidcOrigins: string[];
   };
   mailReady?: boolean;
+  mfaImpact?: { withoutSecondFactor: number };
   usage?: {
     accounts: { role: string; count: number }[];
     boards: number;
@@ -143,6 +141,7 @@ export function AdminPanel({ section }: { section: string }) {
   const [selected, setSelected] = useState<string[]>([]);
   const [bulkReason, setBulkReason] = useState("");
   const [link, setLink] = useState("");
+  const [createdInvite, setCreatedInvite] = useState<CreatedInvitation>();
   const [secret, setSecret] = useState("");
   const load = async () => {
     const requestGeneration = ++generation.current;
@@ -171,24 +170,52 @@ export function AdminPanel({ section }: { section: string }) {
     };
   }, [section, cursor, query, status]);
   const owner = authSnapshot()?.account?.role === "owner";
-  const bulk = (kind: string) =>
+  const selectablePeople = (data?.people ?? []).filter(
+    (item) => item.status !== "deleted" && item.role !== "owner" && item.id !== authSnapshot()?.user?.id,
+  );
+  const bulkReasonRef = useRef<HTMLInputElement>(null);
+  // Each bulk action applies only to the selected people it makes sense for
+  // ("Approve 3" when 3 of 12 are waiting), in server-sized batches of 25.
+  const selectedPeople = (data?.people ?? []).filter((item) => selected.includes(item.id));
+  const applicable = (kind: BulkKind) => bulkTargets(selectedPeople, kind);
+  const bulk = (kind: BulkKind) => {
+    const ids = applicable(kind);
     void action.run(async () => {
-      if (!bulkReason.trim())
-        throw new Error("Add a reason for this bulk action.");
-      const result = await api<{
-        results: { id: string; ok: boolean; error?: string }[];
-      }>("/api/v1/admin/people/bulk", {
-        ids: selected,
-        action: kind,
-        reason: bulkReason,
-      });
-      const failed = result.results.filter((row) => !row.ok);
-      setSelected([]);
-      if (failed.length)
-        throw new Error(
-          `${failed.length} actions failed: ${failed.map((row) => row.error).join("; ")}`,
-        );
-    });
+      if (!bulkReason.trim()) {
+        bulkReasonRef.current?.focus();
+        throw new Error("Add a reason for this bulk action. It is recorded in the security activity log.");
+      }
+      // Apply each batch as it finishes: people already processed leave the
+      // selection even if a later batch fails, so a retry never repeats them.
+      const failures: { id: string; error?: string }[] = [];
+      let done = 0;
+      for (let index = 0; index < ids.length; index += 25) {
+        const batch = ids.slice(index, index + 25);
+        try {
+          const response = await api<{ results: { id: string; ok: boolean; error?: string }[] }>("/api/v1/admin/people/bulk", {
+            ids: batch,
+            action: kind,
+            reason: bulkReason,
+          });
+          const succeeded = new Set(response.results.filter((row) => row.ok).map((row) => row.id));
+          done += succeeded.size;
+          failures.push(...response.results.filter((row) => !row.ok));
+          setSelected((current) => current.filter((id) => !succeeded.has(id)));
+        } catch (failure) {
+          const message = failure instanceof Error ? failure.message : "The request failed.";
+          failures.push(...batch.map((id) => ({ id, error: message })));
+          break;
+        }
+      }
+      const unprocessed = ids.length - done - failures.length;
+      if (failures.length || unprocessed > 0) {
+        // Show what did change before reporting what did not.
+        if (done) await load().catch(() => undefined);
+        throw new Error(bulkFailureMessage(kind, done, ids.length, failures.map((row) => row.error)));
+      }
+      setBulkReason("");
+    }, `${{ approve: "Approved", secure: "Secured", suspend: "Suspended" }[kind]} ${ids.length} ${ids.length === 1 ? "person" : "people"}.`, { scope: "bulk" });
+  };
   return (
     <>
       <h1>{titles[section] ?? "Administration"}</h1>
@@ -252,6 +279,7 @@ export function AdminPanel({ section }: { section: string }) {
               placeholder="Search name, username or email"
               value={query}
               onChange={(event) => {
+                setSelected([]);
                 setCursor("");
                 setQuery(event.target.value);
               }}
@@ -300,34 +328,25 @@ export function AdminPanel({ section }: { section: string }) {
               onClose={() => setPerson(undefined)}
             />
           )}{" "}
-          {selected.length > 0 && (
-            <section className="identity-section">
-              <strong>{selected.length} people selected</strong>
-              <Field
-                label="Reason for bulk action"
-                name="bulk-reason"
-                value={bulkReason}
-                onChange={setBulkReason}
-              />
-              <div className="identity-actions">
-                <button disabled={action.busy} onClick={() => bulk("approve")}>
-                  Approve selected
-                </button>
-                <button disabled={action.busy} onClick={() => bulk("secure")}>
-                  Secure selected accounts
-                </button>
-                <button
-                  className="identity-danger"
-                  disabled={action.busy}
-                  onClick={() => bulk("suspend")}
-                >
-                  Suspend selected
-                </button>
-                <button onClick={() => setSelected([])}>Clear selection</button>
+          <section className="identity-section people-list" data-onboarding="people-list" aria-label="People">
+            {selectablePeople.length ? (
+              <div className="people-list-header">
+                <SelectAll
+                  label={`Select all ${selectablePeople.length} people shown`}
+                  total={selectablePeople.length}
+                  selected={selectablePeople.filter((item) => selected.includes(item.id)).length}
+                  onChange={(checked) =>
+                    setSelected(
+                      checked
+                        ? [...new Set([...selected, ...selectablePeople.map((item) => item.id)])]
+                        : selected.filter((id) => !selectablePeople.some((item) => item.id === id)),
+                    )
+                  }
+                />
+                <span>{selected.length ? `${selected.length} selected` : `${data.people?.length ?? 0} ${data.people?.length === 1 ? "person" : "people"}`}</span>
+                <span className="people-list-result" role="status">{action.resultFor("bulk").notice}</span>
               </div>
-            </section>
-          )}
-          <section className="identity-section" data-onboarding="people-list">
+            ) : null}
             {data.people?.length ? (
               data.people.map((item) => (
                 <div className="identity-row" key={item.id}>
@@ -336,7 +355,7 @@ export function AdminPanel({ section }: { section: string }) {
                       item.role !== "owner" &&
                       item.id !== authSnapshot()?.user?.id && (
                         <input
-                          style={{ width: 16, minHeight: 16 }}
+                          className="people-checkbox"
                           type="checkbox"
                           aria-label={`Select ${item.name}`}
                           checked={selected.includes(item.id)}
@@ -381,6 +400,46 @@ export function AdminPanel({ section }: { section: string }) {
               <Empty>No people match this search.</Empty>
             )}
           </section>
+          {selected.length > 0 && (
+            <section className="bulk-action-bar" aria-label="Bulk actions">
+              <div className="bulk-action-summary">
+                <strong>{selected.length} {selected.length === 1 ? "person" : "people"} selected</strong>
+                <button type="button" className="identity-link" onClick={() => setSelected([])}>Clear selection</button>
+              </div>
+              <label className="bulk-action-reason">
+                <span>Reason</span>
+                <input
+                  ref={bulkReasonRef}
+                  name="bulk-reason"
+                  aria-label="Reason for bulk action"
+                  aria-invalid={Boolean(action.resultFor("bulk").error) && !bulkReason.trim()}
+                  aria-describedby={action.resultFor("bulk").error ? "bulk-action-error" : undefined}
+                  placeholder="Required for the audit log"
+                  value={bulkReason}
+                  onChange={(event) => setBulkReason(event.target.value)}
+                />
+              </label>
+              <div className="bulk-action-buttons">
+                {(["approve", "secure", "suspend"] as const).map((kind) => {
+                  const count = applicable(kind).length;
+                  const label = { approve: "Approve", secure: "Secure", suspend: "Suspend" }[kind];
+                  const unavailable = action.busy || !count;
+                  return (
+                    <button
+                      key={kind}
+                      className={kind === "suspend" ? "identity-danger" : undefined}
+                      aria-disabled={unavailable}
+                      title={count ? undefined : kind === "approve" ? "No one selected is waiting for approval" : "Not available for the people selected"}
+                      onClick={() => !unavailable && bulk(kind)}
+                    >
+                      {label} {count}
+                    </button>
+                  );
+                })}
+              </div>
+              {action.resultFor("bulk").error ? <p className="bulk-action-error" id="bulk-action-error" role="alert">{action.resultFor("bulk").error}</p> : null}
+            </section>
+          )}
         </>
       )}
       {data && section === "invitations" && (
@@ -417,74 +476,23 @@ export function AdminPanel({ section }: { section: string }) {
             <InvitationForm
               owner={owner}
               action={action}
-              onCreated={(value) => {
-                setLink(value);
+              onCreated={(value, id, email) => {
+                setCreatedInvite({ id, email, link: value });
                 setInviteOpen(false);
               }}
             />
           )}
-          <section className="identity-section">
-            {data.invitations?.length ? (
-              data.invitations.map((item) => (
-                <div className="identity-row" key={item.id}>
-                  <div>
-                    <strong>{item.email}</strong>
-                    <small>
-                      {item.role} ·{" "}
-                      {item.accepted_at
-                        ? "accepted"
-                        : item.revoked_at
-                          ? "revoked"
-                          : Date.parse(item.expires_at) <= Date.now()
-                            ? "expired"
-                            : `pending · expires ${new Date(item.expires_at).toLocaleDateString()}`}
-                    </small>
-                  </div>
-                  {!item.accepted_at && !item.revoked_at && (
-                    <div className="identity-actions">
-                      <button
-                        disabled={action.busy}
-                        onClick={() =>
-                          void action.run(async () => {
-                            const result = await api<{ link: string }>(
-                              `/api/v1/admin/invitations/${encodeURIComponent(item.id)}/resend`,
-                              { sendEmail: Boolean(authSnapshot()?.email) },
-                            );
-                            setLink(result.link);
-                          }, "Invitation renewed. Previous links no longer work.")
-                        }
-                      >
-                        Renew and copy
-                      </button>
-                      <button
-                        className="identity-danger"
-                        disabled={action.busy}
-                        onClick={() =>
-                          void action.run(
-                            () =>
-                              api(
-                                `/api/v1/admin/invitations/${encodeURIComponent(item.id)}/revoke`,
-                                {},
-                              ),
-                            "Invitation revoked.",
-                          )
-                        }
-                      >
-                        Revoke
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))
-            ) : (
-              <Empty>No email invitations yet.</Empty>
-            )}
-          </section>
+          <EmailInvitationList
+            invitations={data.invitations ?? []}
+            action={action}
+            created={createdInvite}
+            empty={<Empty>No email invitations yet.</Empty>}
+          />
         </>
       )}
       {data && section === "sign-in" && data.settings && (
         <>
-          <PolicyForm settings={data.settings} action={action} />
+          <PolicyForm settings={data.settings} action={action} mfaImpact={data.mfaImpact} />
           <ProviderSettings inventory={data.providers} action={action} />
           <OwnershipTransfer action={action} onCreated={setLink} />
         </>
@@ -672,20 +680,20 @@ export function AdminPanel({ section }: { section: string }) {
           </div>
           <section className="identity-section">
             {data.events?.length ? (
-              data.events.map((event) => (
-                <div className="identity-row" key={event.id}>
+              groupSecurityEvents(data.events).map((event) => (
+                <div className="identity-row security-event" key={event.id}>
                   <div>
                     <strong>{securityEventLabel(event.action)}</strong>
                     <small>
-                      {new Date(event.created_at).toLocaleString()} ·{" "}
-                      {event.outcome}
+                      {securityEventPeople(event, authSnapshot()?.user?.id)} ·{" "}
+                      <time dateTime={event.created_at} title={new Date(event.created_at).toLocaleString()}>{relativeTime(event.created_at)}</time>
+                      {event.outcome !== "success" ? <> · <span className="security-outcome">{event.outcome}</span></> : null}
                     </small>
                     <details>
                       <summary>Event details</summary>
-                      <p>
-                        Actor: {event.actor_id ?? "Unauthenticated request"}
-                      </p>
-                      <p>Target: {event.target_id ?? "Installation"}</p>
+                      <p>Actor: {event.actor_name ? `${event.actor_name} (${event.actor_id})` : event.actor_id ?? "Unauthenticated request"}</p>
+                      <p>Target: {event.target_name ? `${event.target_name} (${event.target_id})` : event.target_id ?? "Installation"}</p>
+                      {event.merged ? <p>{event.merged} related records</p> : null}
                       <pre>{event.metadata}</pre>
                     </details>
                   </div>
@@ -823,8 +831,8 @@ export function AdminPanel({ section }: { section: string }) {
       )}
       {data?.next && (
         <div className="identity-actions">
-          <button onClick={() => setCursor(data.next!)}>Next page</button>
-          <button onClick={() => setCursor("")}>First page</button>
+          <button onClick={() => { setSelected([]); setCursor(data.next!); }}>Next page</button>
+          <button onClick={() => { setSelected([]); setCursor(""); }}>First page</button>
         </div>
       )}
     </>
@@ -838,7 +846,7 @@ function InvitationForm({
 }: {
   owner: boolean;
   action: Action;
-  onCreated: (link: string) => void;
+  onCreated: (link: string, id: string, email: string) => void;
 }) {
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("member");
@@ -850,11 +858,11 @@ function InvitationForm({
         onSubmit={(event) => {
           event.preventDefault();
           void action.run(async () => {
-            const result = await api<{ link: string }>(
+            const result = await api<{ id: string; link: string }>(
               "/api/v1/admin/invitations",
               { email, role, sendEmail: send },
             );
-            onCreated(result.link);
+            onCreated(result.link, result.id, email);
           }, "Invitation created.");
         }}
       >
@@ -909,6 +917,9 @@ function PersonEditor({
 }) {
   const [reason, setReason] = useState("");
   const [role, setRole] = useState(person.role ?? "member");
+  // Role changes sign the person out everywhere, so they are confirmed first.
+  const [currentRole, setCurrentRole] = useState(person.role);
+  const [confirmingRole, setConfirmingRole] = useState(false);
   const [confirm, setConfirm] = useState("");
   const [target, setTarget] = useState("");
   const [resources, setResources] =
@@ -964,7 +975,7 @@ function PersonEditor({
           className="identity-toolbar"
           onSubmit={(event) => {
             event.preventDefault();
-            change("role", { role, reason });
+            if (role !== currentRole) setConfirmingRole(true);
           }}
         >
           <select
@@ -976,8 +987,22 @@ function PersonEditor({
             <option value="guest">Guest</option>
             {owner && <option value="admin">Administrator</option>}
           </select>
-          <button disabled={action.busy}>Change role</button>
+          <button disabled={action.busy || role === currentRole}>Change role</button>
         </form>
+      )}
+      {confirmingRole && (
+        <RoleChangeConfirm
+          person={{ ...person, role: currentRole }}
+          role={role}
+          onCancel={() => setConfirmingRole(false)}
+          onConfirm={() => {
+            setConfirmingRole(false);
+            void action.run(async () => {
+              await api(`${endpoint}/role`, { role, reason });
+              setCurrentRole(role);
+            }, `${person.name} is now ${role === "admin" ? "an Administrator" : `a ${role === "guest" ? "Guest" : "Member"}`} and has been signed out on all devices.`);
+          }}
+        />
       )}
       <details>
         <summary>Recover or transfer owned content</summary>
@@ -1104,17 +1129,32 @@ function PersonEditor({
 function PolicyForm({
   settings,
   action,
+  mfaImpact,
 }: {
   settings: Record<string, string | number>;
   action: Action;
+  mfaImpact?: { withoutSecondFactor: number };
 }) {
   const [form, setForm] = useState<Record<string, string | number>>({ reauthentication_seconds: 1800, ...settings });
+  // Turning on "Require a second factor" when people have none is confirmed first.
+  const [confirmingMfa, setConfirmingMfa] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
+  // A failed save marks the field it is about (the save bar focuses it).
+  const policyError = action.resultFor("policy").error;
+  const invalid = policyError ? policyFieldForError(policyError) : null;
+  const fieldError = (key: string) => invalid === key ? policyError : undefined;
   return (
     <section className="identity-section">
       <h2>Registration and security</h2>
       <form
+        ref={formRef}
         onSubmit={(event) => {
           event.preventDefault();
+          if (!confirmingMfa && Number(form.mfa_required) === 1 && Number(settings.mfa_required) !== 1 && (mfaImpact?.withoutSecondFactor ?? 0) > 0) {
+            setConfirmingMfa(true);
+            return;
+          }
+          setConfirmingMfa(false);
           void action.run(() =>
             api(
               "/api/v1/admin/settings",
@@ -1133,6 +1173,8 @@ function PolicyForm({
               ),
               "PATCH",
             ),
+            "Policy saved.",
+            { scope: "policy" },
           );
         }}
       >
@@ -1141,10 +1183,12 @@ function PolicyForm({
           name="installation-title"
           value={String(form.title)}
           onChange={(value) => setForm({ ...form, title: value })}
+          error={fieldError("title")}
         />
         <label className="identity-field">
           <span>Registration</span>
           <select
+            aria-invalid={invalid === "registration" || undefined}
             value={form.registration}
             onChange={(event) =>
               setForm({ ...form, registration: event.target.value })
@@ -1154,6 +1198,7 @@ function PolicyForm({
             <option value="invite">Invitation only</option>
             <option value="public">Public, verified email required</option>
           </select>
+          {fieldError("registration") ? <small className="field-error">{fieldError("registration")}</small> : null}
         </label>
         {[
           ["approval_required", "Approve new public registrations"],
@@ -1167,17 +1212,20 @@ function PolicyForm({
           <label key={key} className="identity-check">
             <input
               type="checkbox"
+              aria-invalid={invalid === key || undefined}
+              aria-describedby={invalid === key ? `policy-${key}-error` : undefined}
               checked={Boolean(form[key])}
               onChange={(event) =>
                 setForm({ ...form, [key]: event.target.checked ? 1 : 0 })
               }
             />
-            {label}
+            <span>{label}{invalid === key ? <small className="field-error" id={`policy-${key}-error`}>{policyError}</small> : null}</span>
           </label>
         ))}
         <label className="identity-field">
           <span>Ask again for protected changes after</span>
           <select
+            aria-invalid={invalid === "reauthentication_seconds" || undefined}
             aria-describedby="verification-window-help"
             value={String(form.reauthentication_seconds)}
             onChange={(event) => setForm({ ...form, reauthentication_seconds: Number(event.target.value) })}
@@ -1199,6 +1247,7 @@ function PolicyForm({
             <label className="identity-field" key={key}>
               <span>{label}</span>
               <select
+                aria-invalid={invalid === key || undefined}
                 value={String(form[key])}
                 onChange={(event) =>
                   setForm({ ...form, [key]: Number(event.target.value) })
@@ -1228,10 +1277,15 @@ function PolicyForm({
           Owners and administrators always need a second factor. Requiring MFA
           pauses existing app grants until their users confirm them.
         </p>
-        <button className="identity-primary" disabled={action.busy}>
-          Save policy
-        </button>
+        <FormSaveBar dirty={["title", "registration", "approval_required", "mfa_required", "magic_link", "dynamic_registration", "reauthentication_seconds", "session_idle_seconds", "session_absolute_seconds"].some(key => String(form[key] ?? '') !== String(settings[key] ?? (key === 'reauthentication_seconds' ? 1800 : '')))} busy={action.busy} label="Save policy" onDiscard={() => setForm({ reauthentication_seconds: 1800, ...settings })} {...action.resultFor("policy")} onClearFeedback={action.clear} />
       </form>
+      {confirmingMfa && (
+        <MfaRequirementConfirm
+          withoutSecondFactor={mfaImpact?.withoutSecondFactor ?? 0}
+          onCancel={() => setConfirmingMfa(false)}
+          onConfirm={() => formRef.current?.requestSubmit()}
+        />
+      )}
     </section>
   );
 }
@@ -1381,6 +1435,9 @@ function LimitsForm({
     user_storage_limit: "Asset storage per person (GiB)",
     mail_limit: "Email messages per day",
   };
+  // Server errors do not name the limit; find the one outside its range.
+  const limitError = action.resultFor("limits").error;
+  const invalidKey = limitError ? invalidLimit(form, keys) : null;
   return (
     <section className="identity-section">
       <h2>Configured limits</h2>
@@ -1393,6 +1450,8 @@ function LimitsForm({
               Object.fromEntries(keys.map((key) => [key, form[key]])),
               "PATCH",
             ),
+            "Limits saved.",
+            { scope: "limits" },
           );
         }}
       >
@@ -1407,6 +1466,7 @@ function LimitsForm({
               value={String(
                 Number(form[key]) / (key.includes("storage") ? 1073741824 : 1),
               )}
+              error={invalidKey === key ? limitError : undefined}
               onChange={(value) =>
                 setForm({
                   ...form,
@@ -1422,9 +1482,7 @@ function LimitsForm({
           Lowering a limit preserves existing content. New writes stop until
           usage is within the limit.
         </p>
-        <button className="identity-primary" disabled={action.busy}>
-          Save limits
-        </button>
+        <FormSaveBar dirty={keys.some(key => String(form[key] ?? '') !== String(settings[key] ?? ''))} busy={action.busy} label="Save limits" onDiscard={() => setForm({ ...settings })} {...action.resultFor("limits")} onClearFeedback={action.clear} />
       </form>
     </section>
   );
@@ -1669,6 +1727,23 @@ function OwnershipTransfer({
   );
 }
 
+/** A header checkbox for the people shown, with a mixed state. */
+function SelectAll({ label, total, selected, onChange }: { label: string; total: number; selected: number; onChange: (checked: boolean) => void }) {
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = selected > 0 && selected < total;
+  }, [selected, total]);
+  return (
+    <input
+      ref={ref}
+      className="people-checkbox"
+      type="checkbox"
+      aria-label={label}
+      checked={total > 0 && selected === total}
+      onChange={(event) => onChange(event.target.checked)}
+    />
+  );
+}
 function Empty({ children }: { children: ReactNode }) {
   return <p className="identity-empty">{children}</p>;
 }

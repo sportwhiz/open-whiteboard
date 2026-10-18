@@ -1,18 +1,12 @@
 import { useId, type CSSProperties } from "react";
 import { avatarInk } from "./avatar-color";
 import { UiIcon } from "./UiIcon";
+import { MARKER_COLORS } from "./identity-color";
 import "./marker-color.css";
 
-// Marker colors that stay visible as cursors on light and dark boards.
+// Shared with account creation, which assigns each person one of these.
 // Existing profile colors outside the set show as custom.
-const colors = [
-  { name: "Blue", value: "#2554c7" },
-  { name: "Red", value: "#d2483c" },
-  { name: "Green", value: "#2f8a57" },
-  { name: "Teal", value: "#138a8a" },
-  { name: "Purple", value: "#7b4fc9" },
-  { name: "Orange", value: "#e07a1f" },
-];
+const colors = MARKER_COLORS;
 
 /** Uses the existing profile color: it never changes the color of board content. */
 export function MarkerColorField({ value, onChange }: { value: string; onChange: (color: string) => void }) {

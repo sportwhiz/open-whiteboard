@@ -21,6 +21,7 @@ import {
   createBoard,
   createFolder,
   createWorkbook,
+  updateWorkbook,
   ensureCatalog,
   markBoardOpened,
   markBoardUpdated,
@@ -29,7 +30,19 @@ import {
   trashBoard,
   trashWorkbook,
   updateBoard,
+  optionalJsonObject,
+  markFiledElsewhere,
+  listTrash,
+  restoreBoard,
+  deleteWorkbook,
+  restoreWorkbook,
+  updateFolder,
+  deleteFolder,
+  restoreFolder,
+  readAcceptedInvitationNotifications,
 } from './catalog.server';
+import { SEARCH_RATE_LIMIT, searchBoards } from './search.server';
+import { ROOM_PRIORITY_HEADER } from './room-priority';
 import { AUTHORING_TOOLS } from './mcp-authoring-guide';
 import { boundedBody, escapeHtml, json as boundedJson } from './security/primitives';
 import { identityRoutes } from './auth/routes';
@@ -69,6 +82,7 @@ import {
   markNotificationRead,
   markAllNotificationsRead,
   readShareState,
+  readMentionablePeople,
   readWorkbookShareState,
   readCommentPreferences,
   updateProfile,
@@ -82,6 +96,7 @@ import {
   requireWorkspaceOwner,
   revokeInvitation,
   revokeWorkbookInvitation,
+  searchSharePeople,
   setBoardPreference,
   transferBoardOwnership,
   transferWorkbookOwnership,
@@ -150,19 +165,6 @@ function encodeBytes(value: ArrayBuffer) {
     binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
   }
   return btoa(binary);
-}
-
-async function mapWithConcurrency<T, R>(values: T[], concurrency: number, mapper: (value: T, index: number) => Promise<R>) {
-  const results = new Array<R>(values.length);
-  let nextIndex = 0;
-  await Promise.all(Array.from({ length: Math.min(concurrency, values.length) }, async () => {
-    while (nextIndex < values.length) {
-      const index = nextIndex;
-      nextIndex += 1;
-      results[index] = await mapper(values[index], index);
-    }
-  }));
-  return results;
 }
 
 function decodeBytes(value: string) {
@@ -598,7 +600,9 @@ const application = {
     if (url.pathname === '/api/v1/invitations/accept' && request.method === 'POST') {
       try {
         const input = (await jsonBody(request)) as { token?: unknown };
-        return Response.json(await acceptInvitation(env.CATALOG, principal!, input.token));
+        const accepted = await acceptInvitation(env.CATALOG, principal!, input.token);
+        await readAcceptedInvitationNotifications(env.CATALOG, principal!, accepted.resourceType, accepted.resourceId).catch(() => undefined);
+        return Response.json(accepted);
       } catch (error) {
         return apiErrorResponse(error);
       }
@@ -606,7 +610,9 @@ const application = {
     const acceptInvitationMatch = url.pathname.match(/^\/api\/v1\/invitations\/([^/]+)\/accept$/u);
     if (acceptInvitationMatch && request.method === 'POST') {
       try {
-        return Response.json(await acceptInvitationById(env.CATALOG, principal!, decodeURIComponent(acceptInvitationMatch[1])));
+        const accepted = await acceptInvitationById(env.CATALOG, principal!, decodeURIComponent(acceptInvitationMatch[1]));
+        await readAcceptedInvitationNotifications(env.CATALOG, principal!, accepted.resourceType, accepted.resourceId).catch(() => undefined);
+        return Response.json(accepted);
       } catch (error) {
         return apiErrorResponse(error);
       }
@@ -698,7 +704,7 @@ const application = {
     try {
       if (url.pathname === '/api/v1/workspace' && request.method === 'GET') {
         const [catalog, notifications, owner] = await Promise.all([
-          readCatalog(env.CATALOG).then(value => authorizedCatalog(env.CATALOG, principal!, value)),
+          readCatalog(env.CATALOG).then(async value => markFiledElsewhere(value, await authorizedCatalog(env.CATALOG, principal!, value))),
           listNotifications(env.CATALOG, principal!),
           isWorkspaceOwner(env.CATALOG, principal!.id),
         ]);
@@ -709,7 +715,7 @@ const application = {
       }
       if (url.pathname === '/api/v1/catalog' && request.method === 'GET') {
         return Response.json(
-          await authorizedCatalog(env.CATALOG, principal!, await readCatalog(env.CATALOG))
+          await readCatalog(env.CATALOG).then(async value => markFiledElsewhere(value, await authorizedCatalog(env.CATALOG, principal!, value)))
         );
       }
       if (url.pathname === '/api/v1/search' && request.method === 'GET') {
@@ -717,33 +723,41 @@ const application = {
         if (!query || query.length > 120) {
           throw new Error('Search query must be between 1 and 120 characters');
         }
+        // Reading note text wakes board rooms, so bound it per person before any
+        // catalog work. The Studio matches titles locally and asks here only after a pause.
+        await enforceRateLimit(env.CATALOG, `${principal!.id}:search`, SEARCH_RATE_LIMIT, 60);
         const catalog = await authorizedCatalog(
           env.CATALOG,
           principal!,
           await readCatalog(env.CATALOG)
         );
-        const matches = (
-          await mapWithConcurrency(
-            catalog.boards.slice(0, 200),
-            4,
-            async board => {
-              if (board.title.toLocaleLowerCase().includes(query)) {
-                return { board, match: 'title', excerpt: board.title };
-              }
-              try {
-                const { stored } = await readStoredBoard(env, board.id);
-                const semantic = readNativeBoard(stored.snapshot);
-                const text = [
-                  ...semantic.elements.map(element => element.text),
-                ].find(value => value.toLocaleLowerCase().includes(query));
-                return text ? { board, match: 'content', excerpt: text } : null;
-              } catch {
-                return null;
-              }
-            }
-          )
-        ).filter(Boolean).slice(0, 30);
-        return Response.json({ query, matches });
+        // Optional scope: search inside one workbook the person can see.
+        const scope = url.searchParams.get('workbookId');
+        const candidates = scope ? catalog.boards.filter(board => board.workbookId === scope) : catalog.boards;
+        const { matches, complete } = await searchBoards(candidates, query, {
+          signal: request.signal,
+          readText: async board => {
+            // A background read: it never creates a board and gives way to live editing.
+            const response = await env.BOARD_ROOMS.getByName(board.id).fetch('https://board-room/snapshot', { headers: { [ROOM_PRIORITY_HEADER]: 'background' } });
+            if (!response.ok) return [];
+            const stored = await response.json() as { snapshot: NativeBoardSnapshot };
+            return readNativeBoard(stored.snapshot).elements.map(element => element.text);
+          },
+        });
+        return Response.json({ query, matches, complete });
+      }
+      const folderMatch = url.pathname.match(/^\/api\/v1\/folders\/([^/]+)$/u);
+      if (folderMatch && request.method === 'PATCH') {
+        // Native installations reach auth/content.ts first; both call the same catalog functions.
+        return Response.json(await updateFolder(env.CATALOG, decodeURIComponent(folderMatch[1]), await jsonBody(request), principal!));
+      }
+      const folderRestoreMatch = url.pathname.match(/^\/api\/v1\/folders\/([^/]+)\/restore$/u);
+      if (folderRestoreMatch && request.method === 'POST') {
+        // Not shadowed by the native folder routes, which only match /api/v1/folders/:id.
+        return Response.json(await restoreFolder(env.CATALOG, decodeURIComponent(folderRestoreMatch[1]), await optionalJsonObject(request), principal!));
+      }
+      if (folderMatch && request.method === 'DELETE') {
+        return Response.json(await deleteFolder(env.CATALOG, decodeURIComponent(folderMatch[1]), principal!));
       }
       if (url.pathname === '/api/v1/folders' && request.method === 'POST') {
         await requireWorkspaceOwner(env.CATALOG, principal!);
@@ -763,16 +777,19 @@ const application = {
         return Response.json(workbook, { status: 201 });
       }
       const workbookMatch = url.pathname.match(/^\/api\/v1\/workbooks\/([^/]+)$/u);
+      if (workbookMatch && request.method === 'PATCH') {
+        return Response.json(await updateWorkbook(env.CATALOG, decodeURIComponent(workbookMatch[1]), await jsonBody(request), principal!));
+      }
       if (workbookMatch && request.method === 'DELETE') {
-        await requireWorkbookRole(
-          env.CATALOG,
-          decodeURIComponent(workbookMatch[1]),
-          principal!,
-          'owner'
-        );
-        return Response.json(
-          await trashWorkbook(env.CATALOG, decodeURIComponent(workbookMatch[1]))
-        );
+        // The workbook and its boards go to the trash together and can be restored.
+        return Response.json(await deleteWorkbook(env.CATALOG, decodeURIComponent(workbookMatch[1]), principal!));
+      }
+      const workbookRestoreMatch = url.pathname.match(/^\/api\/v1\/workbooks\/([^/]+)\/restore$/u);
+      if (workbookRestoreMatch && request.method === 'POST') {
+        return Response.json(await restoreWorkbook(env.CATALOG, decodeURIComponent(workbookRestoreMatch[1]), principal!));
+      }
+      if (url.pathname === '/api/v1/trash' && request.method === 'GET') {
+        return Response.json(await listTrash(env.CATALOG, principal!), { headers: { 'Cache-Control': 'private, no-store' } });
       }
       if (url.pathname === '/api/v1/boards' && request.method === 'POST') {
         const input = await jsonBody(request);
@@ -804,6 +821,18 @@ const application = {
         return Response.json(board, { status: 201 });
       }
 
+      // People a commenter can @mention (no email addresses).
+      const peopleMatch = url.pathname.match(/^\/api\/v1\/boards\/([^/]+)\/people$/u);
+      if (peopleMatch && request.method === 'GET') {
+        const { people } = await readMentionablePeople(env.CATALOG, decodeURIComponent(peopleMatch[1]), principal!);
+        return Response.json({ people }, { headers: { 'Cache-Control': 'private, no-store' } });
+      }
+
+      const sharePeopleMatch = url.pathname.match(/^\/api\/v1\/(boards|workbooks)\/([^/]+)\/share\/people$/u);
+      if (sharePeopleMatch) {
+        if (request.method !== 'GET') return new Response('Method not allowed', { status: 405, headers: { Allow: 'GET' } });
+        return Response.json(await searchSharePeople(env.CATALOG, sharePeopleMatch[1] === 'boards' ? 'board' : 'workbook', decodeURIComponent(sharePeopleMatch[2]), principal!, url.searchParams.get('q')));
+      }
       const shareMatch = url.pathname.match(/^\/api\/v1\/boards\/([^/]+)\/share$/u);
       if (shareMatch) {
         const boardId = decodeURIComponent(shareMatch[1]);
@@ -811,10 +840,9 @@ const application = {
           return Response.json(await readShareState(env.CATALOG, boardId, principal!));
         }
         if (request.method === 'POST') {
-          return Response.json(
-            await createInvitation(env.CATALOG, boardId, principal!, await jsonBody(request)),
-            { status: 201 }
-          );
+          const result = await createInvitation(env.CATALOG, boardId, principal!, await jsonBody(request));
+          if (result.granted && result.changed) await env.BOARD_ROOMS.getByName(boardId).fetch('https://board-room/invalidate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: result.collaborator.id }) }).catch(() => undefined);
+          return Response.json(result, { status: result.granted && !result.changed ? 200 : 201 });
         }
         return new Response('Method not allowed', { status: 405 });
       }
@@ -822,7 +850,11 @@ const application = {
       if (workbookShareMatch) {
         const workbookId = decodeURIComponent(workbookShareMatch[1]);
         if (request.method === 'GET') return Response.json(await readWorkbookShareState(env.CATALOG, workbookId, principal!));
-        if (request.method === 'POST') return Response.json(await createWorkbookInvitation(env.CATALOG, workbookId, principal!, await jsonBody(request)), { status: 201 });
+        if (request.method === 'POST') {
+          const result = await createWorkbookInvitation(env.CATALOG, workbookId, principal!, await jsonBody(request));
+          if (result.granted && result.changed) await invalidateWorkbookRooms(env, workbookId);
+          return Response.json(result, { status: result.granted && !result.changed ? 200 : 201 });
+        }
         return new Response('Method not allowed', { status: 405 });
       }
       const workbookCollaboratorMatch = url.pathname.match(/^\/api\/v1\/workbooks\/([^/]+)\/collaborators\/([^/]+)$/u);
@@ -1012,7 +1044,7 @@ const application = {
       }
 
       const actionMatch = url.pathname.match(
-        /^\/api\/v1\/boards\/([^/]+)\/(catalog|duplicate|export)$/u
+        /^\/api\/v1\/boards\/([^/]+)\/(catalog|duplicate|export|restore)$/u
       );
       if (actionMatch) {
         const boardId = decodeURIComponent(actionMatch[1]);
@@ -1048,6 +1080,13 @@ const application = {
           }
           return Response.json(updated);
         }
+        if (action === 'restore' && request.method === 'POST') {
+          // Restoring somewhere new is a move: ownership is granted before the board moves, as for PATCH.
+          const restored = await restoreBoard(env.CATALOG, boardId, await optionalJsonObject(request), principal!,
+            () => grantResourceOwner(env.CATALOG, 'board', boardId, principal!));
+          if (restored.moved) await env.BOARD_ROOMS.getByName(boardId).fetch('https://board-room/invalidate-all', { method: 'POST' });
+          return Response.json({ ...restored, board: await readBoard(env.CATALOG, boardId) });
+        }
         if (action === 'catalog' && request.method === 'DELETE') {
           await requireBoardRole(env.CATALOG, boardId, principal!, 'owner');
           return Response.json(await trashBoard(env.CATALOG, boardId));
@@ -1056,7 +1095,8 @@ const application = {
           await requireBoardRole(env.CATALOG, boardId, principal!, 'editor');
           const metadata = await readBoard(env.CATALOG, boardId);
           await requireWorkbookRole(env.CATALOG, metadata.workbookId, principal!, 'editor');
-          const input = (await jsonBody(request)) as { title?: unknown };
+          // Every option is optional, so an empty body means "duplicate as is".
+          const input = (await optionalJsonObject(request)) as { title?: unknown };
           const duplicate = await createBoard(env.CATALOG, {
             workbookId: metadata.workbookId,
             title:

@@ -1,3 +1,4 @@
+import { useFindSetting } from "./useFindSetting";
 import { api, apiFetch } from "./auth-client";
 import { openTour } from "./onboarding-events";
 import { UiIcon } from "./UiIcon";
@@ -76,6 +77,7 @@ const GUIDES = {
 };
 
 export function ConnectedApps() {
+  useFindSetting(".connections-content");
   const [connections, setConnections] = useState<Connection[] | null>(null);
   const [guide, setGuide] = useState<keyof typeof GUIDES>("chatgpt");
   const [error, setError] = useState("");

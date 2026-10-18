@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { attachRightButtonNavigation } from "./right-button-navigation";
+import { attachRightButtonNavigation, createViewportPan } from "./right-button-navigation";
 
 class Mouse extends Event {
   constructor(type: string, init: MouseEventInit = {}) {
@@ -161,5 +161,24 @@ describe("right-button canvas navigation", () => {
     expect(pan).not.toHaveBeenCalled();
     send(window, "pointermove", { clientX: 180 });
     expect(pan).toHaveBeenCalledWith(-80, 0);
+  });
+});
+
+describe('panning during an animated fit', () => {
+  it('replaces the old animation and accumulates moves before rendering', () => {
+    let frame = () => { viewport.centerX = 900; };
+    const viewport = {
+      centerX: 100, centerY: 200, zoom: 2,
+      smoothTranslate(x: number, y: number, steps: number) { expect(steps).toBe(1); frame = () => viewport.setCenter(x, y); },
+      setCenter(x: number, y: number) { viewport.centerX = x; viewport.centerY = y; },
+    };
+    const pan = createViewportPan(viewport);
+    for (let step = 0; step < 8; step++) pan.move(-15, -1.25);
+    frame();
+    expect([viewport.centerX, viewport.centerY]).toEqual([40, 195]);
+    pan.move(-10, 0); pan.end();
+    // Another gesture can start before the previous frame renders.
+    pan.move(-10, 0); frame(); pan.end();
+    expect(viewport.centerX).toBe(30);
   });
 });

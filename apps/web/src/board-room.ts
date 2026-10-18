@@ -1,4 +1,5 @@
 import * as Y from 'yjs';
+import { eligibleVoterIds } from './collaboration-labels';
 
 import {
   applyNativeUpdates,
@@ -7,13 +8,12 @@ import {
 } from './blocksuite/runtime/snapshot';
 import type { Capabilities, Principal } from './collaboration-types';
 import { capabilitiesForRole } from './collaboration-types';
-import { parseCollaborationArchive } from './collaboration-archive.server';
+import { parseCollaborationArchive, readStoredCollaboration, UnreadableCollaborationError } from './collaboration-archive.server';
 import { markBoardUpdated } from './catalog.server';
-import { roleForBoard } from './collaboration.server';
+import { listBoardPeople, mentionsInText, roleForBoard } from './collaboration.server';
 import { validateLivePrincipal } from './auth/policy';
 import { guestBoardAccess } from './guest-policy.server';
 import {
-  emptyCollaborationState,
   type ActivityEntry,
   type PublicCollaborationState,
   type RoomCollaborationState,
@@ -28,8 +28,11 @@ import {
 } from './native-operations.server';
 import { readNativePreview } from './native-preview.server';
 import { assertBoardAssetReferences } from './asset-ownership.server';
+import { revealBatches, revealGrid, revealNotePosition, revealOrigin, type Rect } from './brainstorm-placement';
+import { readContentBounds } from './board-bounds.server';
 
 type BoardRoomEnv = { CATALOG: D1Database };
+const DEPARTURES_KEY = 'departed-hands';
 type StoredBoard = { revision: number; updatedAt: string; documentEpoch: string; snapshot: NativeBoardSnapshot };
 type OperationReceipt = {
   payload: string;
@@ -39,7 +42,7 @@ type OperationReceipt = {
 type NotificationWork = { recipients: string[]; kind: string; title: string; body: string; href: string; eventKey: string; threadId?: string };
 type CollaborationReceipt = {
   payload: string;
-  result: { ok: true; action: string; revision: number };
+  result: { ok: true; action: string; revision: number; revealedArea?: Rect };
   createdAt?: string;
   completedAt?: string;
   subscription?: { threadId: string; muted: boolean };
@@ -59,6 +62,9 @@ const MAX_VOTE_ROUNDS = 20;
 const MAX_BRAINSTORM_DRAFTS = 500;
 const MAX_BRAINSTORM_DRAFTS_PER_USER = 100;
 const CATALOG_UPDATE_INTERVAL_MS = 15_000;
+export const VIEWER_PARTICIPATION_MESSAGE = 'Viewers can react and raise a hand. Ask the board owner for comment access to add ideas or vote.';
+/** How long a presentation survives its presenter's last connection closing. */
+const PRESENTER_GRACE_MS = 30_000;
 
 function decode(value: string) {
   const binary = atob(value);
@@ -127,6 +133,15 @@ function finite(value: unknown, fallback: number) {
 
 export class BoardRoom implements DurableObject {
   private catalogMarkedAt = 0;
+  /**
+   * Who has unsent text in their brainstorm idea box, by user. Ephemeral
+   * presence: never stored, no receipt, and only facilitators are updated.
+   */
+  private writing = new Map<string, number>();
+  /** How long a raised hand survives its owner's last connection closing (a reconnect). */
+  protected handGraceMs = 8_000;
+  /** How long a presentation waits for its presenter to come back. */
+  protected presenterGraceMs = PRESENTER_GRACE_MS;
   private normalizedBoard: { revision: number; documentEpoch: string } | undefined;
 
   constructor(private readonly state: DurableObjectState, private readonly env: BoardRoomEnv) {}
@@ -217,9 +232,29 @@ export class BoardRoom implements DurableObject {
     return next;
   }
 
+  /** For display only: an unreadable archive shows as empty but is never written back. */
+  /** Record "still writing" without a storage write; tell facilitators. */
+  private async recordWriting(session: RoomSession, body: Record<string, unknown>) {
+    if (!session.capabilities.comment) throw new Error(VIEWER_PARTICIPATION_MESSAGE);
+    const collaboration = await this.getCollaboration();
+    const brainstorm = collaboration.brainstorm;
+    if (!brainstorm || !['running', 'closed'].includes(brainstorm.status)) throw new Error('Private brainstorming is not open');
+    const before = this.writing.has(session.principal.id);
+    if (body.writing === true) this.writing.set(session.principal.id, Date.now());
+    else this.writing.delete(session.principal.id);
+    // Only a change in who is writing is sent, only to facilitators, without
+    // re-checking every socket's authorization. No timers: the Node runtime
+    // serializes all room work, and a deferred broadcast would escape that.
+    if (before !== this.writing.has(session.principal.id)) await this.broadcastCollaboration(other => other.capabilities.facilitate, false);
+    return { ok: true as const, action: 'brainstorm_writing', revision: collaboration.revision };
+  }
+
   private async getCollaboration() {
-    const stored = await this.state.storage.get<RoomCollaborationState>(COLLABORATION_KEY);
-    return parseCollaborationArchive(stored) ?? emptyCollaborationState();
+    return (await this.readCollaboration()).state;
+  }
+
+  private async readCollaboration() {
+    return readStoredCollaboration(await this.state.storage.get<RoomCollaborationState>(COLLABORATION_KEY));
   }
 
   private participants(sockets = this.state.getWebSockets()): RoomParticipant[] {
@@ -240,6 +275,7 @@ export class BoardRoom implements DurableObject {
 
   private publicCollaboration(state: RoomCollaborationState, session: RoomSession, participants = this.participants()): PublicCollaborationState {
     const online = new Set(participants.map(participant => participant.id));
+    const voters = eligibleVoterIds(participants);
     return {
       ...state,
       voteRounds: state.voteRounds.map(round => {
@@ -252,16 +288,26 @@ export class BoardRoom implements DurableObject {
             .map(([userId]) => round.ballotNames?.[userId] ?? participants.find(item => item.id === userId)?.name ?? 'Participant')]))
           : null;
         const { ballots: _ballots, ballotNames: _ballotNames, ...safe } = round;
-        return { ...safe, myVotes: round.ballots[session.principal.id] ?? [], results, voterNames };
+        // Progress without revealing choices: how many people have voted.
+        // Counted against the people here now, like the "of N people" beside it.
+        const votedCount = Object.entries(round.ballots).filter(([userId, ballot]) => ballot.length > 0 && voters.has(userId)).length;
+        return { ...safe, myVotes: round.ballots[session.principal.id] ?? [], results, voterNames, votedCount };
       }),
       brainstorm: state.brainstorm ? (() => {
         const { drafts, ...safe } = state.brainstorm!;
         const values = Object.values(drafts);
+        const unsubmitted = values.filter(draft => !draft.submittedAt);
+        // Typing that stopped a long time ago (a closed laptop) does not count.
+        const startedAt = Date.parse(safe.startedAt);
+        const writers = [...this.writing].filter(([userId, at]) => online.has(userId) && at >= startedAt && Date.now() - at < 10 * 60_000).map(([userId]) => userId);
         return {
           ...safe,
           myDrafts: values.filter(draft => draft.authorId === session.principal.id),
           submittedCount: values.filter(draft => draft.submittedAt).length,
           participantCount: new Set(values.map(draft => draft.authorId)).size,
+          unsubmittedCount: unsubmitted.length,
+          unsubmittedPeople: new Set(unsubmitted.map(draft => draft.authorId)).size,
+          writingCount: writers.length,
         };
       })() : null,
       raisedHands: Object.fromEntries(Object.entries(state.raisedHands).filter(([id]) => online.has(id))),
@@ -280,13 +326,13 @@ export class BoardRoom implements DurableObject {
     return allowed.filter((socket): socket is WebSocket => socket !== null);
   }
 
-  private async broadcastCollaboration() {
-    const sockets = await this.authorizedSockets(undefined, true);
+  private async broadcastCollaboration(only?: (session: RoomSession) => boolean, forceAuthorization = true) {
+    const sockets = await this.authorizedSockets(undefined, forceAuthorization);
     const state = await this.getCollaboration();
     const participants = this.participants(sockets);
     for (const socket of sockets) {
       const session = this.sessionFromSocket(socket);
-      if (session) socket.send(JSON.stringify({ type: 'collaboration', state: this.publicCollaboration(state, session, participants) }));
+      if (session && (!only || only(session))) socket.send(JSON.stringify({ type: 'collaboration', state: this.publicCollaboration(state, session, participants) }));
     }
   }
 
@@ -408,10 +454,13 @@ export class BoardRoom implements DurableObject {
   }
 
   private async scheduleAlarm(state: RoomCollaborationState) {
+    const departed = await this.state.storage.get<Record<string, number>>(DEPARTURES_KEY) ?? {};
     const deadlines = [
       state.timer?.status === 'running' ? state.timer.endsAt : null,
       ...state.voteRounds.filter(round => round.status === 'running').map(round => round.endsAt),
-      state.brainstorm?.status === 'running' ? state.brainstorm.endsAt : null,
+      // A raised hand whose owner left is lowered after a short grace period.
+      ...Object.entries(departed).filter(([userId]) => state.raisedHands[userId]).map(([, at]) => new Date(at + this.handGraceMs).toISOString()),
+      state.presentation?.status === 'running' && state.presentation.presenterLeftAt ? new Date(Date.parse(state.presentation.presenterLeftAt) + this.presenterGraceMs).toISOString() : null,
     ].filter((value): value is string => Boolean(value)).map(Date.parse).filter(value => value > Date.now()).sort((a, b) => a - b);
     if (deadlines[0]) await this.state.storage.setAlarm(deadlines[0]);
     else await this.state.storage.deleteAlarm();
@@ -442,6 +491,7 @@ export class BoardRoom implements DurableObject {
   private async executeCollaboration(session: RoomSession, body: Record<string, unknown>) {
     const operationId = requiredText(body.operationId, 'operationId', 160);
     const action = requiredText(body.action, 'action', 80);
+    if (action === 'brainstorm_writing') return this.recordWriting(session, body);
     const payload = JSON.stringify(body);
     const receiptKey = `collaboration-receipt:${session.principal.id}:${operationId}`;
     const receipt = await this.state.storage.get<CollaborationReceipt>(receiptKey);
@@ -454,25 +504,41 @@ export class BoardRoom implements DurableObject {
     if (!currentBoard) throw new Error('Board not found');
     const boardId = session.boardId;
     const timestamp = new Date().toISOString();
-    const requestedMentions = Array.isArray(body.mentions)
-      ? [...new Set(body.mentions.filter(item => typeof item === 'string') as string[])].slice(0, 20)
-      : [];
+    // Mentions come from the people picker (ids) and from the text itself
+    // (@username or @Display Name), resolved against everyone who can open
+    // the board, online or not. Each is then checked for access below.
+    // Guests can only mention people who are on the board with them: resolving
+    // their text against every member would let a link holder probe for
+    // usernames and notify people who never met them here.
+    const guest = session.principal.authentication === 'guest';
+    const online = guest ? new Set(this.participants().map(participant => participant.id)) : null;
+    const mentionText = !guest && (action === 'add_comment' || action === 'reply_comment') && typeof body.body === 'string' && body.body.includes('@') ? body.body : '';
+    const textMentions = mentionText ? mentionsInText(mentionText, await listBoardPeople(this.env.CATALOG, session.boardId)) : [];
+    const requestedMentions = [...new Set([
+      ...(Array.isArray(body.mentions) ? body.mentions.filter(item => typeof item === 'string' && (!online || online.has(item))) as string[] : []),
+      ...textMentions,
+    ])].slice(0, 20);
     const mentionRoles = await Promise.all(requestedMentions.map(userId => roleForBoard(this.env.CATALOG, boardId, userId)));
     const authorizedMentions = new Set(requestedMentions.filter((_, index) => mentionRoles[index] !== null));
     const notifications: NotificationWork[] = [];
     let subscription: { threadId: string; muted: boolean } | undefined;
     let updatedBoard: StoredBoard | undefined;
+    let revealedArea: Rect | undefined;
 
     const outcome = await this.state.storage.transaction(async transaction => {
       notifications.length = 0;
       subscription = undefined;
       updatedBoard = undefined;
-      const value = parseCollaborationArchive(await transaction.get<RoomCollaborationState>(COLLABORATION_KEY)) ?? emptyCollaborationState();
+      revealedArea = undefined;
+      const stored = readStoredCollaboration(await transaction.get<RoomCollaborationState>(COLLABORATION_KEY));
+      if (!stored.readable) throw new UnreadableCollaborationError();
+      const value = stored.state;
       const addActivity = (kind: string, summary: string) => {
         value.activity.unshift(this.activity(session.principal, kind, summary));
         value.activity = value.activity.slice(0, MAX_ACTIVITY);
       };
       const requireComment = () => { if (!session.capabilities.comment) throw new Error('Comment permission is required'); };
+      const requireParticipant = () => { if (!session.capabilities.comment) throw new Error(VIEWER_PARTICIPATION_MESSAGE); };
       const requireEdit = () => { if (!session.capabilities.edit) throw new Error('Editor permission is required'); };
       const requireFacilitator = () => { if (!session.capabilities.facilitate) throw new Error('Facilitator permission is required'); };
 
@@ -530,7 +596,8 @@ export class BoardRoom implements DurableObject {
       } else if (action === 'start_timer') {
         requireFacilitator();
         const durationMs = Math.min(4 * 60 * 60_000, Math.max(10_000, finite(body.durationSeconds, 300) * 1000));
-        value.timer = { status: 'running', label: typeof body.label === 'string' ? body.label.slice(0, 80) : 'Timer', startedBy: session.principal.id, startedAt: timestamp, endsAt: new Date(Date.now() + durationMs).toISOString(), remainingMs: durationMs };
+        value.timer = { status: 'running', label: typeof body.label === 'string' && body.label.trim() ? body.label.trim().slice(0, 80) : 'Timer', startedBy: session.principal.id, startedAt: timestamp, endsAt: new Date(Date.now() + durationMs).toISOString(), remainingMs: durationMs };
+        value.facilitatorId = session.principal.id;
         addActivity('timer', `${session.principal.name} started a timer`);
       } else if (action === 'pause_timer') {
         requireFacilitator();
@@ -558,8 +625,12 @@ export class BoardRoom implements DurableObject {
         const duration = Math.min(3600, Math.max(0, finite(body.durationSeconds, 0)));
         value.voteRounds.unshift({ id: `vote:${crypto.randomUUID()}`, status: 'running', title: typeof body.title === 'string' ? body.title.slice(0, 120) : 'Vote', targets, votesPerUser: Math.min(20, Math.max(1, Math.floor(finite(body.votesPerUser, 3)))), maxPerTarget: Math.min(20, Math.max(1, Math.floor(finite(body.maxPerTarget, 1)))), anonymous: body.anonymous !== false, startedBy: session.principal.id, startedAt: timestamp, endsAt: duration ? new Date(Date.now() + duration * 1000).toISOString() : null, endedAt: null, ballots: {}, ballotNames: {} });
         value.voteRounds = value.voteRounds.slice(0, MAX_VOTE_ROUNDS);
+        value.facilitatorId = session.principal.id;
         addActivity('vote', `${session.principal.name} started a vote`);
       } else if (action === 'cast_vote') {
+        // Viewers follow along (react, raise a hand); commenters and up vote
+        // and contribute ideas.
+        requireParticipant();
         const round = value.voteRounds.find(item => item.id === body.roundId && item.status === 'running');
         if (!round) throw new Error('Voting round is not open');
         const targets = Array.isArray(body.targets) ? body.targets.filter(item => typeof item === 'string') as string[] : [];
@@ -579,10 +650,26 @@ export class BoardRoom implements DurableObject {
         if (value.brainstorm?.status === 'running' || value.brainstorm?.status === 'closed') throw new Error('A private brainstorm is already active');
         const duration = Math.min(7200, Math.max(0, finite(body.durationSeconds, 0)));
         value.brainstorm = { id: `brainstorm:${crypto.randomUUID()}`, status: 'running', title: typeof body.title === 'string' ? body.title.slice(0, 120) : 'Private brainstorm', instructions: typeof body.instructions === 'string' ? body.instructions.slice(0, 1000) : '', startedBy: session.principal.id, startedAt: timestamp, endsAt: duration ? new Date(Date.now() + duration * 1000).toISOString() : null, closedAt: null, revealedAt: null, drafts: {}, revealedIds: [] };
+        value.facilitatorId = session.principal.id;
         addActivity('brainstorm', `${session.principal.name} started private brainstorming`);
-      } else if (action === 'save_draft') {
+      } else if (action === 'save_draft' || action === 'move_note_to_draft') {
+        requireParticipant();
         const brainstorm = value.brainstorm;
         if (!brainstorm || brainstorm.status !== 'running') throw new Error('Private brainstorming is not open');
+        let draftText = body.text;
+        if (action === 'move_note_to_draft') {
+          requireEdit();
+          const board = await transaction.get<StoredBoard>(SNAPSHOT_KEY);
+          if (!board) throw new Error('Board not found');
+          const note = readNativeBoard(board.snapshot).notes.find(note => note.id === body.noteId);
+          if (!note) throw new Error('This note is no longer on the board.');
+          if (typeof body.expectedText !== 'string' || note.text !== body.expectedText) {
+            throw new Error('This note changed or is still saving. Finish editing it, then try again. Nothing was moved.');
+          }
+          draftText = note.text;
+          const applied = applyNativeOperations(board.snapshot, [{ type: 'delete_element', id: note.id }]);
+          updatedBoard = { ...board, revision: board.revision + 1, updatedAt: timestamp, snapshot: applied.snapshot };
+        }
         const suppliedDraftId = typeof body.draftId === 'string' ? body.draftId.trim() : '';
         if (suppliedDraftId.length > 160) throw new Error('draftId must be at most 160 characters');
         const draftId = suppliedDraftId || `draft:${crypto.randomUUID()}`;
@@ -594,13 +681,25 @@ export class BoardRoom implements DurableObject {
           if (drafts.filter(draft => draft.authorId === session.principal.id).length >= MAX_BRAINSTORM_DRAFTS_PER_USER) throw new Error('Your brainstorm draft limit is reached');
         }
         const color = body.color === 'orange' || body.color === 'green' || body.color === 'blue' || body.color === 'purple' ? body.color : 'yellow';
-        brainstorm.drafts[draftId] = { id: draftId, authorId: session.principal.id, text: requiredText(body.text, 'Draft', 2_000), color, x: finite(body.x, 0), y: finite(body.y, 0), submittedAt: existing?.submittedAt ?? null, updatedAt: timestamp };
+        brainstorm.drafts[draftId] = { id: draftId, authorId: session.principal.id, text: requiredText(draftText, 'Draft', 2_000), color, x: finite(body.x, 0), y: finite(body.y, 0), submittedAt: existing?.submittedAt ?? null, updatedAt: timestamp };
       } else if (action === 'delete_draft' || action === 'submit_draft' || action === 'withdraw_draft') {
+        requireParticipant();
         const brainstorm = value.brainstorm;
-        if (!brainstorm || brainstorm.status !== 'running') throw new Error('Private brainstorming is not open');
+        // Closing collection stops new ideas, but saved ideas can still be
+        // submitted, withdrawn or deleted until the facilitator reveals.
+        if (!brainstorm || !['running', 'closed'].includes(brainstorm.status)) throw new Error('Private brainstorming is not open');
         const draft = brainstorm.drafts[String(body.draftId)];
         if (!draft || draft.authorId !== session.principal.id) throw new Error('Draft not found');
         if (action === 'delete_draft') delete brainstorm.drafts[draft.id]; else draft.submittedAt = action === 'submit_draft' ? timestamp : null;
+      } else if (action === 'reopen_brainstorm') {
+        requireFacilitator(); if (!value.brainstorm || value.brainstorm.status !== 'closed') throw new Error('Collection is not closed');
+        value.brainstorm.status = 'running'; value.brainstorm.closedAt = null; value.brainstorm.endsAt = null;
+        value.facilitatorId = session.principal.id;
+      } else if (action === 'take_facilitation') {
+        // Server permissions are unchanged (editors may facilitate); this only
+        // records who is running the session so the UI shows them the controls.
+        requireFacilitator(); value.facilitatorId = session.principal.id;
+        addActivity('facilitation', `${session.principal.name} took over facilitation`);
       } else if (action === 'close_brainstorm') {
         requireFacilitator(); if (!value.brainstorm || value.brainstorm.status !== 'running') throw new Error('Private brainstorming is not open');
         value.brainstorm.status = 'closed'; value.brainstorm.closedAt = timestamp; value.brainstorm.endsAt = null;
@@ -614,21 +713,38 @@ export class BoardRoom implements DurableObject {
         const drafts = Object.values(brainstorm.drafts).filter(draft => draft.submittedAt);
         if (!drafts.length) throw new Error('No submitted ideas to reveal');
         const board = await transaction.get<StoredBoard>(SNAPSHOT_KEY); if (!board) throw new Error('Board not found');
-        const originX = finite(body.x, 100); const originY = finite(body.y, 100); const columns = Math.min(5, drafts.length);
-        const operations: NativeOperation[] = [
-          { type: 'create_frame', ref: 'brainstorm-frame', title: brainstorm.title, x: originX, y: originY, width: columns * 300 + 100, height: Math.ceil(drafts.length / columns) * 220 + 120 },
-          ...drafts.map((draft, index): NativeOperation => ({ type: 'create_note', ref: `brainstorm-note-${index}`, frameRef: 'brainstorm-frame', text: draft.text, color: draft.color, x: originX + 50 + (index % columns) * 300, y: originY + 70 + Math.floor(index / columns) * 220 })),
-        ];
-        const applied = applyNativeOperations(repairNativeSnapshot(board.snapshot).snapshot, operations);
+        const repaired = repairNativeSnapshot(board.snapshot).snapshot;
+        const grid = revealGrid(drafts.length);
+        // Open space near the facilitator's view, never on top of existing work.
+        const origin = revealOrigin(body, grid, () => readContentBounds(repaired));
+        revealedArea = { x: origin.x, y: origin.y, width: grid.width, height: grid.height };
+        // Native batches hold at most 100 operations; later batches join the
+        // frame by its id.
+        const batches = revealBatches<NativeOperation>(
+          { type: 'create_frame', ref: 'brainstorm-frame', title: brainstorm.title, x: origin.x, y: origin.y, width: grid.width, height: grid.height },
+          drafts.map((draft, index): NativeOperation => ({ type: 'create_note', text: draft.text, color: draft.color, ...revealNotePosition(origin, index, grid.columns) })),
+        );
+        let snapshot = repaired;
+        let frameId = '';
+        const createdIds: string[] = [];
+        for (const [index, batch] of batches.entries()) {
+          const operations = batch.map(operation => operation.type === 'create_note' ? { ...operation, frameRef: index === 0 ? 'brainstorm-frame' : frameId } : operation);
+          const result = applyNativeOperations(snapshot, operations);
+          snapshot = result.snapshot;
+          if (index === 0) frameId = result.refs['brainstorm-frame'];
+          createdIds.push(...result.createdIds);
+        }
+        const applied = { snapshot, createdIds };
         updatedBoard = { revision: board.revision + 1, updatedAt: timestamp, documentEpoch: board.documentEpoch, snapshot: applied.snapshot };
         await transaction.put(SNAPSHOT_KEY, updatedBoard); await this.retainVersion(transaction, updatedBoard);
-        brainstorm.status = 'revealed'; brainstorm.revealedAt = timestamp; brainstorm.closedAt ??= timestamp; brainstorm.endsAt = null; brainstorm.revealedIds = applied.createdIds; brainstorm.drafts = {};
+        brainstorm.status = 'revealed'; brainstorm.revealedAt = timestamp; brainstorm.closedAt ??= timestamp; brainstorm.endsAt = null; brainstorm.revealedIds = applied.createdIds; brainstorm.revealedArea = revealedArea; brainstorm.drafts = {};
         addActivity('brainstorm', `${session.principal.name} revealed ${drafts.length} ideas`);
       } else if (action === 'start_presentation') {
         requireFacilitator();
         const frameIds = Array.isArray(body.frameIds) ? body.frameIds.filter(item => typeof item === 'string').slice(0, 200) as string[] : [];
         if (!frameIds.length) throw new Error('Choose at least one frame');
         value.presentation = { id: `presentation:${crypto.randomUUID()}`, status: 'running', presenterId: session.principal.id, frameIds, frameIndex: 0, viewport: null, updatedAt: timestamp };
+        value.facilitatorId = session.principal.id;
         addActivity('presentation', `${session.principal.name} started presenting`);
       } else if (action === 'presentation_frame' || action === 'presentation_viewport') {
         const presentation = value.presentation;
@@ -641,7 +757,7 @@ export class BoardRoom implements DurableObject {
         requireFacilitator(); if (!value.presentation || value.presentation.status !== 'running') throw new Error('No presentation is running');
         const userId = requiredText(body.userId, 'userId', 200);
         if (!this.participants().some(participant => participant.id === userId)) throw new Error('The new presenter is not online');
-        value.presentation.presenterId = userId; value.presentation.updatedAt = timestamp;
+        value.presentation.presenterId = userId; value.presentation.presenterLeftAt = null; value.presentation.updatedAt = timestamp;
       } else if (action === 'end_presentation') {
         if (!value.presentation) throw new Error('No presentation is running');
         if (value.presentation.presenterId !== session.principal.id && !session.capabilities.facilitate) throw new Error('Only the presenter can end the presentation');
@@ -657,9 +773,13 @@ export class BoardRoom implements DurableObject {
         requireEdit(); value.checkpoints.unshift({ id: `checkpoint:${crypto.randomUUID()}`, revision: currentBoard.revision, label: requiredText(body.label, 'Checkpoint label', 120), createdBy: session.principal.id, createdAt: timestamp }); value.checkpoints = value.checkpoints.slice(0, 100); addActivity('checkpoint', `${session.principal.name} created a checkpoint`);
       } else throw new Error(`Unsupported collaboration action: ${action}`);
 
+      if (action === 'move_note_to_draft' && updatedBoard) {
+        await transaction.put(SNAPSHOT_KEY, updatedBoard);
+        await this.retainVersion(transaction, updatedBoard);
+      }
       value.revision += 1;
       await transaction.put(COLLABORATION_KEY, value);
-      const result = { ok: true as const, action, revision: value.revision };
+      const result = { ok: true as const, action, revision: value.revision, ...(revealedArea ? { revealedArea } : {}) };
       const receipt: CollaborationReceipt = {
         payload,
         result,
@@ -689,6 +809,13 @@ export class BoardRoom implements DurableObject {
       await validateLivePrincipal(this.env.CATALOG, session.principal);
       await this.env.CATALOG.prepare('INSERT INTO active_connections (id, user_id, session_id, board_id, expires_at) VALUES (?, ?, ?, ?, ?)').bind(session.connectionId, session.principal.id, session.principal.sessionId, session.boardId, Date.now() + 120_000).run();
       server.serializeAttachment(session); this.state.acceptWebSocket(server);
+      await this.state.storage.transaction(async transaction => {
+        const departed = await transaction.get<Record<string, number>>(DEPARTURES_KEY) ?? {};
+        delete departed[session.principal.id];
+        await transaction.put(DEPARTURES_KEY, departed);
+      });
+      // The presenter is back (or a presenter who left earlier is noticed).
+      await this.checkPresenter();
       const stored = await this.getStoredBoard(); if (stored) server.send(JSON.stringify({ type: 'snapshot', ...stored }));
       await this.broadcastCollaboration();
       return new Response(null, { status: 101, webSocket: client });
@@ -733,7 +860,10 @@ export class BoardRoom implements DurableObject {
       if (!session?.capabilities.read) return Response.json({ error: 'Permission denied' }, { status: 403 });
       const raw = await request.text(); if (raw.length > 100_000) return Response.json({ error: 'Command is too large' }, { status: 413 });
       try { return Response.json(await this.executeCollaboration(session, JSON.parse(raw) as Record<string, unknown>)); }
-      catch (error) { return Response.json({ error: error instanceof Error ? error.message : 'Collaboration command failed' }, { status: 400 }); }
+      catch (error) {
+        if (error instanceof UnreadableCollaborationError) return Response.json({ error: error.message, code: 'COLLABORATION_UNREADABLE' }, { status: 409 });
+        return Response.json({ error: error instanceof Error ? error.message : 'Collaboration command failed' }, { status: 400 });
+      }
     }
     if (pathname.endsWith('/collaboration') && request.method === 'GET') {
       if (!session?.capabilities.read) return Response.json({ error: 'Permission denied' }, { status: 403 });
@@ -746,7 +876,8 @@ export class BoardRoom implements DurableObject {
       const stored = await this.state.storage.transaction(async transaction => {
         const current = await transaction.get<StoredBoard>(SNAPSHOT_KEY);
         if (!current) throw new Error('Board not found');
-        const collaboration = parseCollaborationArchive(await transaction.get<RoomCollaborationState>(COLLABORATION_KEY)) ?? emptyCollaborationState();
+        const stored = readStoredCollaboration(await transaction.get<RoomCollaborationState>(COLLABORATION_KEY));
+        const collaboration = stored.state;
         collaboration.checkpoints.unshift({ id: `checkpoint:${crypto.randomUUID()}`, revision: current.revision, label: body.label?.slice(0, 120) || `Recovery before restoring r${current.revision}`, createdBy: body.actor?.id ?? 'system', createdAt: new Date().toISOString() });
         collaboration.checkpoints = collaboration.checkpoints.slice(0, 100);
         if (body.actor) {
@@ -756,7 +887,9 @@ export class BoardRoom implements DurableObject {
         collaboration.revision += 1;
         const next: StoredBoard = { revision: current.revision + 1, updatedAt: new Date().toISOString(), documentEpoch: crypto.randomUUID(), snapshot: repairNativeSnapshot(snapshot).snapshot };
         await transaction.put(SNAPSHOT_KEY, next);
-        await transaction.put(COLLABORATION_KEY, collaboration);
+        // Restore the board even when its collaboration state is unreadable, but
+        // leave that state untouched rather than replace it with an empty one.
+        if (stored.readable) await transaction.put(COLLABORATION_KEY, collaboration);
         await this.retainVersion(transaction, next);
         return next;
       });
@@ -766,7 +899,9 @@ export class BoardRoom implements DurableObject {
       return Response.json(stored);
     }
     if (pathname.endsWith('/collaboration-archive') && request.method === 'GET') {
-      const collaboration = await this.getCollaboration();
+      const { state: collaboration, readable } = await this.readCollaboration();
+      // An export must not silently contain an empty history.
+      if (!readable) return Response.json({ error: new UnreadableCollaborationError().message, code: 'COLLABORATION_UNREADABLE' }, { status: 409 });
       return Response.json({
         ...collaboration,
         timer: null,
@@ -780,7 +915,7 @@ export class BoardRoom implements DurableObject {
       const body = await request.json<{ collaboration?: unknown }>();
       const safe = parseCollaborationArchive(body.collaboration);
       if (!safe) return Response.json({ error: 'Collaboration archive is malformed' }, { status: 400 });
-      safe.timer = null; safe.presentation = null; safe.raisedHands = {};
+      safe.timer = null; safe.presentation = null; safe.raisedHands = {}; safe.facilitatorId = null;
       safe.comments = safe.comments.slice(0, 500);
       safe.activity = safe.activity.slice(0, MAX_ACTIVITY);
       safe.checkpoints = safe.checkpoints.slice(0, 100);
@@ -912,23 +1047,105 @@ export class BoardRoom implements DurableObject {
   }
 
   async webSocketClose(socket: WebSocket) {
-    const connectionId = this.sessionFromSocket(socket)?.connectionId;
+    const leaving = this.sessionFromSocket(socket);
+    const connectionId = leaving?.connectionId;
+    if (leaving) await this.noteDeparture(leaving.principal.id, socket);
     if (connectionId) await this.env.CATALOG.prepare('DELETE FROM active_connections WHERE id = ?').bind(connectionId).run();
     if (connectionId) await this.broadcastPayload(JSON.stringify({ type: 'presence-left', connectionId }), socket, false);
   }
+  /**
+   * A raised hand belongs to someone in the room. When their last connection
+   * closes, note when; the alarm lowers the hand after a grace period unless
+   * they reconnect (a page reload or a network blip). Timers are not used:
+   * the Node runtime serializes all room work through its alarm queue.
+   */
+  private async noteDeparture(userId: string, closing: WebSocket) {
+    if (this.state.getWebSockets().some(socket => socket !== closing && this.sessionFromSocket(socket)?.principal.id === userId)) return;
+    await this.state.storage.transaction(async transaction => {
+      const departed = await transaction.get<Record<string, number>>(DEPARTURES_KEY) ?? {};
+      const stored = readStoredCollaboration(await transaction.get<RoomCollaborationState>(COLLABORATION_KEY));
+      if (stored.readable && stored.state.raisedHands[userId]) departed[userId] = Date.now();
+      await transaction.put(DEPARTURES_KEY, departed);
+    });
+    await this.checkPresenter(closing);
+    const { state, readable } = await this.readCollaboration();
+    if (!readable || !(state.raisedHands[userId] || state.presentation?.presenterLeftAt)) return;
+    if (this.handGraceMs <= 0 && state.raisedHands[userId]) { await this.alarm(); return; }
+    await this.scheduleAlarm(state);
+  }
+
+  /**
+   * A presentation belongs to a presenter who is here. When they have no
+   * connection left, record when (stored, so it survives restarts); the alarm
+   * ends the presentation after a grace period unless they come back. Also
+   * catches presentations whose presenter left before this was recorded.
+   */
+  private async checkPresenter(closing?: WebSocket) {
+    const connected = new Set(this.state.getWebSockets().filter(socket => socket !== closing).map(socket => this.sessionFromSocket(socket)?.principal.id));
+    const changed = await this.state.storage.transaction(async transaction => {
+      const stored = readStoredCollaboration(await transaction.get<RoomCollaborationState>(COLLABORATION_KEY));
+      const presentation = stored.state.presentation;
+      if (!stored.readable || presentation?.status !== 'running') return false;
+      const here = connected.has(presentation.presenterId);
+      if (here === !presentation.presenterLeftAt) return false;
+      presentation.presenterLeftAt = here ? null : new Date().toISOString();
+      stored.state.revision += 1;
+      await transaction.put(COLLABORATION_KEY, stored.state);
+      return true;
+    });
+    if (changed) {
+      const { state } = await this.readCollaboration();
+      if (this.presenterGraceMs <= 0 && state.presentation?.presenterLeftAt) await this.alarm();
+      else await this.scheduleAlarm(state);
+    }
+  }
+
+  private endAbandonedPresentation(collaboration: RoomCollaborationState, now: number) {
+    const presentation = collaboration.presentation;
+    if (presentation?.status !== 'running' || !presentation.presenterLeftAt) return false;
+    if (now < Date.parse(presentation.presenterLeftAt) + this.presenterGraceMs) return false;
+    if (this.state.getWebSockets().some(socket => this.sessionFromSocket(socket)?.principal.id === presentation.presenterId)) return false;
+    presentation.status = 'ended';
+    presentation.endedReason = 'presenter-left';
+    presentation.updatedAt = new Date(now).toISOString();
+    return true;
+  }
+
+  private lowerDepartedHands(collaboration: RoomCollaborationState, now: number, departed: Record<string, number>) {
+    let changed = false;
+    const connected = new Set(this.state.getWebSockets().map(socket => this.sessionFromSocket(socket)?.principal.id));
+    for (const [userId, at] of Object.entries(departed)) {
+      if (connected.has(userId)) { delete departed[userId]; continue; }
+      if (now < at + this.handGraceMs) continue;
+      delete departed[userId];
+      if (collaboration.raisedHands[userId]) { delete collaboration.raisedHands[userId]; changed = true; }
+    }
+    return changed;
+  }
+
   async webSocketError(socket: WebSocket) {
-    const connectionId = this.sessionFromSocket(socket)?.connectionId;
-    if (connectionId) await this.env.CATALOG.prepare('DELETE FROM active_connections WHERE id = ?').bind(connectionId).run();
-    if (connectionId) await this.broadcastPayload(JSON.stringify({ type: 'presence-left', connectionId }), socket, false);
+    await this.webSocketClose(socket);
   }
 
   async alarm() {
-    const current = Date.now(); const collaboration = await this.getCollaboration(); let changed = false;
-    if (collaboration.timer?.status === 'running' && collaboration.timer.endsAt && Date.parse(collaboration.timer.endsAt) <= current) { collaboration.timer = { ...collaboration.timer, status: 'ended', endsAt: null, remainingMs: 0 }; changed = true; }
-    for (const round of collaboration.voteRounds) if (round.status === 'running' && round.endsAt && Date.parse(round.endsAt) <= current) { round.status = 'ended'; round.endedAt = new Date().toISOString(); round.endsAt = null; changed = true; }
-    if (collaboration.voteRounds.length > MAX_VOTE_ROUNDS) { collaboration.voteRounds = collaboration.voteRounds.slice(0, MAX_VOTE_ROUNDS); changed = true; }
-    if (collaboration.brainstorm?.status === 'running' && collaboration.brainstorm.endsAt && Date.parse(collaboration.brainstorm.endsAt) <= current) { collaboration.brainstorm.status = 'closed'; collaboration.brainstorm.closedAt = new Date().toISOString(); collaboration.brainstorm.endsAt = null; changed = true; }
-    if (changed) { collaboration.revision += 1; await this.state.storage.put(COLLABORATION_KEY, collaboration); await this.broadcastCollaboration(); }
-    await this.scheduleAlarm(collaboration);
+    const current = Date.now();
+    const result = await this.state.storage.transaction(async transaction => {
+      const { state: collaboration, readable } = readStoredCollaboration(await transaction.get<RoomCollaborationState>(COLLABORATION_KEY));
+      if (!readable) return null;
+      const departed = await transaction.get<Record<string, number>>(DEPARTURES_KEY) ?? {};
+      let changed = this.lowerDepartedHands(collaboration, current, departed);
+      if (this.endAbandonedPresentation(collaboration, current)) changed = true;
+      if (collaboration.timer?.status === 'running' && collaboration.timer.endsAt && Date.parse(collaboration.timer.endsAt) <= current) { collaboration.timer = { ...collaboration.timer, status: 'ended', endsAt: null, remainingMs: 0 }; changed = true; }
+      for (const round of collaboration.voteRounds) if (round.status === 'running' && round.endsAt && Date.parse(round.endsAt) <= current) { round.status = 'ended'; round.endedAt = new Date().toISOString(); round.endsAt = null; changed = true; }
+      if (collaboration.voteRounds.length > MAX_VOTE_ROUNDS) { collaboration.voteRounds = collaboration.voteRounds.slice(0, MAX_VOTE_ROUNDS); changed = true; }
+      // A brainstorm deadline is a prompt. Collection stays open until the
+      // facilitator closes it, so people can finish their ideas.
+      if (changed) { collaboration.revision += 1; await transaction.put(COLLABORATION_KEY, collaboration); }
+      await transaction.put(DEPARTURES_KEY, departed);
+      return { collaboration, changed };
+    });
+    if (!result) { await this.state.storage.deleteAlarm(); return; }
+    if (result.changed) await this.broadcastCollaboration();
+    await this.scheduleAlarm(result.collaboration);
   }
 }

@@ -1,3 +1,4 @@
+import { waitForAsync } from './browser-wait.mjs';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { chromium } from 'playwright';
@@ -55,7 +56,11 @@ try {
   assert.equal(await page.locator('.sticky-text-editor').count(), 0, 'Dragging opened text editing');
   const handle = await page.locator('edgeless-selected-rect .handle[aria-label="bottom-right"]').boundingBox();
   before = await box(); await drag([handle.x + handle.width / 2, handle.y + handle.height / 2], [handle.x + handle.width / 2 + 120, handle.y + handle.height / 2 + 120]);
-  after = await box(); equal(after.width, before.width + 120, 'Resize width'); equal(after.height, before.height + 120, 'Resize height');
+  // Corner resizing keeps the sticky's proportions and scales its text.
+  after = await box();
+  assert(after.width > before.width + 60, `Resize width grew too little: ${before.width} → ${after.width}`);
+  const resized = await model();
+  assert(Math.abs(resized[2] - resized[3]) < 1, `Resize kept the note square: ${JSON.stringify(resized)}`);
   await page.getByRole('button', { name: 'Undo', exact: true }).click(); await frame(); equal((await box()).width, before.width, 'Undo resize');
   await page.getByRole('button', { name: 'Redo', exact: true }).click(); await frame(); equal((await box()).width, after.width, 'Redo resize');
   await page.mouse.click(1200, 800); before = await box();
@@ -66,8 +71,9 @@ try {
   before = await box(); await page.mouse.move(1200, 800); await page.mouse.wheel(40, 70); await frame();
   after = await box(); equal(after.x, before.x - 40, 'Wheel horizontal pan'); equal(after.y, before.y - 70, 'Wheel vertical pan');
   await page.getByRole('button', { name: 'Zoom in', exact: true }).click();
-  await page.waitForFunction(() => document.querySelector('.zoom-value').textContent === '120%');
-  equal((await box()).width, after.width * 1.2, 'Zoom in');
+  // Zoom buttons step through recognisable levels (100% → 125%).
+  await page.waitForFunction(() => document.querySelector('.zoom-value').textContent === '125%');
+  equal((await box()).width, after.width * 1.25, 'Zoom in');
   await page.getByRole('button', { name: 'Zoom out', exact: true }).click();
   await page.waitForFunction(() => document.querySelector('.zoom-value').textContent === '100%');
   before = await box(); await page.mouse.move(700, 500); await page.keyboard.down('Control'); await page.mouse.wheel(0, -240); await page.keyboard.up('Control'); await frame();
@@ -109,7 +115,7 @@ try {
   await page.mouse.click(1300, 820); await note.click();
   await page.evaluate(() => navigator.clipboard.writeText('clipboard fixture'));
   await page.keyboard.press(`${mod}+c`);
-  await page.waitForFunction(async () => (await navigator.clipboard.read()).some(item => item.types.includes('text/html')));
+  await waitForAsync(() => page.evaluate(async () => (await navigator.clipboard.read()).some(item => item.types.includes('text/html'))), 'The canvas HTML did not reach the clipboard');
   await page.keyboard.press(`${mod}+v`);
   await page.waitForFunction(() => document.querySelector('whiteboard-editor').doc.getModelsByFlavour('affine:note').length === 2);
   assert.equal(await count(), 2, 'Native clipboard paste did not create a copy');

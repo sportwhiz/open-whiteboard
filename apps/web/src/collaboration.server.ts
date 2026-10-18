@@ -1,12 +1,16 @@
 import { HttpError } from './security/errors';
 import { auditStatement } from './security/audit';
+import { randomToken } from './security/primitives';
 import { guestBoardAccess } from './guest-policy.server';
 import {
   capabilitiesForRole,
   isRole,
   roleAtLeast,
   type Collaborator,
+  type DirectShareResult,
   type PendingInvitation,
+  type SharePerson,
+  type ShareResult,
   type Principal,
   type Role,
 } from './collaboration-types';
@@ -302,33 +306,226 @@ export async function readWorkbookShareState(database: D1Database, workbookId: s
   return { capabilities, collaborators: collaborators.results.map(item => ({...item,email:capabilities.share || item.id === principal.id ? item.email : ''})), invitations: invitations.results };
 }
 
-async function createResourceInvitation(database: D1Database, resourceType: 'board' | 'workbook', resourceId: string, principal: Principal, body: unknown) {
+type ShareResourceType = 'board' | 'workbook';
+type ShareRole = Exclude<Role, 'owner'>;
+
+async function requireShareAuthority(database: D1Database, resourceType: ShareResourceType, resourceId: string, principal: Principal) {
   if (resourceType === 'board') await requireBoardRole(database, resourceId, principal, 'owner');
   else await requireWorkbookRole(database, resourceId, principal, 'owner');
-  if (!body || typeof body !== 'object') throw new HttpError(400, 'JSON body required', 'INVALID_INPUT');
-  const input = body as { email?: unknown; role?: unknown; expiresInDays?: unknown };
-  if (typeof input.email === 'string' && !input.email.includes('@') && principal.authentication === 'native') {
-    const local = await database.prepare("SELECT u.email FROM local_accounts l JOIN auth_users u ON u.id=l.user_id JOIN account_security s ON s.user_id=u.id JOIN instance_memberships m ON m.user_id=u.id WHERE l.username=? AND s.status='active' AND s.recovery_required=0").bind(input.email.trim().toLowerCase()).first<{email:string}>();
-    if (!local) throw new HttpError(400,'No active Studio account has that username. Invite them to join the Studio first.','INVALID_INPUT');
-    input.email=local.email;
+}
+
+export const SHARE_PEOPLE_LIMIT = 8;
+export const SHARE_PEOPLE_RATE_LIMIT = 120;
+const SHARE_PEOPLE_QUERY_LENGTH = 100;
+
+// Matching uses INSTR, not LIKE: the MySQL translation forbids an explicit
+// ESCAPE clause, and substring search needs no wildcards, so "%" and "_" in a
+// query are always literal. LOWER on both sides keeps each backend consistent.
+// Native: only admitted Studio accounts (active, not in recovery, verified or
+// local, with an instance membership). Members, admins and the owner match by
+// name, username or email, and only for a caller who is not a guest; guest
+// accounts are found by their exact username or email only.
+const NATIVE_SHARE_PEOPLE = `SELECT u.id, u.display_name AS name, COALESCE(l.username, a.email) AS handle, u.color, u.avatar_url AS avatarUrl,
+  (SELECT g.role FROM resource_grants g WHERE g.resource_type = ? AND g.resource_id = ? AND g.user_id = u.id AND (g.expires_at IS NULL OR g.expires_at > ?)) AS directRole,
+  (SELECT g.role FROM boards b JOIN resource_grants g ON g.resource_type = 'workbook' AND g.resource_id = b.workbook_id WHERE ? = 'board' AND b.id = ? AND b.inheritance_disabled = 0 AND g.user_id = u.id AND (g.expires_at IS NULL OR g.expires_at > ?)) AS inheritedRole
+  FROM auth_users a
+  JOIN users u ON u.id = a.id
+  JOIN account_security s ON s.user_id = a.id
+  JOIN instance_memberships m ON m.user_id = a.id
+  LEFT JOIN local_accounts l ON l.user_id = a.id
+  WHERE s.status = 'active' AND s.recovery_required = 0 AND (a.emailVerified = 1 OR l.user_id IS NOT NULL) AND a.id <> ?
+    AND (LOWER(COALESCE(l.username, a.email)) = LOWER(?)
+      OR (m.role IN ('owner','admin','member') AND EXISTS(SELECT 1 FROM instance_memberships caller WHERE caller.user_id = ? AND caller.role <> 'guest')
+        AND (INSTR(LOWER(u.display_name), LOWER(?)) > 0 OR INSTR(LOWER(a.name), LOWER(?)) > 0 OR INSTR(LOWER(COALESCE(l.username, a.email)), LOWER(?)) > 0)))
+  ORDER BY CASE WHEN LOWER(COALESCE(l.username, a.email)) = LOWER(?) THEN 0 WHEN INSTR(LOWER(u.display_name), LOWER(?)) = 1 THEN 1 ELSE 2 END, u.display_name, u.id
+  LIMIT 8`;
+// Development and Cloudflare Access: every account already passed the
+// installation's front door. Development may browse; Access matches exact
+// email only, because an Access policy can admit people from outside the team.
+const DIRECTORY_SHARE_PEOPLE = `SELECT u.id, u.display_name AS name, u.email AS handle, u.color, u.avatar_url AS avatarUrl,
+  (SELECT g.role FROM resource_grants g WHERE g.resource_type = ? AND g.resource_id = ? AND g.user_id = u.id AND (g.expires_at IS NULL OR g.expires_at > ?)) AS directRole,
+  (SELECT g.role FROM boards b JOIN resource_grants g ON g.resource_type = 'workbook' AND g.resource_id = b.workbook_id WHERE ? = 'board' AND b.id = ? AND b.inheritance_disabled = 0 AND g.user_id = u.id AND (g.expires_at IS NULL OR g.expires_at > ?)) AS inheritedRole
+  FROM users u
+  JOIN account_security s ON s.user_id = u.id
+  WHERE s.status = 'active' AND s.recovery_required = 0 AND u.issuer <> 'urn:huddle:guest' AND u.id <> ?
+    AND (LOWER(u.email) = LOWER(?)
+      OR (? = 'local-development' AND (INSTR(LOWER(u.display_name), LOWER(?)) > 0 OR INSTR(LOWER(u.email), LOWER(?)) > 0)))
+  ORDER BY CASE WHEN LOWER(u.email) = LOWER(?) THEN 0 WHEN INSTR(LOWER(u.display_name), LOWER(?)) = 1 THEN 1 ELSE 2 END, u.display_name, u.id
+  LIMIT 8`;
+
+/** Find people the resource owner can share with. Only owners may search. */
+export async function searchSharePeople(database: D1Database, resourceType: ShareResourceType, resourceId: string, principal: Principal, rawQuery: string | null) {
+  await enforceRateLimit(database, `${principal.id}:share-people`, SHARE_PEOPLE_RATE_LIMIT, 60);
+  await requireShareAuthority(database, resourceType, resourceId, principal);
+  const query = (rawQuery ?? '').trim();
+  if (query.length > SHARE_PEOPLE_QUERY_LENGTH) throw new HttpError(400, `Search for at most ${SHARE_PEOPLE_QUERY_LENGTH} characters.`, 'INVALID_INPUT');
+  if (!query) return { people: [] as SharePerson[] };
+  const timestamp = now();
+  const access = [resourceType, resourceId, timestamp, resourceType, resourceId, timestamp];
+  const rows = principal.authentication === 'native'
+    ? await database.prepare(NATIVE_SHARE_PEOPLE).bind(...access, principal.id, query, principal.id, query, query, query, query, query).all<SharePersonRow>()
+    : await database.prepare(DIRECTORY_SHARE_PEOPLE).bind(...access, principal.id, query, principal.authentication, query, query, query, query).all<SharePersonRow>();
+  return { people: rows.results.slice(0, SHARE_PEOPLE_LIMIT).map(sharePerson) };
+}
+
+type SharePersonRow = { id: string; name: string; handle: string; color: string; avatarUrl: string | null; directRole: Role | null; inheritedRole: Role | null };
+function sharePerson(row: SharePersonRow): SharePerson {
+  const inherited = Boolean(row.inheritedRole && (!row.directRole || !roleAtLeast(row.directRole, row.inheritedRole)));
+  return { id: row.id, name: row.name, handle: row.handle, color: row.color, avatarUrl: row.avatarUrl ?? null, role: (inherited ? row.inheritedRole : row.directRole) ?? null, inherited };
+}
+
+type ShareRecipient = { id: string; email: string; name: string; handle: string; color: string; avatarUrl: string | null };
+const NATIVE_SHARE_RECIPIENT = `SELECT u.id, a.email, u.display_name AS name, COALESCE(l.username, a.email) AS handle, u.color, u.avatar_url AS avatarUrl
+  FROM auth_users a JOIN users u ON u.id = a.id JOIN account_security s ON s.user_id = a.id JOIN instance_memberships m ON m.user_id = a.id LEFT JOIN local_accounts l ON l.user_id = a.id
+  WHERE s.status = 'active' AND s.recovery_required = 0 AND (a.emailVerified = 1 OR l.user_id IS NOT NULL)
+    AND (a.id = ? OR LOWER(a.email) = LOWER(?) OR LOWER(l.username) = LOWER(?))
+  LIMIT 1`;
+const DIRECTORY_SHARE_RECIPIENT = `SELECT u.id, u.email, u.display_name AS name, u.email AS handle, u.color, u.avatar_url AS avatarUrl
+  FROM users u JOIN account_security s ON s.user_id = u.id
+  WHERE s.status = 'active' AND s.recovery_required = 0 AND u.issuer <> 'urn:huddle:guest'
+    AND (u.id = ? OR LOWER(u.email) = LOWER(?) OR LOWER(u.email) = LOWER(?))
+  LIMIT 1`;
+
+function findShareRecipient(database: D1Database, principal: Principal, key: { id?: string; email?: string; username?: string }) {
+  const sql = principal.authentication === 'native' ? NATIVE_SHARE_RECIPIENT : DIRECTORY_SHARE_RECIPIENT;
+  return database.prepare(sql).bind(key.id ?? null, key.email ?? null, key.username ?? null).first<ShareRecipient>();
+}
+
+// Evaluated inside the write batch, so a sharer who lost ownership or was
+// suspended, a recipient suspended meanwhile, or a concurrent grant of equal
+// or higher access makes every statement a no-op (as redeemInvitation does).
+const SHARE_AUTHORITY_GUARD = `((? = 'board' AND EXISTS(SELECT 1 FROM boards WHERE id = ? AND deleted_at IS NULL)) OR (? = 'workbook' AND EXISTS(SELECT 1 FROM workbooks WHERE id = ? AND deleted_at IS NULL)))
+  AND (EXISTS(SELECT 1 FROM resource_grants g WHERE g.resource_type = ? AND g.resource_id = ? AND g.user_id = ? AND g.role = 'owner' AND (g.expires_at IS NULL OR g.expires_at > ?))
+    OR (? = 'board' AND EXISTS(SELECT 1 FROM boards b JOIN resource_grants g ON g.resource_type = 'workbook' AND g.resource_id = b.workbook_id WHERE b.id = ? AND b.deleted_at IS NULL AND b.inheritance_disabled = 0 AND g.user_id = ? AND g.role = 'owner' AND (g.expires_at IS NULL OR g.expires_at > ?))))
+  AND NOT EXISTS(SELECT 1 FROM account_security WHERE user_id = ? AND (status <> 'active' OR recovery_required = 1 OR auth_version <> COALESCE(?, auth_version)))
+  AND NOT EXISTS(SELECT 1 FROM resource_grants WHERE resource_type = ? AND resource_id = ? AND user_id = ? AND (expires_at IS NULL OR expires_at > ?) AND CASE role WHEN 'owner' THEN 3 WHEN 'editor' THEN 2 WHEN 'commenter' THEN 1 ELSE 0 END >= ?)`;
+const NATIVE_DIRECT_SHARE_GUARD = `(${SHARE_AUTHORITY_GUARD}
+  AND EXISTS(SELECT 1 FROM auth_users a JOIN account_security s ON s.user_id = a.id JOIN instance_memberships m ON m.user_id = a.id WHERE a.id = ? AND s.status = 'active' AND s.recovery_required = 0 AND (a.emailVerified = 1 OR EXISTS(SELECT 1 FROM local_accounts WHERE user_id = a.id))))`;
+const DIRECTORY_DIRECT_SHARE_GUARD = `(${SHARE_AUTHORITY_GUARD}
+  AND EXISTS(SELECT 1 FROM users u JOIN account_security s ON s.user_id = u.id WHERE u.id = ? AND s.status = 'active' AND s.recovery_required = 0 AND u.issuer <> 'urn:huddle:guest'))`;
+
+const SHARE_ROLE_RANK: Record<Role, number> = { viewer: 0, commenter: 1, editor: 2, owner: 3 };
+const SHARE_VERB: Record<ShareRole, string> = { editor: 'edit', commenter: 'comment on', viewer: 'view' };
+
+/*
+ * Why sharing with an existing account grants access at once: an admitted,
+ * active Studio account has already proven its identity and been let in by the
+ * installation, so an email-bound invitation proves nothing more. It only adds
+ * an accept step, and a link that can be forwarded. People without an account
+ * (unknown addresses) still get a single-use invitation link, because nobody
+ * yet knows who will open it. Every grant is audited and the recipient is told.
+ */
+async function grantDirectAccess(database: D1Database, resourceType: ShareResourceType, resourceId: string, principal: Principal, recipient: ShareRecipient, role: ShareRole): Promise<DirectShareResult> {
+  const collaborator = (effective: Role, changed: boolean, notified: boolean, inherited = false): DirectShareResult => ({
+    granted: true, changed, notified,
+    collaborator: { id: recipient.id, email: recipient.handle, name: recipient.name, avatarUrl: recipient.avatarUrl ?? null, color: recipient.color, role: effective, source: inherited ? 'workbook' : 'direct', expiresAt: null },
+  });
+  const currentAccess = async () => {
+    if (resourceType === 'board') {
+      const access = await readBoardAccess(database, resourceId, recipient.id);
+      const direct = await database.prepare("SELECT role FROM resource_grants WHERE resource_type = 'board' AND resource_id = ? AND user_id = ? AND (expires_at IS NULL OR expires_at > ?)").bind(resourceId, recipient.id, now()).first<{ role: Role }>();
+      return access?.role ? { role: access.role, inherited: !direct || !roleAtLeast(direct.role, access.role) } : null;
+    }
+    const direct = await database.prepare("SELECT role FROM resource_grants WHERE resource_type = 'workbook' AND resource_id = ? AND user_id = ? AND (expires_at IS NULL OR expires_at > ?)").bind(resourceId, recipient.id, now()).first<{ role: Role }>();
+    return direct ? { role: direct.role, inherited: false } : null;
+  };
+  // Sharing never lowers access: a person who already has this role or more is left as they are.
+  const existing = await currentAccess();
+  if (existing && roleAtLeast(existing.role, role)) return collaborator(existing.role, false, false, existing.inherited);
+
+  const table = resourceType === 'board' ? 'boards' : 'workbooks';
+  const item = await database.prepare(`SELECT title FROM ${table} WHERE id = ? AND deleted_at IS NULL`).bind(resourceId).first<{ title: string }>();
+  if (!item) throw new HttpError(404, resourceType === 'board' ? 'Board not found' : 'Workbook not found', resourceType === 'board' ? 'BOARD_NOT_FOUND' : 'WORKBOOK_NOT_FOUND');
+  const timestamp = now();
+  const guard = principal.authentication === 'native' ? NATIVE_DIRECT_SHARE_GUARD : DIRECTORY_DIRECT_SHARE_GUARD;
+  const guardValues = [
+    resourceType, resourceId, resourceType, resourceId,
+    resourceType, resourceId, principal.id, timestamp,
+    resourceType, resourceId, principal.id, timestamp,
+    principal.id, principal.authVersion ?? null,
+    resourceType, resourceId, recipient.id, timestamp, SHARE_ROLE_RANK[role],
+    recipient.id,
+  ];
+  const title = item.title.length > 80 ? `${item.title.slice(0, 79)}…` : item.title;
+  const href = resourceType === 'board' ? `/boards/${encodeURIComponent(resourceId)}` : `/?workbook=${encodeURIComponent(resourceId)}`;
+  const notificationId = `notification:${crypto.randomUUID()}`;
+  const email = normalizeEmail(recipient.email);
+  // The audit row is conditional on the same guard as the grant (auditStatement
+  // always inserts), so the trail records exactly the grants that happened.
+  // The grant runs last: it changes the "already has access" clause of the guard.
+  const results = await database.batch([
+    database.prepare(`INSERT INTO security_audit (id, actor_id, action, target_id, outcome, metadata, created_at) SELECT ?, ?, ?, ?, 'success', ?, ? WHERE ${guard}`)
+      .bind(randomToken(18), principal.id, `${resourceType}.shared`, resourceId, JSON.stringify({ role, recipientId: recipient.id }), timestamp, ...guardValues),
+    // A direct share answers any pending invitation for the same person.
+    database.prepare(`UPDATE notifications SET read_at = ? WHERE user_id = ? AND read_at IS NULL AND event_key IN (SELECT 'invitation:' || i.id || ':' || ? FROM invitations i WHERE i.resource_type = ? AND i.resource_id = ? AND i.email = ? COLLATE NOCASE AND i.accepted_at IS NULL AND i.revoked_at IS NULL) AND ${guard}`)
+      .bind(timestamp, recipient.id, recipient.id, resourceType, resourceId, email, ...guardValues),
+    database.prepare(`UPDATE invitations SET revoked_at = ? WHERE resource_type = ? AND resource_id = ? AND email = ? COLLATE NOCASE AND accepted_at IS NULL AND revoked_at IS NULL AND ${guard}`)
+      .bind(timestamp, resourceType, resourceId, email, ...guardValues),
+    database.prepare(`INSERT INTO notifications (id, user_id, board_id, kind, title, body, href, event_key, created_at) SELECT ?, ?, ?, 'share', ?, ?, ?, ?, ? WHERE ${guard}`)
+      .bind(notificationId, recipient.id, resourceType === 'board' ? resourceId : null, `${principal.name} shared “${title}”`, `You can now ${SHARE_VERB[role]} it.`, href, `share:${notificationId}`, timestamp, ...guardValues),
+    // Mirrors redeemInvitation: owner grants are never touched and a live higher role is kept.
+    // An expired grant is replaced, so sharing cannot revive access that has lapsed.
+    database.prepare(`INSERT INTO resource_grants (resource_type, resource_id, user_id, role, source, expires_at, created_at, updated_at) SELECT ?, ?, ?, ?, 'direct', NULL, ?, ? WHERE ${guard} ON CONFLICT(resource_type, resource_id, user_id) DO UPDATE SET role = CASE WHEN resource_grants.role = 'owner' THEN resource_grants.role WHEN resource_grants.expires_at IS NOT NULL AND resource_grants.expires_at <= excluded.updated_at THEN excluded.role WHEN (resource_grants.role = 'editor' AND excluded.role IN ('commenter','viewer')) OR (resource_grants.role = 'commenter' AND excluded.role = 'viewer') THEN resource_grants.role ELSE excluded.role END, expires_at = NULL, updated_at = excluded.updated_at WHERE resource_grants.role <> 'owner'`)
+      .bind(resourceType, resourceId, recipient.id, role, timestamp, timestamp, ...guardValues),
+  ]);
+  if (!results[0].meta.changes) {
+    const after = await currentAccess();
+    if (after && roleAtLeast(after.role, role)) return collaborator(after.role, false, false, after.inherited);
+    throw new HttpError(409, 'Access changed while you were sharing. Refresh and try again.', 'SHARE_CONFLICT');
   }
-  if (typeof input.email !== 'string' || !/^[^@\s]+@[^@\s]+$/u.test(input.email)) throw new HttpError(400, 'A valid email is required', 'INVALID_INPUT');
+  return collaborator(role, true, true);
+}
+
+async function createResourceInvitation(database: D1Database, resourceType: ShareResourceType, resourceId: string, principal: Principal, body: unknown): Promise<ShareResult> {
+  await requireShareAuthority(database, resourceType, resourceId, principal);
+  if (!body || typeof body !== 'object') throw new HttpError(400, 'JSON body required', 'INVALID_INPUT');
+  const input = { ...(body as { email?: unknown; userId?: unknown; invitationId?: unknown; role?: unknown; expiresInDays?: unknown }) };
+  if (input.invitationId !== undefined) {
+    // "New link": tokens are stored hashed and shown once, so a lost link is
+    // replaced by a fresh invitation for the same address and role.
+    if (typeof input.invitationId !== 'string') throw new HttpError(400, 'invitationId must be a string', 'INVALID_INPUT');
+    const previous = await database.prepare('SELECT email, role FROM invitations WHERE id = ? AND resource_type = ? AND resource_id = ? AND accepted_at IS NULL').bind(input.invitationId, resourceType, resourceId).first<{ email: string; role: ShareRole }>();
+    if (!previous) throw new HttpError(404, 'That invitation was accepted or no longer exists.', 'INVITATION_NOT_FOUND');
+    input.email = previous.email;
+    input.role = previous.role;
+    input.userId = undefined;
+  }
   if (!isRole(input.role) || input.role === 'owner') throw new HttpError(400, 'Role must be editor, commenter, or viewer', 'INVALID_INPUT');
-  const days = typeof input.expiresInDays === 'number' ? Math.min(90, Math.max(1, Math.floor(input.expiresInDays))) : 7;
+  const role = input.role;
+  let recipient: ShareRecipient | null = null;
+  if (input.userId !== undefined) {
+    if (typeof input.userId !== 'string' || !input.userId) throw new HttpError(400, 'userId must be a string', 'INVALID_INPUT');
+    recipient = await findShareRecipient(database, principal, { id: input.userId });
+    if (!recipient) throw new HttpError(404, 'That person can’t be added right now. Search for them again.', 'RECIPIENT_NOT_FOUND');
+  } else if (typeof input.email === 'string' && !input.email.includes('@') && principal.authentication === 'native') {
+    recipient = await findShareRecipient(database, principal, { username: input.email.trim() });
+    if (!recipient) throw new HttpError(400, 'No Studio member has that username. Check the spelling, or enter their email to invite them by link.', 'INVALID_INPUT');
+  } else if (principal.authentication === 'native' && typeof input.email === 'string' && /^[^@\s]+@[^@\s]+$/u.test(input.email.trim())) {
+    // Outside native mode there is no admission step (a users row only means someone
+    // once passed Access or dev sign-in), so a typed address keeps the link contract;
+    // there, only a person explicitly picked from search is granted directly.
+    recipient = await findShareRecipient(database, principal, { email: input.email.trim() });
+  }
+  if (recipient) {
+    if (recipient.id === principal.id) throw new HttpError(400, `You already own this ${resourceType}.`, 'INVALID_INPUT');
+    return grantDirectAccess(database, resourceType, resourceId, principal, recipient, role);
+  }
+  if (typeof input.email !== 'string' || !/^[^@\s]+@[^@\s]+$/u.test(input.email.trim())) throw new HttpError(400, 'A valid email is required', 'INVALID_INPUT');
+  const days = typeof input.expiresInDays === 'number' && Number.isFinite(input.expiresInDays) ? Math.min(90, Math.max(1, Math.floor(input.expiresInDays))) : 7;
   const token = invitationToken();
   const id = `invitation:${crypto.randomUUID()}`;
   const createdAt = now();
   const expiresAt = new Date(Date.now() + days * 86_400_000).toISOString();
   const email = normalizeEmail(input.email);
   await database.prepare('UPDATE invitations SET revoked_at = ? WHERE resource_type = ? AND resource_id = ? AND email = ? COLLATE NOCASE AND accepted_at IS NULL AND revoked_at IS NULL').bind(createdAt, resourceType, resourceId, email).run();
-  await database.prepare("INSERT INTO invitations (id, token_hash, resource_type, resource_id, email, role, invited_by, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(id, await tokenHash(token), resourceType, resourceId, email, input.role, principal.id, createdAt, expiresAt).run();
+  await database.prepare("INSERT INTO invitations (id, token_hash, resource_type, resource_id, email, role, invited_by, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(id, await tokenHash(token), resourceType, resourceId, email, role, principal.id, createdAt, expiresAt).run();
   const knownUser = await database.prepare('SELECT id FROM users WHERE email = ? COLLATE NOCASE').bind(email).first<{ id: string }>();
   if (knownUser) {
     const table = resourceType === 'board' ? 'boards' : 'workbooks';
     const item = await database.prepare(`SELECT title FROM ${table} WHERE id = ?`).bind(resourceId).first<{ title: string }>();
-    await database.prepare("INSERT OR IGNORE INTO notifications (id, user_id, board_id, kind, title, body, href, event_key, created_at) VALUES (?, ?, ?, 'invitation', ?, ?, ?, ?, ?)").bind(`notification:${crypto.randomUUID()}`, knownUser.id, resourceType === 'board' ? resourceId : null, `${principal.name} invited you`, `Open “${item?.title ?? `a ${resourceType}`}” as ${input.role}`, `/#invitation=${encodeURIComponent(id)}`, `invitation:${id}:${knownUser.id}`, createdAt).run();
+    await database.prepare("INSERT OR IGNORE INTO notifications (id, user_id, board_id, kind, title, body, href, event_key, created_at) VALUES (?, ?, ?, 'invitation', ?, ?, ?, ?, ?)").bind(`notification:${crypto.randomUUID()}`, knownUser.id, resourceType === 'board' ? resourceId : null, `${principal.name} invited you`, `Open “${item?.title ?? `a ${resourceType}`}” as ${role}`, `/#invitation=${encodeURIComponent(id)}`, `invitation:${id}:${knownUser.id}`, createdAt).run();
   }
-  return { id, token, email, role: input.role, createdAt, expiresAt, status: 'pending' as const };
+  return { granted: false as const, id, token, email, role, createdAt, expiresAt, status: 'pending' as const };
 }
 
 export function createWorkbookInvitation(database: D1Database, workbookId: string, principal: Principal, body: unknown) {
@@ -544,4 +741,61 @@ export async function readCommentPreferences(database: D1Database, boardId: stri
   await requireBoardRole(database, boardId, principal, 'viewer');
   const rows = await database.prepare('SELECT thread_id AS threadId FROM comment_subscriptions WHERE board_id = ? AND user_id = ? AND muted = 1').bind(boardId, principal.id).all<{ threadId: string }>();
   return { mutedThreadIds: rows.results.map(row => row.threadId) };
+}
+
+export type BoardPerson = { id: string; name: string; username: string | null; color: string };
+
+/**
+ * Everyone who can open a board: direct grants, plus workbook grants unless
+ * the board is private. Used to resolve @mentions, including people who are
+ * not online right now. Never includes email addresses.
+ */
+export async function listBoardPeople(database: D1Database, boardId: string): Promise<BoardPerson[]> {
+  await ensureCollaborationSchema(database);
+  const timestamp = now();
+  const rows = await database.prepare(`
+    SELECT DISTINCT u.id, u.display_name AS name, u.color, (SELECT username FROM local_accounts WHERE user_id = u.id) AS username
+    FROM boards b
+    JOIN resource_grants g ON (
+      (g.resource_type = 'board' AND g.resource_id = b.id) OR
+      (b.inheritance_disabled = 0 AND g.resource_type = 'workbook' AND g.resource_id = b.workbook_id)
+    ) AND (g.expires_at IS NULL OR g.expires_at > ?)
+    JOIN users u ON u.id = g.user_id
+    WHERE b.id = ? AND b.deleted_at IS NULL
+    ORDER BY u.display_name
+    LIMIT 500
+  `).bind(timestamp, boardId).all<BoardPerson>();
+  return rows.results;
+}
+
+/**
+ * People a commenter can @mention on a board. Guests only see who is online.
+ * Sign-in usernames follow the sharing rule: only people who can share the
+ * board (and each person for themselves) see them; everyone else gets names.
+ */
+export async function readMentionablePeople(database: D1Database, boardId: string, principal: Principal) {
+  const capabilities = await requireBoardRole(database, boardId, principal, 'commenter');
+  if (principal.authentication === 'guest') return { people: [] as BoardPerson[], capabilities };
+  const people = await listBoardPeople(database, boardId);
+  return { people: capabilities.share ? people : people.map(person => person.id === principal.id ? person : { ...person, username: null }) };
+}
+
+const mentionBoundary = /^$|^[\s.,;:!?)\]}'"’]/u;
+
+/**
+ * People mentioned in text as @username or @Display Name (case-insensitive;
+ * longest name wins, so "@Mia Member" is not read as "@Mia").
+ */
+export function mentionsInText(text: string, people: Pick<BoardPerson, 'id' | 'name' | 'username'>[]) {
+  const found = new Set<string>();
+  const lower = text.toLocaleLowerCase();
+  const names = people.flatMap(person => [person.username, person.name].filter((value): value is string => Boolean(value && value.trim())).map(value => ({ id: person.id, value: value.toLocaleLowerCase() })))
+    .sort((a, b) => b.value.length - a.value.length);
+  for (let index = lower.indexOf('@'); index >= 0; index = lower.indexOf('@', index + 1)) {
+    if (index > 0 && /[\p{L}\p{N}_]/u.test(lower[index - 1])) continue; // an email address, not a mention
+    const rest = lower.slice(index + 1);
+    const match = names.find(name => rest.startsWith(name.value) && mentionBoundary.test(rest.slice(name.value.length, name.value.length + 1)));
+    if (match) found.add(match.id);
+  }
+  return [...found];
 }

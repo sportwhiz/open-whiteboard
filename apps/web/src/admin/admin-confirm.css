@@ -1,0 +1,11 @@
+/* Administrative confirmations reuse the leave-confirm dialog from auth.css. */
+.admin-confirm { max-height: calc(100vh - 40px); overflow-y: auto; }
+.admin-confirm:focus { outline: none; }
+.admin-confirm .admin-confirm-body { margin: 0 0 20px; }
+.admin-confirm .admin-confirm-body p { margin: 0 0 10px; }
+.admin-confirm .admin-confirm-body p:last-child { margin-bottom: 0; }
+.admin-confirm .admin-confirm-body strong { color: var(--text); font-weight: 600; }
+@media (max-width: 480px) {
+  .admin-confirm { padding: 20px; }
+  .admin-confirm .leave-confirm-actions button { flex: 1 1 auto; }
+}

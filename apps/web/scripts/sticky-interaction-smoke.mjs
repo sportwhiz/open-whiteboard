@@ -23,6 +23,8 @@ try {
     const board = await request('/api/v1/boards', 'POST', { title: 'Sticky interaction regression', workbookId: workbook.id });
     const path = `/api/v1/boards/${board.id}`;
     const page = await context.newPage();
+    // CPU_THROTTLE=4 reproduces slower CI machines locally.
+    if (process.env.CPU_THROTTLE) await (await context.newCDPSession(page)).send('Emulation.setCPUThrottlingRate', { rate: Number(process.env.CPU_THROTTLE) });
     page.setDefaultTimeout(15_000);
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
@@ -48,9 +50,24 @@ try {
       assert.equal((await texts())[0], 'Keep this idea' + ' saved'.repeat(4), 'Paper clicks lost text');
       await page.keyboard.press('Escape');
       await focusCanvas();
-      await page.keyboard.type('!');
+      // A selected note is not a text field: single keys stay shortcuts
+      // (N arms the note tool, ? opens help) and never write into it.
+      await page.keyboard.press('n');
+      await page.waitForFunction(() => document.querySelector('.creation-rail [aria-label="Sticky note"]')?.getAttribute('aria-pressed') === 'true');
+      assert.equal(await input.count(), 0, 'A shortcut key started editing the selected note');
+      assert.equal((await texts())[0], 'Keep this idea' + ' saved'.repeat(4), 'A shortcut key was typed into the note');
+      await page.keyboard.press('Escape');
+      await page.locator('[data-testid="edgeless-note-container"]').first().click();
+      await focusCanvas();
+      await page.keyboard.press('Shift+Slash');
+      await page.getByRole('dialog', { name: 'Keyboard shortcuts' }).waitFor();
+      await page.keyboard.press('Escape');
+      await focusCanvas();
+      // Enter writes at the end of the existing text.
+      await page.keyboard.press('Enter');
       await input.waitFor();
-      assert((await texts())[0].startsWith('Keep this idea'), 'Typing on a selection replaced existing text');
+      await page.keyboard.type('!');
+      assert((await texts())[0].startsWith('Keep this idea') && (await texts())[0].endsWith('!'), 'Enter did not continue the existing text');
       await input.evaluate(el => {
         const data = new DataTransfer();
         data.setData('text/plain', '\r\nPasted line');
@@ -73,6 +90,12 @@ try {
       await page.waitForFunction(() => document.querySelector('whiteboard-editor').doc.getModelsByFlavour('affine:note').length === 1);
       await page.keyboard.press(mod === 'Meta' ? 'Meta+Shift+z' : 'Control+y');
       await page.waitForFunction(() => document.querySelector('whiteboard-editor').doc.getModelsByFlavour('affine:note').length === 2);
+      // Undo straight after a duplicate (no waiting) removes the copy: the
+      // clone finishes asynchronously and undo waits for it.
+      await focusCanvas();
+      await page.keyboard.press(`${mod}+d`);
+      await page.keyboard.press(`${mod}+z`);
+      await page.waitForFunction(() => { const doc = document.querySelector('whiteboard-editor').doc; return doc.canRedo && doc.getModelsByFlavour('affine:note').length === 2; });
 
       await page.locator('[data-testid="edgeless-note-container"]').nth(1).dblclick();
       await input.waitFor();
@@ -152,7 +175,7 @@ try {
       assert.equal(await input.count(), 0, 'Simple editor flattened a rich document note');
       assert((await texts()).includes('Second paragraph'));
       assert.deepEqual(errors, [], 'Browser raised errors');
-      console.log(`${platform}: paper clicks, selection typing, multiline paste, formatting, duplicate, undo/redo, text-input shortcut exclusion, auto fit/growth, matching display, save/reload, resized text, Tab, multi-selection and rich-note fallback passed.`);
+      console.log(`${platform}: paper clicks, shortcuts on a selection, Enter to write, multiline paste, formatting, duplicate, undo/redo, text-input shortcut exclusion, auto fit/growth, matching display, save/reload, resized text, Tab, multi-selection and rich-note fallback passed.`);
     } finally {
       await request(path, 'DELETE').catch(() => {});
       await request(`/api/v1/workbooks/${workbook.id}`, 'DELETE').catch(() => {});
