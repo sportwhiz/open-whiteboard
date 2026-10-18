@@ -60,8 +60,8 @@ export function WorkshopBrainstorm({ boardId, state, command, announce, leads, t
   // failures cannot make an active writer disappear from the reveal warning.
   useEffect(() => {
     if (!active) return;
-    return reportWriting(writing => sendCollaborationCommand(boardId, 'brainstorm_writing', { writing }), hasText);
-  }, [active, hasText, brainstorm?.id, boardId]);
+    return reportWriting(writing => sendCollaborationCommand(boardId, 'brainstorm_writing', { writing }), hasText, JSON.stringify([boardId, state.currentUserId]));
+  }, [active, hasText, brainstorm?.id, boardId, state.currentUserId]);
 
   const save = async (event?: FormEvent) => {
     event?.preventDefault();

@@ -174,12 +174,11 @@ describe.each(storages)('workshop sessions on %s', (_name, makeStorage) => {
     const stop = reportWriting(async writing => {
       if (failFirst) { failFirst = false; throw new Error('Temporary connection failure'); }
       return command(bo, 'brainstorm_writing', { writing });
-    }, true);
+    }, true, `long-draft:${_name}`);
     try {
       await vi.advanceTimersByTimeAsync(11 * 60_000);
       expect((await read(ana)).brainstorm.writingCount).toBe(1);
       stop();
-      reportWriting(writing => command(bo, 'brainstorm_writing', { writing }), false)();
       await vi.advanceTimersByTimeAsync(0);
       expect((await read(ana)).brainstorm.writingCount).toBe(0);
     } finally { stop(); vi.useRealTimers(); }

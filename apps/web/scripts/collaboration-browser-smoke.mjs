@@ -113,6 +113,16 @@ async function workshop(owner, peer, path) {
   // writer keeps their text and their focus through the reveal.
   await idea.click(); await peer.keyboard.type('Still thinking');
   await owner.locator('.facilitator-status', { hasText: '1 person still writing' }).waitFor();
+  // Closing the panel ends writing presence without losing the unsent draft.
+  await peer.getByRole('button', { name: 'Close panel' }).click();
+  await owner.locator('.facilitator-status', { hasText: '1 person still writing' }).waitFor({ state: 'hidden' });
+  await waitForAsync(async () => (await request(owner.context(), `${path}/collaboration`)).brainstorm.writingCount === 0, 'Closing the panel left stale writing presence');
+  await peer.getByRole('button', { name: /^Workshop tools/ }).click();
+  await peer.getByRole('button', { name: /^Private brainstorming/ }).click();
+  await idea.waitFor();
+  assert.equal(await idea.inputValue(), 'Still thinking', 'Closing the panel discarded the unsent draft');
+  await owner.locator('.facilitator-status', { hasText: '1 person still writing' }).waitFor();
+  await idea.focus();
   await owner.getByRole('button', { name: 'Reveal 1 idea' }).click();
   await owner.getByRole('button', { name: 'Reveal now' }).click();
   await owner.getByText('Ideas revealed').waitFor();
