@@ -795,3 +795,201 @@
 .identity-context-art { display: grid; place-items: center; padding: clamp(32px, 6vw, 100px); min-width: 0; background: var(--board-paper); }
 .identity-context-art .welcome-art { width: 100%; max-width: 680px; }
 @media (max-width: 900px) { .identity-context-art { display: none; } }
+
+@media (min-width: 761px) {
+  .identity-nav { position: sticky; top: 24px; align-self: start; max-height: calc(100vh - 48px); overflow-y: auto; }
+}
+/* ── Settings navigation search, save bar and bulk actions (ux-collab) ───── */
+.settings-search {
+  display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 10px; margin-bottom: 10px;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text-secondary); cursor: text;
+}
+/* One focus indicator on the outer box, none on the inner field. */
+.settings-search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.settings-search svg { width: 16px; height: 16px; flex-shrink: 0; }
+.identity-settings .settings-search input {
+  flex: 1; width: auto; min-width: 0; min-height: 0; height: 100%; padding: 0;
+  border: 0; border-radius: 0; background: transparent; box-shadow: none; outline: none; color: var(--text); font-size: 13px;
+}
+.identity-settings .settings-search input:focus, .identity-settings .settings-search input:focus-visible { border: 0; box-shadow: none; outline: none; }
+.settings-search kbd, .identity-nav a kbd {
+  display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px;
+  border: 1px solid var(--border); border-radius: 5px; color: var(--text-secondary); background: var(--surface-muted);
+  font: 500 11px/1 inherit;
+}
+.identity-nav a > span { flex: 1; min-width: 0; }
+.identity-nav a.first-result:not([aria-current]) { background: var(--surface-hover); color: var(--text); }
+.identity-nav a:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.settings-no-match { margin: 0; padding: 10px 14px; font-size: 13px; color: var(--text-secondary); }
+
+.identity-back-link { display: inline-flex; align-items: center; gap: 6px; }
+.identity-back-link svg { width: 16px; height: 16px; }
+.identity-back-link .label-short { display: none; }
+@media (max-width: 740px) {
+  /* Mobile keeps both: search (results appear as you type) and a section picker. */
+  .identity-nav { display: block; margin-bottom: 12px; }
+  .identity-nav:not(.searching) .identity-nav-links { display: none; }
+  .identity-nav.searching .identity-nav-links { padding: 4px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); box-shadow: var(--shadow); }
+  .settings-search kbd { display: none; }
+  .identity-header .identity-back-link {
+    display: inline-flex; min-height: 38px; padding: 0 10px; border: 1px solid var(--border); border-radius: 8px; color: var(--text); text-decoration: none; font-size: 13px;
+  }
+  .identity-header .identity-back-link .label-long { display: none; }
+  .identity-header .identity-back-link .label-short { display: inline; }
+}
+
+.settings-save-bar {
+  position: sticky; bottom: 12px; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  margin-top: 20px; padding: 10px 10px 10px 14px; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--surface); box-shadow: 0 6px 24px #1420381a;
+}
+.settings-save-status { display: flex; align-items: center; gap: 8px; flex: 1 1 220px; min-width: 0; font-size: 13px; color: var(--text-secondary); }
+.settings-save-status > [role="status"]:empty, .settings-save-status > [role="alert"]:empty { display: none; }
+.settings-save-bar.dirty .settings-save-status { color: var(--text); }
+.settings-save-bar.saved .settings-save-status { color: var(--success); font-weight: 600; }
+.settings-save-bar.error { border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); background: color-mix(in srgb, var(--danger-soft) 70%, var(--surface)); }
+.settings-save-bar.error .settings-save-status { color: var(--danger); font-weight: 550; line-height: 1.45; }
+.save-state-dot { width: 8px; height: 8px; flex: 0 0 auto; border-radius: 50%; background: #e8a33a; box-shadow: 0 0 0 3px color-mix(in srgb, #e8a33a 22%, transparent); }
+.save-state-icon { display: inline-grid; place-items: center; width: 18px; height: 18px; flex: 0 0 auto; }
+span.save-state-icon { border-radius: 50%; color: var(--surface); background: var(--danger); font-size: 12px; font-weight: 800; }
+.identity-settings .settings-save-bar button { min-height: 38px; padding: 8px 14px; white-space: nowrap; }
+.identity-settings button[aria-disabled="true"] { opacity: .55; cursor: not-allowed; }
+.identity-settings button[aria-busy="true"] { cursor: progress; }
+
+.leave-confirm-backdrop { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; padding: 20px; background: #0f162466; }
+:root[data-theme="dark"] .leave-confirm-backdrop { background: #050911a6; }
+.leave-confirm { width: min(420px, 100%); padding: 24px; border: 1px solid var(--border); border-radius: 14px; color: var(--text); background: var(--surface); box-shadow: var(--shadow); }
+.leave-confirm h2 { margin: 0 0 8px; font-size: 18px; letter-spacing: -.2px; }
+.leave-confirm p { margin: 0 0 20px; color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
+.leave-confirm-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.leave-confirm button {
+  min-height: 40px; padding: 8px 14px; border: 1px solid var(--border); border-radius: 8px;
+  color: var(--text); background: var(--surface); font: inherit; font-size: 13px; font-weight: 550; cursor: pointer;
+}
+.leave-confirm button.identity-primary { display: inline-block; width: auto; border-color: transparent; color: var(--on-accent); background: var(--accent); }
+.leave-confirm button.identity-danger { color: var(--danger); }
+
+/* People: header checkbox and a bottom action bar that never shifts the list. */
+.identity-toolbar button { white-space: nowrap; flex: 0 0 auto; }
+.identity-settings input.people-checkbox { width: 16px; height: 16px; min-height: 0; padding: 0; flex: 0 0 auto; accent-color: var(--accent); }
+.people-list-header { display: flex; align-items: center; gap: 12px; padding: 0 0 12px; border-bottom: 1px solid var(--border); color: var(--text-secondary); font-size: 12px; font-weight: 550; }
+.people-list-result { margin-left: auto; color: var(--success); }
+.people-list-result:empty { display: none; }
+.bulk-action-bar {
+  position: sticky; bottom: 12px; z-index: 3; display: grid; grid-template-columns: auto minmax(160px, 1fr) auto; align-items: center; gap: 8px 16px;
+  margin-top: 16px; padding: 10px 12px 10px 16px; border: 1px solid var(--border); border-radius: 12px;
+  background: var(--surface); box-shadow: 0 10px 30px #1420382b;
+}
+.bulk-action-summary { display: flex; align-items: center; gap: 10px; font-size: 13px; white-space: nowrap; }
+.identity-settings .bulk-action-summary .identity-link { min-height: 0; padding: 4px 2px; border: 0; font-size: 12px; }
+.bulk-action-reason { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 12px; color: var(--text-secondary); }
+.identity-settings .bulk-action-reason input { min-height: 36px; padding: 6px 10px; }
+.identity-settings .bulk-action-reason input[aria-invalid="true"] { border-color: var(--danger); }
+.bulk-action-buttons { display: flex; gap: 6px; }
+.identity-settings .bulk-action-buttons button { min-height: 36px; padding: 6px 12px; white-space: nowrap; }
+.bulk-action-error { grid-column: 1 / -1; margin: 0; color: var(--danger); font-size: 12px; }
+@media (max-width: 900px) {
+  .bulk-action-bar { grid-template-columns: 1fr; }
+}
+@media (max-width: 740px) {
+  .bulk-action-buttons { width: 100%; }
+  .identity-settings .bulk-action-buttons button { flex: 1; }
+  /* Search and filter share a row when they fit, keeping the toolbar short. */
+  .identity-toolbar > input { flex: 1 1 160px; max-width: none; min-width: 0; }
+  .identity-toolbar > select { flex: 1 1 140px; width: auto; min-width: 0; }
+}
+.people-list .identity-row > .identity-actions { flex-wrap: nowrap; align-items: flex-start; justify-content: flex-start; gap: 12px; min-width: 0; }
+.people-list .identity-row > .identity-actions > .people-checkbox { margin-top: 2px; }
+.identity-settings .identity-header .identity-actions button { white-space: nowrap; }
+@media (max-width: 480px) {
+  /* Phones: the mark alone identifies the product; keep tour and back reachable. */
+  .identity-settings .identity-header .brand-wordmark { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .identity-settings .identity-header .identity-actions button { min-height: 38px; padding: 8px 10px; font-size: 13px; }
+}
+/* Only float the bar while there is something to act on or read. */
+.settings-save-bar.idle, .settings-save-bar.discarded { position: static; box-shadow: none; }
+/* A setting reached from search is briefly highlighted. */
+.setting-found { border-radius: 8px; box-shadow: 0 0 0 3px var(--accent-soft), 0 0 0 1px var(--accent); background: color-mix(in srgb, var(--accent-soft) 45%, transparent); transition: box-shadow 300ms ease, background 300ms ease; }
+.identity-settings .field-error { display: block; margin-top: 6px; color: var(--danger); font-size: 12px; font-weight: 550; }
+.identity-settings [aria-invalid="true"]:not([type="checkbox"]) { border-color: var(--danger) !important; box-shadow: 0 0 0 3px var(--danger-soft) !important; }
+.identity-settings input[type="checkbox"][aria-invalid="true"] { outline: 2px solid var(--danger); outline-offset: 2px; }
+.identity-settings .identity-check > span { display: grid; gap: 2px; }
+.settings-save-slot { margin-top: 20px; }
+.settings-save-slot > .settings-save-bar { margin-top: 0; }
+.settings-save-bar.floating { position: fixed; z-index: 40; left: 50%; bottom: 16px; width: min(760px, calc(100vw - 32px)); transform: translateX(-50%); }
+@media (max-width: 740px) {
+  /* Compact phone chrome: search and the section picker sit close together,
+     leaving room for content (and guided-tour cards) below. */
+  .identity-nav { margin-bottom: 8px; }
+  .identity-mobile-nav { margin-bottom: 16px; }
+  .identity-header { padding-bottom: 12px; }
+}
+.identity-nav a.setting-result > span { display: grid; gap: 1px; }
+.identity-nav a.setting-result small { color: var(--text-secondary); font-size: 11px; font-weight: 500; }
+.security-event .security-outcome { color: var(--danger); font-weight: 600; }
+.security-event small time { font-variant-numeric: tabular-nums; }
+/* Step-up and other identity dialogs: one aligned row of equal buttons. */
+.identity-dialog .identity-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+  margin-top: 18px;
+}
+.identity-dialog .identity-dialog-actions > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  min-width: 112px;
+  min-height: 42px;
+  margin: 0;
+}
+.identity-dialog form > .identity-secondary {
+  margin: 4px 0 0;
+}
+@media (max-width: 420px) {
+  .identity-dialog { padding: 22px 18px; }
+  .identity-dialog .identity-dialog-actions > button { flex: 1; min-width: 0; }
+}
+.identity-hint {
+  margin: 4px 0 12px;
+  color: var(--text-secondary, #657086);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.identity-message .identity-link {
+  padding: 0 2px;
+  font-size: inherit;
+}
+.identity-signed-in-as {
+  align-self: center;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary, #657086);
+  font-size: 13px;
+}
+.identity-button-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+/* Field-level problems on the sign-in and setup screens. */
+.identity-page .field-error {
+  display: block;
+  margin-top: 6px;
+  color: var(--danger, #b42318);
+  font-size: 12.5px;
+  font-weight: 550;
+}
+.identity-page .identity-field input[aria-invalid="true"] {
+  border-color: var(--danger, #b42318);
+  box-shadow: 0 0 0 3px var(--danger-soft, #fde8e6);
+}
+.identity-card a.identity-primary,
+.identity-card a.identity-primary:visited {
+  color: var(--accent-ink, #fff);
+}

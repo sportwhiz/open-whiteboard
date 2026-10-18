@@ -355,7 +355,7 @@ function registerTools(
             z.object({
               text: requiredNativeText(20_000),
               color: z
-                .enum(['yellow', 'orange', 'green', 'blue', 'purple'])
+                .enum(['yellow', 'orange', 'green', 'blue', 'purple', 'pink'])
                 .optional(),
             }),
           )
@@ -536,6 +536,7 @@ function registerTools(
           'withdraw_draft',
           'delete_draft',
           'close_brainstorm',
+          'reopen_brainstorm',
           'reveal_brainstorm',
           'cancel_brainstorm',
           'start_presentation',
@@ -546,6 +547,7 @@ function registerTools(
           'raise_hand',
           'lower_hand',
           'create_checkpoint',
+          'take_facilitation',
         ]),
         values: z.record(z.string(), z.unknown()).default({}),
       }),

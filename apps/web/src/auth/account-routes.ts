@@ -20,6 +20,32 @@ import { HttpError } from "../security/errors";
 import { auditStatement } from "../security/audit";
 import { invalidationStatement } from "../mail/outbox";
 
+/**
+ * Re-proves the signed-in person's password, sharing the step-up rate limit.
+ * Callers decide what the proof unlocks; this only verifies it.
+ */
+export async function confirmAccountPassword(
+  env: NativeEnv,
+  userId: string,
+  password: unknown,
+) {
+  await limit(env, "step-up", userId, 6, 300);
+  const credential = await env.CATALOG.prepare(
+    "SELECT password FROM auth_accounts WHERE userId = ? AND providerId = 'credential'",
+  )
+    .bind(userId)
+    .first<{ password: string }>();
+  if (
+    typeof password !== "string" ||
+    !credential ||
+    !(await verifyPassword({ hash: credential.password, password }))
+  )
+    throw new HttpError(
+      401,
+      "That password isn’t right. Try again.",
+      "INVALID_PASSWORD",
+    );
+}
 export async function revokeIdentity(
   env: NativeEnv,
   userId: string,
@@ -285,26 +311,8 @@ export async function accountRoutes(
     });
   }
   if (url.pathname === "/api/v1/account/step-up" && request.method === "POST") {
-    await limit(env, "step-up", user.id, 6, 300);
     const body = await json(request);
-    const credential = await env.CATALOG.prepare(
-      "SELECT password FROM auth_accounts WHERE userId = ? AND providerId = 'credential'",
-    )
-      .bind(user.id)
-      .first<{ password: string }>();
-    if (
-      typeof body.password !== "string" ||
-      !credential ||
-      !(await verifyPassword({
-        hash: credential.password,
-        password: body.password,
-      }))
-    )
-      throw new HttpError(
-        401,
-        "The password could not be confirmed.",
-        "INVALID_PASSWORD",
-      );
+    await confirmAccountPassword(env, user.id, body.password);
     await env.CATALOG.prepare(
       "UPDATE auth_sessions SET authenticatedAt = ?, assurance = ? WHERE id = ?",
     )

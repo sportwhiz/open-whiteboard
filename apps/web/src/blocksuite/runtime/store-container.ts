@@ -41,19 +41,22 @@ export class IndexedStore extends Store {
     }));
   }
 
+  /** Null once the document has been disposed (for example while signing out). */
   private get blockIndex() {
-    return (this.workspace.getDoc(this.id) as NativeDoc).blockIndex;
+    return (this.workspace.getDoc(this.id) as NativeDoc | null)?.blockIndex ?? null;
   }
 
   override get root() {
-    if (this.blockIndex.readDuringMutation) return super.root;
-    const id = this.blockIndex.rootId(this.schema);
+    const index = this.blockIndex;
+    if (!index || index.readDuringMutation) return super.root;
+    const id = index.rootId(this.schema);
     return id ? this.getBlock(id)?.model ?? null : null;
   }
 
   override getBlocksByFlavour(flavour: string | string[]): Block[] {
-    if (this.blockIndex.readDuringMutation) return super.getBlocksByFlavour(flavour);
-    const ids = !this.memberships ? this.blockIndex.idsFor(flavour)
+    const index = this.blockIndex;
+    if (!index || index.readDuringMutation) return super.getBlocksByFlavour(flavour);
+    const ids = !this.memberships ? index.idsFor(flavour)
       : typeof flavour === 'string' ? Object.keys(this.memberships.get(flavour) ?? {})
       : Object.keys(this.orderedModels).filter(id => flavour.includes(this.getBlock(id)?.flavour ?? ''));
     return ids.flatMap(id => {
@@ -65,9 +68,10 @@ export class IndexedStore extends Store {
   override getParent(target: BlockModel | string): BlockModel | null {
     // Yjs observers invalidate indexes after a transaction. Calls inside the
     // mutation itself must still see each change before those observers run.
-    if (this.blockIndex.readDuringMutation) return super.getParent(target);
+    const index = this.blockIndex;
+    if (!index || index.readDuringMutation) return super.getParent(target);
     const id = typeof target === 'string' ? target : target.id;
-    const parent = this.blockIndex.parentId(id, this.blockIndex.rootId(this.schema));
+    const parent = index.parentId(id, index.rootId(this.schema));
     return parent ? this.getModelById(parent) : null;
   }
 }

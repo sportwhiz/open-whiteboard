@@ -1,6 +1,7 @@
 import * as Y from 'yjs';
 import type { NativeBoardSnapshot } from './blocksuite/runtime/snapshot';
 import { BOARD_PREVIEW_LIMIT, BOARD_PREVIEW_TEXT_LIMIT, type PreviewBoard, type PreviewEndpoint } from './board-preview';
+import { resolveStickyPaper } from './blocksuite/sticky-palette';
 
 function field(value: unknown, key: string): unknown {
   if (value instanceof Y.Map) return value.get(key);
@@ -29,6 +30,13 @@ function color(value: unknown) {
   const light = typeof value === 'string' ? value : field(value, 'light');
   if (typeof light !== 'string' || !/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/iu.test(light)) return undefined;
   return light.length === 4 ? `#${[...light.slice(1)].map(c => c + c).join('')}` : light;
+}
+
+/** Previews show note paper as the editor renders it (legacy MCP pairs and
+ * older UI notes resolve to the current palette); stored data is unchanged. */
+function notePaper(value: unknown) {
+  const paper = resolveStickyPaper({ light: field(value, 'light'), dark: field(value, 'dark') });
+  return color(paper?.light ?? value);
 }
 
 function endpoint(value: unknown): PreviewEndpoint | undefined {
@@ -74,7 +82,7 @@ export function readNativePreview(snapshot: NativeBoardSnapshot): PreviewBoard {
             if (child instanceof Y.Map) text = snippet(child.get('prop:text') ?? child.get('prop:title'));
           }
         }
-        result.notes.push({ id, color: color(block.get('prop:background')), collapsed });
+        result.notes.push({ id, color: notePaper(block.get('prop:background')), collapsed });
       }
       result.elements.push({ id, type, text, xywh });
     }

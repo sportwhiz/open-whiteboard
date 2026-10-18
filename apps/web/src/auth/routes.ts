@@ -12,8 +12,10 @@ import {
   installation,
   needsStrong,
   publicPrincipal,
+  requireFresh,
   requireFreshForInstallation,
 } from "./policy";
+import { confirmAccountPassword } from "./account-routes";
 import {
   nativePrincipal,
   readNativeSession,
@@ -80,6 +82,21 @@ const privatePaths = new Set([
   "/passkey/update-passkey",
   "/passkey/delete-passkey",
 ]);
+
+async function signInMethods(env: NativeEnv, userId: string) {
+  const [password, passkey] = await env.CATALOG.batch<{ ok: number }>([
+    env.CATALOG.prepare(
+      "SELECT 1 AS ok FROM auth_accounts WHERE userId = ? AND providerId = 'credential' LIMIT 1",
+    ).bind(userId),
+    env.CATALOG.prepare(
+      "SELECT 1 AS ok FROM auth_passkeys WHERE userId = ? LIMIT 1",
+    ).bind(userId),
+  ]);
+  return {
+    hasPassword: password.results.length > 0,
+    hasPasskey: passkey.results.length > 0,
+  };
+}
 
 async function libraryRoute(request: Request, env: NativeEnv) {
   const path = new URL(request.url).pathname
@@ -234,8 +251,48 @@ async function libraryRoute(request: Request, env: NativeEnv) {
         "Replace your lost factor first.",
         "RECOVERY_REQUIRED",
       );
+    // Adding a first authenticator to an account that has no second factor
+    // (required enrollment or factor recovery) asks for the account password
+    // on the same screen. When the session is past the verification window,
+    // that password is the step-up: it is verified here, under the step-up
+    // rate limit, and refreshes only the verification time. Assurance is not
+    // raised, so this grants nothing the password step-up endpoint would not.
+    // Without this, a stale session is sent to a step-up it cannot reach and
+    // the person is locked out of a required enrollment.
+    let reconfirmed = false;
+    if (
+      path === "/two-factor/enable" &&
+      !existingFactor &&
+      typeof body.password === "string" &&
+      body.password
+    ) {
+      try {
+        requireFresh(
+          identity.principal,
+          false,
+          settings.reauthentication_seconds,
+        );
+      } catch (error) {
+        if (!(error instanceof HttpError) || error.code !== "STEP_UP_REQUIRED")
+          throw error;
+        await confirmAccountPassword(env, identity.user.id, body.password);
+        await env.CATALOG.prepare(
+          "UPDATE auth_sessions SET authenticatedAt = ? WHERE id = ? AND userId = ?",
+        )
+          .bind(
+            new Date().toISOString(),
+            identity.session.id,
+            identity.user.id,
+          )
+          .run();
+        reconfirmed = true;
+      }
+    }
     // Viewing linked login methods does not change account security.
-    if (!["/list-accounts", "/passkey/list-user-passkeys"].includes(path))
+    if (
+      !reconfirmed &&
+      !["/list-accounts", "/passkey/list-user-passkeys"].includes(path)
+    )
       await requireFreshForInstallation(
         env,
         identity.principal,
@@ -482,6 +539,10 @@ async function libraryRoute(request: Request, env: NativeEnv) {
     const value = (await response.json()) as Record<string, unknown>;
     delete value.token;
     delete value.session;
+    // Same wording whether the session was fresh (the library checks the
+    // password) or stale (checked above before enrollment).
+    if (path === "/two-factor/enable" && value.code === "INVALID_PASSWORD")
+      value.message = "That password isn’t right. Try again.";
     if (
       path === "/sign-up/email" &&
       (response.ok || value.code === "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL")
@@ -599,6 +660,18 @@ export async function identityRoutes(
               recoveryRequired: Boolean(identity.state.recovery_required),
               twoFactorEnabled: Boolean(identity.user.twoFactorEnabled),
               setupUser: settings.setup_user_id === identity.user.id,
+              // Lets sign-in screens explain why a second factor is asked
+              // for and offer only the confirmation methods this account has.
+              secondFactorReason:
+                identity.state.role === "owner" ||
+                identity.state.role === "admin"
+                  ? "role"
+                  : settings.mfa_required
+                    ? "studio"
+                    : identity.user.twoFactorEnabled
+                      ? "personal"
+                      : null,
+              ...(await signInMethods(env, identity.user.id)),
             }
           : null,
       },
@@ -667,7 +740,10 @@ export async function identityRoutes(
     )
       throw new HttpError(
         403,
-        "The setup password is incorrect.",
+        // Match the field the setup screen shows for this configuration.
+        env.SETUP_PASSWORD || !env.AUTH_BOOTSTRAP_SECRET
+          ? "That setup passphrase isn’t right. Check SETUP_PASSWORD in your hosting settings."
+          : "That setup key isn’t right. Check AUTH_BOOTSTRAP_SECRET in your hosting settings.",
         "BOOTSTRAP_REQUIRED",
       );
     if ((await installation(env)).state === "ready")

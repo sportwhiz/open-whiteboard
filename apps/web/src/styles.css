@@ -304,7 +304,7 @@ p {
 
 .follow-banner button { padding: 0.35rem 0.6rem; border:0; border-radius:999px; color:var(--on-accent); background:var(--accent); font-weight: 700; cursor: pointer; }
 .reaction-cloud { position: absolute; right: 1.25rem; bottom: 1.25rem; z-index: 20; display: flex; gap: 0.35rem; pointer-events: none; }
-.reaction-cloud span { font-size: 2rem; animation: reaction-pop 2.2s ease-out forwards; filter: drop-shadow(0 4px 5px rgb(0 0 0 / 16%)); }
+.reaction-cloud > span { font-size: 2rem; animation: reaction-pop 2.2s ease-out forwards; filter: drop-shadow(0 4px 5px rgb(0 0 0 / 16%)); }
 .laser-pointer { position: absolute; width: 1rem; height: 1rem; border:3px solid var(--border); border-radius:50%; background:currentcolor; box-shadow: 0 0 0 6px color-mix(in srgb, currentcolor 24%, transparent), 0 0 22px currentcolor; transform: translate(-50%, -50%); }
 .laser-pointer b { position: absolute; top: 1rem; left: 0.65rem; padding: 0.18rem 0.35rem; border-radius:0.35rem; color:#fff; background:#24242b; font-size: 0.62rem; white-space: nowrap; }
 @keyframes reaction-pop { 0% { opacity: 0; transform: translateY(20px) scale(0.5); } 20% { opacity: 1; transform: translateY(0) scale(1.15); } 100% { opacity: 0; transform: translateY(-90px) scale(0.9); } }
@@ -459,7 +459,7 @@ p {
 
 @media (prefers-reduced-motion: reduce) {
   .remote-cursor { transition: none; }
-  .reaction-cloud span { animation-duration: 1ms; }
+  .reaction-cloud > span { animation-duration: 1ms; }
 }
 .pending-avatar { color:var(--text-secondary); background:var(--surface-muted); }
 .share-person strong, .share-person small { display: block; }
@@ -741,77 +741,6 @@ button.account-signout:hover { color:var(--text-primary); }
 
 .ungrouped-workbooks:first-child > p { display: none; }
 
-.sidebar-disclosure {
-  margin-top: 0.35rem;
-}
-
-.sidebar-disclosure summary {
-  padding: 0.4rem 0.7rem;
-  border-radius:6px;
-  color:var(--text-secondary);
-  font-size: 0.78rem;
-  cursor: pointer;
-  list-style: none;
-}
-
-.sidebar-disclosure summary::-webkit-details-marker { display: none; }
-.sidebar-disclosure summary::before { content: '+ '; }
-.sidebar-disclosure[open] summary::before { content: '− '; }
-.sidebar-disclosure summary:hover { color:var(--text); background:var(--canvas); }
-
-.sidebar-disclosure form {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 0.4rem;
-  padding: 0.5rem 0.65rem 0.65rem;
-}
-
-.sidebar-disclosure label {
-  min-width: 0;
-}
-
-.sidebar-disclosure label span {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-}
-
-.sidebar-disclosure input {
-  width: 100%;
-  min-width: 0;
-  padding: 0.46rem 0.5rem;
-  border:1px solid var(--border);
-  border-radius:6px;
-  font-size: 0.78rem;
-}
-
-.sidebar-disclosure select {
-  width: 100%;
-  min-width: 0;
-  padding: 0.46rem 0.4rem;
-  border:1px solid var(--border);
-  border-radius:6px;
-  color:var(--text);
-  background:var(--surface);
-  font: inherit;
-}
-
-.sidebar-disclosure label:has(select) {
-  grid-column: 1 / -1;
-}
-
-.sidebar-disclosure button {
-  padding: 0.4rem 0.62rem;
-  border:0;
-  border-radius:6px;
-  color:var(--on-accent);
-  background:var(--accent);
-  font-size: 0.75rem;
-  font-weight: 680;
-  cursor: pointer;
-}
 
 .sidebar-footer {
   display: grid;
@@ -1804,3 +1733,12 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 
 .header-actions .header-tool[aria-label="Board tools"] { display: inline-flex; gap: 6px; font-size: 12px; }
 .facilitation-cards .facilitation-card small { font-weight: 400; }
+
+.board-collection-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin: 20px 0 16px; color: var(--text-secondary); font-size: 12px; }
+.board-collection-toolbar label { display: flex; align-items: center; gap: 8px; }
+.board-collection-toolbar select { padding: 8px 28px 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; }
+.heading-actions { flex-wrap: wrap; }
+
+.workbook-search { display: flex; align-items: center; gap: 7px; margin: 4px 0 12px; padding: 7px 8px; border: 1px solid var(--border); border-radius: 7px; color: var(--text-secondary); }
+.workbook-search svg { width: 14px; flex-shrink: 0; }
+.workbook-search input { width: 100%; min-width: 0; background: transparent; border: 0; color: var(--text); font: inherit; font-size: 12px; }

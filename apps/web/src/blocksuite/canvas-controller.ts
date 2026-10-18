@@ -1,16 +1,24 @@
 import * as Y from "yjs";
 import { demoPattern, type DemoPatternId } from "./demo-patterns";
 import { nativeBlockText } from "./native-block-text";
-import { canvasFitPadding, revealDelta } from "./canvas-layout";
+import { canvasFitPadding, fitCanvas, revealDelta, unionBounds } from "./canvas-layout";
+import { STICKY_PALETTE, resolveStickyPaper, stickyPaper } from "./sticky-palette";
+import { steppedZoom } from "./canvas-zoom";
+import { layerOrder } from "./layer-order";
+import { createNoteCommitTracker } from "./note-commit";
+import { startsNewStep } from "./history-merge";
 import {
   DefaultTool,
   EdgelessCRUDIdentifier,
 } from "@blocksuite/affine/blocks/surface";
 import { BrushTool, EraserTool } from "@blocksuite/affine/gfx/brush";
-import { ConnectorTool } from "@blocksuite/affine/gfx/connector";
+import { ConnectorTool, mountConnectorLabelEditor } from "@blocksuite/affine/gfx/connector";
 import { PanTool } from "@blocksuite/affine/gfx/pointer";
 import { ShapeTool, mountShapeTextEditor } from "@blocksuite/affine/gfx/shape";
-import { TextTool } from "@blocksuite/affine/gfx/text";
+import { TextTool, mountTextElementEditor } from "@blocksuite/affine/gfx/text";
+import { mountGroupTitleEditor } from "@blocksuite/affine/gfx/group";
+import { mountFrameTitleEditor } from "@blocksuite/affine/widgets/frame-title";
+import { frameFitBounds } from "./element-toolbar";
 import { createGroupFromSelectedCommand, ungroupCommand } from "@blocksuite/affine/gfx/group";
 import { FrameTool } from "@blocksuite/affine/blocks/frame";
 import { addImages } from "@blocksuite/affine/blocks/image";
@@ -28,6 +36,7 @@ import {
   ShapeType,
   ConnectorElementModel,
   ShapeElementModel,
+  TextElementModel,
   GroupElementModel,
   getShapeType,
   type ShapeName,
@@ -37,6 +46,7 @@ import { Text } from "@blocksuite/affine/store";
 import {
   BaseTool,
   GfxControllerIdentifier,
+  isGfxGroupCompatibleModel,
   type GfxModel,
 } from "@blocksuite/std/gfx";
 import type { PointerEventState } from "@blocksuite/affine/std";
@@ -45,6 +55,11 @@ import {
   arrangeBoxes,
   findOpenPosition,
   connectedPosition,
+  canArrange,
+  readingOrder,
+  connectorEndPorts,
+  nextNotePlacement,
+  duplicatePlacement,
   CONNECTION_PORTS,
   type Direction,
   type Arrangement,
@@ -55,7 +70,8 @@ import {
   STICKY_TEXT_STYLE_KEY,
   type StickyTextStyle,
 } from "./sticky-text-style";
-import { canvasPointAt } from "./canvas-hit-test";
+import { canvasPointAt, topmostObject } from "./canvas-hit-test";
+export { topmostObject };
 
 export type CanvasTool =
   | "select"
@@ -67,14 +83,8 @@ export type CanvasTool =
   | "pen"
   | "eraser"
   | "frame";
-export const STICKY_COLORS = [
-  { name: "Yellow", value: "#fff0a6" },
-  { name: "Peach", value: "#ffd6b0" },
-  { name: "Pink", value: "#ffd2df" },
-  { name: "Lilac", value: "#ded6ff" },
-  { name: "Blue", value: "#cceaff" },
-  { name: "Mint", value: "#d2f2d0" },
-];
+/** Swatches offered in the UI; values are each family's light paper. */
+export const STICKY_COLORS = STICKY_PALETTE.map((family) => ({ name: family.name, value: family.light }));
 export type CanvasOptions = {
   color: string;
   shape: ShapeName;
@@ -108,7 +118,7 @@ export function createSticky(
       xywh: new Bound(x, y, size.w, size.h).serialize(),
       index: gfx.layer.generateIndex(),
       displayMode: NoteDisplayMode.EdgelessOnly,
-      background: appearance?.background ?? { light: color, dark: color },
+      background: appearance?.background ?? stickyPaper(color),
       edgeless: {
         collapse: true,
         scale: 1,
@@ -133,6 +143,15 @@ export function createSticky(
   return { id, paragraphId };
 }
 
+/** One default size per shape type, however the shape is created. */
+export const SHAPE_SIZE: Record<string, { w: number; h: number }> = {
+  rect: { w: 200, h: 128 },
+  roundedRect: { w: 200, h: 128 },
+  ellipse: { w: 180, h: 128 },
+  diamond: { w: 180, h: 140 },
+  triangle: { w: 170, h: 140 },
+};
+
 /** Create the native preview only after the pointer enters usable canvas. */
 export class CanvasShapeTool extends ShapeTool {
   static override toolName = "whiteboard:shape";
@@ -147,6 +166,63 @@ export class CanvasShapeTool extends ShapeTool {
     super.pointerMove(event);
   }
   override pointerOut() { this.clearOverlay(); this.awaitingPointer = true; }
+  // Like a new note, a new shape opens ready for its label, so drawing and
+  // typing stays one motion; Escape keeps it selected.
+  override click(event: PointerEventState) {
+    super.click(event);
+    // Clicked shapes are centred on the pointer at the shared default size,
+    // like notes (the engine anchored a smaller shape's corner there).
+    const [shape] = this.gfx.selection.selectedElements;
+    if (shape instanceof ShapeElementModel && this.gfx.selection.selectedElements.length === 1) {
+      const name = (this.activatedOption as { shapeName?: string }).shapeName ?? "rect";
+      const size = SHAPE_SIZE[name] ?? SHAPE_SIZE.rect;
+      const [x, y] = this.gfx.viewport.toModelCoord(event.x, event.y);
+      this.std.store.transact(() => { shape.xywh = new Bound(x - size.w / 2, y - size.h / 2, size.w, size.h).serialize(); });
+    }
+    this.editCreated();
+  }
+  override dragEnd() { super.dragEnd(); this.editCreated(); }
+  private editCreated() {
+    const [shape] = this.gfx.selection.selectedElements;
+    const root = this.std.view.getBlock(this.std.store.root!.id);
+    if (this.gfx.selection.selectedElements.length !== 1 || !(shape instanceof ShapeElementModel) || !root || this.std.store.readonly) return;
+    mountShapeTextEditor(shape, root);
+  }
+}
+
+/** The engine binds a connector dragged from the middle of one object to
+ * the middle of another to their first anchors (top to top), which routes
+ * an elbow over both. Ends dropped inside an object, away from any anchor,
+ * bind to the sides that face the other end instead. */
+export class CanvasConnectorTool extends ConnectorTool {
+  static override toolName = "whiteboard:connector";
+  private lastPoint: [number, number] | null = null;
+  override dragMove(event: PointerEventState) {
+    this.lastPoint = [event.x, event.y];
+    super.dragMove(event);
+  }
+  override dragEnd() {
+    const internals = this as unknown as { _connector: ConnectorElementModel | null; _startPoint: [number, number] | null };
+    const connector = internals._connector;
+    const start = internals._startPoint;
+    const end = this.lastPoint ? this.gfx.viewport.toModelCoord(...this.lastPoint) : null;
+    super.dragEnd();
+    this.lastPoint = null;
+    if (!connector || !start || !end || !connector.source?.id || !connector.target?.id) return;
+    const sourceModel = this.gfx.getElementById<GfxModel>(connector.source.id);
+    const targetModel = this.gfx.getElementById<GfxModel>(connector.target.id);
+    if (!sourceModel || !targetModel) return;
+    const { source, target } = connectorEndPorts({
+      start, end,
+      source: sourceModel.elementBound, target: targetModel.elementBound,
+      sourcePort: connector.source.position, targetPort: connector.target.position,
+      zoom: this.gfx.viewport.zoom,
+    });
+    this.gfx.updateElement(connector, {
+      source: { id: connector.source.id, position: source },
+      target: { id: connector.target.id, position: target },
+    });
+  }
 }
 
 export class StickyTool extends BaseTool<{ color: string }> {
@@ -222,6 +298,12 @@ export class StickyTool extends BaseTool<{ color: string }> {
   }
 }
 
+const isFrame = (model: unknown) =>
+  Boolean(model && typeof model === "object" && "flavour" in model &&
+    (model as { flavour: string }).flavour === "affine:frame");
+/** Member of a real group or mind map (frames only contain their children). */
+const isGrouped = (model: GfxModel) => Boolean(model.group) && !isFrame(model.group);
+
 export type CanvasItem = {
   id: string;
   kind: string;
@@ -232,6 +314,8 @@ export type CanvasItem = {
   h: number;
   color: string;
   locked: boolean;
+  /** Paper used in dark mode (equals color for custom colors). */
+  colorDark: string;
   /** Whether every character of the note's text has each style. */
   marks: Record<TextMark, boolean>;
   /** The text color shared by all of the note's text, or null. */
@@ -263,10 +347,36 @@ export function createCanvasController(editor: WhiteboardEditorElement) {
     !store.readonly &&
     !editor.closest<HTMLElement>(".editor-canvas")?.inert;
   let editing: { id: string } | null = null;
+  // The first time this person finishes writing a note they created in
+  // this session, the app may offer to keep it private (brainstorms).
+  const commits = createNoteCommitTracker();
+  store.slots.blockUpdated.subscribe((event) => {
+    if (event.type === "add" && event.flavour === "affine:note") commits.added(event.id, event.isLocal, event.init);
+  });
+  const reportCommitted = (id: string) => {
+    // Restarting the same edit (or moving straight into it) is not an end.
+    if (editing?.id === id || !editor.isConnected) return;
+    const model = gfx.getElementById<GfxModel>(id);
+    const note = model && item(model);
+    if (!note || note.kind !== "note" || !note.simpleSticky) return;
+    if (commits.ended(id, note.text)) {
+      const read = () => {
+        const current = gfx.getElementById<GfxModel>(id);
+        const value = current && item(current);
+        return value?.kind === "note" && value.simpleSticky ? value.text : null;
+      };
+      window.dispatchEvent(new CustomEvent("whiteboard-note-committed", { detail: { id, text: note.text, read } }));
+    }
+  };
   const clearEditing = () => {
+    const ended = editing?.id;
     editing = null;
+    if (ended) queueMicrotask(() => reportCommitted(ended));
   };
   let cachedItems: CanvasItem[] | null = null;
+  /** History work still in flight (a duplicate's clone). */
+  let pendingHistoryWork: Promise<unknown> | null = null;
+  let lastNudge: { at: number; key: string } | null = null;
   const listeners = new Set<() => void>();
   const notify = () => listeners.forEach((listener) => listener());
   const item = (model: GfxModel): CanvasItem => {
@@ -294,10 +404,17 @@ export function createCanvasController(editor: WhiteboardEditorElement) {
       deltas.every((part) => test((part.attributes ?? {}) as Record<string, unknown>));
     const firstColor = deltas[0]?.attributes?.color;
     const color = props.background ?? props.fillColor;
+    // Note paper renders through the palette (see create-editor); other
+    // objects keep their stored colours exactly.
+    const paper = kind === "note" ? resolveStickyPaper(color) : undefined;
     const bg =
-      color && typeof color === "object"
+      paper?.light ?? (color && typeof color === "object"
         ? (color as { light?: string }).light
-        : color;
+        : color);
+    const bgDark = paper?.dark ?? (color && typeof color === "object"
+      ? (color as { dark?: string }).dark
+      : color);
+    const locked = model.isLocked();
     return {
       id: model.id,
       kind,
@@ -307,8 +424,12 @@ export function createCanvasController(editor: WhiteboardEditorElement) {
       w: bound.w,
       h: bound.h,
       color: typeof bg === "string" && bg.startsWith("#") ? bg : "#e5eaf4",
+      colorDark: typeof bgDark === "string" && bgDark.startsWith("#") ? bgDark
+        : typeof bg === "string" && bg.startsWith("#") ? bg : "#e5eaf4",
       locked: Boolean(props.lockedBySelf ?? props.locked),
-      arrangeable: !model.isLocked() && !model.group && !["connector", "frame", "group", "mindmap"].includes(kind),
+      // Frames contain objects without grouping them: their children can be
+      // arranged and stay in the frame. Real groups move as one object.
+      arrangeable: canArrange({ kind, locked, inGroup: isGrouped(model) }),
       marks: Object.fromEntries(
         TEXT_MARKS.map((mark) => [mark, every((attributes) => Boolean(attributes[mark]))]),
       ) as Record<TextMark, boolean>,
@@ -336,20 +457,17 @@ export function createCanvasController(editor: WhiteboardEditorElement) {
     shape: "shape",
     "whiteboard:shape": "shape",
     connector: "connector",
+    "whiteboard:connector": "connector",
     brush: "pen",
     eraser: "eraser",
     frame: "frame",
   };
   const fit = (ids?: string[]) => {
     editor.dispatchEvent(new Event("whiteboard-manual-navigation"));
-    const models = ids
-      ?.map((id) => gfx.getElementById<GfxModel>(id))
+    const models = (ids ?? gfx.gfxElements.map((model) => model.id))
+      .map((id) => gfx.getElementById<GfxModel>(id))
       .filter((model): model is GfxModel => Boolean(model));
-    gfx.fitToScreen({
-      bounds: models?.map((m) => m.elementBound),
-      smooth: true,
-      padding: canvasFitPadding(canvasHost),
-    });
+    fitCanvas(canvasHost, gfx.viewport, unionBounds(models.map((m) => m.elementBound)), true);
   };
   const reveal = (id: string) => {
     const model = gfx.getElementById<GfxModel>(id);
@@ -398,7 +516,7 @@ export function createCanvasController(editor: WhiteboardEditorElement) {
         editor.std.get(EditPropsStore).recordLastProps("connector", {
           stroke: { light: "#5c6980", dark: "#aab7cf" },
         });
-        gfx.tool.setTool(ConnectorTool, { mode: options.line });
+        gfx.tool.setTool(CanvasConnectorTool, { mode: options.line });
         break;
       case "pen":
         editor.std.get(EditPropsStore).recordLastProps("brush", {
@@ -497,6 +615,38 @@ export function createCanvasController(editor: WhiteboardEditorElement) {
       });
     }
     return true;
+  };
+  const editText = (id: string) => {
+    const model = gfx.getElementById<GfxModel>(id);
+    const root = editor.std.view.getBlock(store.root!.id);
+    if (!editable() || !(model instanceof TextElementModel) || model.isLocked() || !root) return false;
+    mountTextElementEditor(model, root);
+    return true;
+  };
+  /** Move fresh duplicates beside their originals, clear of other objects
+   * (the engine drops them at a fixed offset, often on top of the next note). */
+  const placeCopies = (originalIds: Set<string>, originals: GfxModel[]) => {
+    const copies = gfx.selection.selectedElements.filter((model) => !originalIds.has(model.id));
+    const source = unionBounds(originals.map((model) => model.elementBound));
+    const current = unionBounds(copies.map((model) => model.elementBound));
+    if (!copies.length || !source || !current) return;
+    const copyIds = new Set(copies.map((model) => model.id));
+    const obstacles = connectionObstacles().filter((box) => !copyIds.has(box.id) && box.kind !== "frame");
+    const { dx, dy } = duplicatePlacement(source, obstacles);
+    const shiftX = source.x + dx - current.x, shiftY = source.y + dy - current.y;
+    if (!shiftX && !shiftY) return;
+    const moved = new Set<GfxModel>(copies);
+    for (const model of copies)
+      if (isGfxGroupCompatibleModel(model)) for (const child of model.descendantElements) moved.add(child as GfxModel);
+    store.transact(() => {
+      for (const model of moved) {
+        const bound = Bound.deserialize(model.xywh);
+        bound.x += shiftX;
+        bound.y += shiftY;
+        if (model instanceof ConnectorElementModel) model.moveTo(bound);
+        else model.xywh = bound.serialize();
+      }
+    });
   };
   const addNotes = (texts: string[], color: string) => {
     if (!editable() || !texts.length) return;
@@ -619,6 +769,9 @@ export function createCanvasController(editor: WhiteboardEditorElement) {
   return {
     editable,
     connectionPreview,
+    toModelPoint(x: number, y: number) {
+      return gfx.viewport.toModelCoord(x, y);
+    },
     toViewBox(box: { x: number; y: number; w: number; h: number }) {
       const [x, y] = gfx.viewport.toViewCoord(box.x, box.y);
       return {
@@ -628,24 +781,38 @@ export function createCanvasController(editor: WhiteboardEditorElement) {
         h: box.h * gfx.viewport.zoom,
       };
     },
+    /** Create a note, shape or text at a view point. With findSpace (keyboard
+     * placement) the object moves to the nearest free spot instead of landing
+     * on top of existing content, and the view follows it. */
     placeTool(
-      tool: "sticky" | "shape",
+      tool: "sticky" | "shape" | "text",
       x: number,
       y: number,
       options: CanvasOptions,
+      { findSpace = false }: { findSpace?: boolean } = {},
     ) {
       if (!editable()) return;
       clearEditing();
       const [mx, my] = gfx.viewport.toModelCoord(x, y);
+      const size = tool === "sticky" ? { w: 208, h: 208 } : tool === "shape" ? SHAPE_SIZE[options.shape] ?? SHAPE_SIZE.rect : { w: 32, h: 32 };
+      let box = { id: "new", x: mx - size.w / 2, y: my - size.h / 2, ...size };
+      if (findSpace) box = findOpenPosition(box, connectionObstacles(), 32);
       store.captureSync();
       let id: string;
       if (tool === "sticky")
-        id = createSticky(editor, mx - 104, my - 104, options.color).id;
-      else {
+        id = createSticky(editor, box.x, box.y, options.color).id;
+      else if (tool === "text") {
+        const textId = crud.addElement("text", {
+          xywh: new Bound(box.x, box.y, size.w, size.h).serialize(),
+          text: new Y.Text(),
+        });
+        if (!textId) return;
+        id = textId;
+      } else {
         const shapeId = crud.addElement("shape", {
           shapeType: getShapeType(options.shape),
           radius: options.shape === "roundedRect" ? 0.1 : 0,
-          xywh: new Bound(mx - 100, my - 64, 200, 128).serialize(),
+          xywh: new Bound(box.x, box.y, size.w, size.h).serialize(),
           fillColor: { light: "#ffffff", dark: "#283347" },
           color: { light: "#23304a", dark: "#eef2fb" },
           strokeColor: { light: "#425574", dark: "#b9c5dc" },
@@ -659,8 +826,20 @@ export function createCanvasController(editor: WhiteboardEditorElement) {
       store.captureSync();
       gfx.tool.setTool(DefaultTool);
       gfx.selection.set({ elements: [id] });
+      if (findSpace) reveal(id);
+      // Placed objects open ready to type, as when drawn with the pointer.
       if (tool === "sticky") startEditing(id);
-      else notify();
+      else if (tool === "text") editText(id);
+      else {
+        const shape = gfx.getElementById<GfxModel>(id);
+        if (shape) editShape(shape);
+        notify();
+      }
+    },
+    /** Write in the selected text element (Enter). */
+    editSelectedText() {
+      const selected = gfx.selection.selectedElements;
+      return selected.length === 1 && selected[0] instanceof TextElementModel ? editText(selected[0].id) : false;
     },
     isEditing: () => Boolean(editing) || gfx.selection.editing,
     startEditing,
@@ -697,7 +876,12 @@ export function createCanvasController(editor: WhiteboardEditorElement) {
         gfx.selection.selectedElements.length === 1 ? gfx.selection.selectedElements[0] : null;
       if (!source || !item(source).simpleSticky || source.isLocked()) return false;
       const old = item(source);
-      const position = findOpenPosition({ ...old, x: old.x + old.w + 32, h: old.w }, connectionObstacles());
+      // Stay inside the source's frame (wrapping rows, growing the frame);
+      // never cross into another frame.
+      const frame = isFrame(source.group) ? (source.group as unknown as GfxModel) : null;
+      const frames = gfx.gfxElements.filter((model) => isFrame(model) && model !== frame).map(item);
+      const placement = nextNotePlacement(old, connectionObstacles(), frames, frame ? item(frame) : null);
+      const position = placement.box;
       store.captureSync();
       const appearance = "props" in source
         ? source.props as { background?: unknown; edgeless?: Record<string, unknown> }
@@ -707,6 +891,14 @@ export function createCanvasController(editor: WhiteboardEditorElement) {
       let next!: ReturnType<typeof createSticky>;
       store.transact(() => {
         next = createSticky(editor, position.x, position.y, old.color, "", { w: position.w, h: position.h }, appearance);
+        if (frame) {
+          if (placement.frameHeight) {
+            const bound = frame.elementBound;
+            crud.updateElement(frame.id, { xywh: new Bound(bound.x, bound.y, bound.w, placement.frameHeight).serialize() });
+          }
+          const created = store.getModelById(next.id);
+          if (created) (frame as unknown as { addChild?: (model: unknown) => void }).addChild?.(created);
+        }
       });
       store.captureSync();
       startEditing(next.id);
@@ -768,6 +960,30 @@ export function createCanvasController(editor: WhiteboardEditorElement) {
         editing: editing && editingModel ? item(editingModel) : null,
       };
     },
+    selectedIds: () => gfx.selection.selectedIds,
+    /** The camera as it is saved per person: model centre and zoom. */
+    camera: () => ({ x: gfx.viewport.centerX, y: gfx.viewport.centerY, zoom: gfx.viewport.zoom }),
+    /** View changes only (pan, zoom, selection, content), at most once per
+     * frame, for overlays such as comment pins. Unlike subscribe it adds no
+     * editing or label listeners. */
+    subscribeView(onChange: () => void) {
+      let frame = 0;
+      const schedule = () => {
+        if (!frame) frame = requestAnimationFrame(() => { frame = 0; onChange(); });
+      };
+      const viewport = gfx.viewport.viewportUpdated.subscribe(schedule);
+      const selection = gfx.selection.slots.updated.subscribe(schedule);
+      const blocks = store.slots.blockUpdated.subscribe(schedule);
+      const doc = store.spaceDoc;
+      doc.on("update", schedule);
+      return () => {
+        cancelAnimationFrame(frame);
+        viewport.unsubscribe();
+        selection.unsubscribe();
+        blocks.unsubscribe();
+        doc.off("update", schedule);
+      };
+    },
     subscribe(onChange: () => void) {
       listeners.add(onChange);
       let frame = 0;
@@ -780,7 +996,11 @@ export function createCanvasController(editor: WhiteboardEditorElement) {
       };
       const a = gfx.viewport.viewportUpdated.subscribe(schedule);
       const b = gfx.selection.slots.updated.subscribe(() => {
-        if (editing && !gfx.selection.selectedIds.includes(editing.id))
+        // Shift-clicking another object while writing extends the selection;
+        // it must also end the edit, as one note cannot stay a text cursor
+        // inside a multi-selection.
+        if (editing && (!gfx.selection.selectedIds.includes(editing.id) ||
+            gfx.selection.selectedIds.length > 1))
           clearEditing();
         schedule();
       });
@@ -828,8 +1048,10 @@ export function createCanvasController(editor: WhiteboardEditorElement) {
       editor.addEventListener("blur", commitConnectorLabel, true);
       doc.on("update", documentUpdated);
       return () => {
-        clearEditing();
         listeners.delete(onChange);
+        // The board chrome owns editing; other subscribers (comment pins)
+        // must not end an edit when they unmount.
+        if (!listeners.size) clearEditing();
         cancelAnimationFrame(frame);
         a.unsubscribe();
         b.unsubscribe();
@@ -853,10 +1075,14 @@ export function createCanvasController(editor: WhiteboardEditorElement) {
       gfx.viewport.setZoom(value);
     },
     undo() {
-      if (editable()) store.undo();
+      if (!editable()) return;
+      if (pendingHistoryWork) void pendingHistoryWork.then(() => { if (editable()) store.undo(); }, () => undefined);
+      else store.undo();
     },
     redo() {
-      if (editable()) store.redo();
+      if (!editable()) return;
+      if (pendingHistoryWork) void pendingHistoryWork.then(() => { if (editable()) store.redo(); }, () => undefined);
+      else store.redo();
     },
     async uploadImage(file: File) {
       if (!editable()) return;
@@ -884,12 +1110,242 @@ export function createCanvasController(editor: WhiteboardEditorElement) {
           }),
         );
       store.captureSync();
-      if (ids.length) fit(ids);
+      if (ids.length) {
+        gfx.tool.setTool(DefaultTool);
+        gfx.selection.set({ elements: ids, editing: false });
+        fit(ids);
+      }
     },
     select(id: string) {
       gfx.tool.setTool(DefaultTool);
       gfx.selection.set({ elements: [id] });
       fit([id]);
+    },
+    /** Step the zoom to the next recognisable level, around the view centre. */
+    zoomStep(direction: 1 | -1) {
+      this.zoom(steppedZoom(gfx.viewport.zoom, direction));
+    },
+    fitSelection() {
+      const ids = gfx.selection.selectedIds;
+      if (ids.length) fit(ids);
+      return ids.length > 0;
+    },
+    selectionContains(viewX: number, viewY: number) {
+      const [x, y] = gfx.viewport.toModelCoord(viewX, viewY);
+      return gfx.selection.selectedElements.length > 0 && gfx.selection.isInSelectedRect(x, y);
+    },
+    /** Right-click target: keep a selection that contains the point, else
+     * select what is under it (or nothing on empty canvas). */
+    selectForContextMenu(viewX: number, viewY: number, before: string[] = []) {
+      clearEditing();
+      const [x, y] = gfx.viewport.toModelCoord(viewX, viewY);
+      const hits = gfx.getElementByPoint(x, y, { all: true }) as GfxModel[];
+      // The engine reduces a multi-selection to the pressed object on a
+      // secondary press. Right-clicking inside a selection keeps all of it.
+      const previous = before.map((id) => gfx.getElementById<GfxModel>(id)).filter((model): model is GfxModel => Boolean(model));
+      const union = unionBounds(previous.map((model) => model.elementBound));
+      if (previous.length > 1 && union && x >= union.x && x <= union.x + union.w && y >= union.y && y <= union.y + union.h &&
+          hits.some((hit) => before.includes(hit.id) || before.includes(hit.group?.id ?? ""))) {
+        gfx.selection.set({ elements: before, editing: false });
+        notify();
+        return before;
+      }
+      const selected = gfx.selection.selectedElements;
+      if (selected.length && (gfx.selection.isInSelectedRect(x, y) || hits.some((hit) => gfx.selection.has(hit.id)))) {
+        notify();
+        return selected.map((model) => model.id);
+      }
+      // A frame's interior counts as canvas, like right-drag panning does.
+      const hit = topmostObject(hits);
+      // A grouped object is selected through its outermost group.
+      let target: GfxModel | null = hit;
+      while (target && isGrouped(target)) target = target.group as unknown as GfxModel;
+      gfx.tool.setTool(DefaultTool);
+      gfx.selection.set({ elements: target ? [target.id] : [], editing: false });
+      return target ? [target.id] : [];
+    },
+    /** Keyboard traversal: select the next/previous object in reading order. */
+    selectAdjacent(direction: 1 | -1) {
+      clearEditing();
+      // Cheap checks only: this runs on every Tab, also on very large boards.
+      const models = readingOrder(gfx.gfxElements
+        .filter((model) => !isGrouped(model) && !(model instanceof ConnectorElementModel) &&
+          !("props" in model && (model.props as { displayMode?: NoteDisplayMode }).displayMode === NoteDisplayMode.DocOnly))
+        .map((model) => { const bound = model.elementBound; return { id: model.id, x: bound.x, y: bound.y, w: bound.w, h: bound.h }; }));
+      if (!models.length) return false;
+      const current = gfx.selection.selectedIds.length === 1
+        ? models.findIndex((model) => model.id === gfx.selection.selectedIds[0]) : -1;
+      const next = current < 0 ? (direction > 0 ? 0 : models.length - 1) : current + direction;
+      if (next < 0 || next >= models.length) return false;
+      gfx.tool.setTool(DefaultTool);
+      gfx.selection.set({ elements: [models[next].id], editing: false });
+      reveal(models[next].id);
+      return true;
+    },
+    reorderSelection(direction: "front" | "back") {
+      const selected = gfx.selection.selectedElements.filter((model) => !model.isLocked());
+      if (!editable() || !selected.length) return;
+      // Objects reorder among their siblings: a group's or frame's children,
+      // or the top-level objects. Each sibling set moves as one block.
+      const sets = new Map<GfxModel | null, GfxModel[]>();
+      for (const model of selected) sets.set(model.group as GfxModel | null, [...(sets.get(model.group as GfxModel | null) ?? []), model]);
+      const changes = new Map<string, string>();
+      for (const [group, models] of sets) {
+        const siblings = group && "childElements" in group
+          ? (group as unknown as { childElements: GfxModel[] }).childElements
+          : gfx.gfxElements.filter((model) => !model.group);
+        const indexed = (list: GfxModel[]) => list.map((model) => ({ id: model.id, index: model.index }));
+        for (const [id, index] of layerOrder(indexed(siblings), indexed(models), direction)) changes.set(id, index);
+      }
+      if (!changes.size) return;
+      store.captureSync();
+      store.transact(() => {
+        for (const model of selected) {
+          const index = changes.get(model.id);
+          if (index) model.index = index;
+        }
+      });
+      store.captureSync();
+    },
+    deleteSelection() {
+      const selected = gfx.selection.selectedElements;
+      if (!editable() || !selected.length || selected.some((model) => model.isLocked())) return;
+      clearEditing();
+      // Like the Delete key: attached connectors go with their objects.
+      const ids = new Set(selected.map((model) => model.id));
+      for (const model of gfx.gfxElements)
+        if (model instanceof ConnectorElementModel &&
+            (ids.has(model.source.id ?? "") || ids.has(model.target.id ?? ""))) ids.add(model.id);
+      store.captureSync();
+      store.transact(() => ids.forEach((id) => { if (gfx.getElementById(id)) crud.removeElement(id); }));
+      store.captureSync();
+      gfx.selection.clear();
+    },
+    /** End an engine text edit (text element, shape or connector label)
+     * and keep what was being edited selected. */
+    async exitNativeEditing() {
+      const ids = [...gfx.selection.selectedIds];
+      const active = document.activeElement;
+      if (active instanceof HTMLElement) active.blur();
+      // The editor tears down on blur, clearing the selection (and deleting
+      // an empty text); once it has gone, select what is left.
+      const editorOpen = () =>
+        Boolean(editor.querySelector("edgeless-text-editor, edgeless-shape-text-editor, edgeless-connector-label-editor"));
+      for (let frame = 0; frame < 10; frame++) {
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        if (!editorOpen()) break;
+      }
+      const remaining = ids.filter((id) => gfx.getElementById(id));
+      gfx.selection.set({ elements: remaining, editing: false });
+    },
+    /** Move the view by screen pixels (positive moves content left/up). */
+    panBy(dx: number, dy: number) {
+      editor.dispatchEvent(new Event("whiteboard-manual-navigation"));
+      gfx.viewport.smoothTranslate(gfx.viewport.centerX + dx / gfx.viewport.zoom, gfx.viewport.centerY + dy / gfx.viewport.zoom);
+    },
+    /** Move the selection by board units as one undoable step; rapid nudges
+     * of the same selection merge into a single step. Groups and frames move
+     * with their contents; attached connectors follow their objects. */
+    nudge(dx: number, dy: number) {
+      const selected = gfx.selection.selectedElements;
+      if (!editable() || !selected.length || gfx.selection.editing || selected.some((model) => model.isLocked())) return false;
+      const moved = new Set<GfxModel>(selected);
+      for (const model of selected)
+        if (isGfxGroupCompatibleModel(model)) for (const child of model.descendantElements) moved.add(child as GfxModel);
+      const key = selected.map((model) => model.id).sort().join(",");
+      const now = performance.now();
+      if (startsNewStep(lastNudge, now, key)) store.captureSync();
+      lastNudge = { at: now, key };
+      store.transact(() => {
+        for (const model of moved) {
+          const bound = Bound.deserialize(model.xywh);
+          bound.x += dx;
+          bound.y += dy;
+          if (model instanceof ConnectorElementModel) model.moveTo(bound);
+          else model.xywh = bound.serialize();
+        }
+      });
+      return true;
+    },
+    /** Raw style props of the selected objects, for toolbar state. */
+    selectedProps() {
+      return gfx.selection.selectedElements.map((model) => {
+        const props = "props" in model && model.props && typeof model.props === "object"
+          ? (model.props as unknown as Record<string, unknown>)
+          : (model as unknown as Record<string, unknown>);
+        const read = (key: string) => props[key];
+        return {
+          id: model.id,
+          kind: item(model).kind,
+          locked: model.isLocked(),
+          get: read,
+          hasLabel: model instanceof ConnectorElementModel ? Boolean(model.text?.length) : false,
+        };
+      });
+    },
+    /** Apply style props to the selected objects of the given kinds as one
+     * undo step. The patch may depend on each object. */
+    styleSelection(kinds: string[], patch: Record<string, unknown> | ((model: GfxModel) => Record<string, unknown> | null)) {
+      const targets = gfx.selection.selectedElements.filter((model) => kinds.includes(item(model).kind) && !model.isLocked());
+      if (!editable() || !targets.length) return;
+      store.captureSync();
+      store.transact(() => {
+        for (const model of targets) {
+          const props = typeof patch === "function" ? patch(model) : patch;
+          if (props) crud.updateElement(model.id, props);
+        }
+      });
+      store.captureSync();
+      notify();
+    },
+    /** Write in the selection's own text: a shape's or text's content, a
+     * connector's label, or a frame's or group's title. */
+    editSelectionLabel() {
+      const [model] = gfx.selection.selectedElements;
+      const root = editor.std.view.getBlock(store.root!.id);
+      if (!editable() || !model || gfx.selection.selectedElements.length !== 1 || model.isLocked() || !root) return false;
+      if (model instanceof ShapeElementModel) return editShape(model);
+      if (model instanceof TextElementModel) return editText(model.id);
+      if (model instanceof ConnectorElementModel) { store.captureSync(); mountConnectorLabelEditor(model, root); return true; }
+      if (model instanceof GroupElementModel) { mountGroupTitleEditor(model, root); return true; }
+      if (isFrame(model)) { mountFrameTitleEditor(model as unknown as Parameters<typeof mountFrameTitleEditor>[0], root); return true; }
+      return false;
+    },
+    /** Resize the selected frame to wrap its contents (and its title). */
+    fitFrameToContent() {
+      const [frame] = gfx.selection.selectedElements;
+      if (!editable() || !frame || !isFrame(frame) || frame.isLocked()) return;
+      const children = (frame as unknown as { childElements: GfxModel[] }).childElements ?? [];
+      const bounds = frameFitBounds(children.map((child) => child.elementBound), 40);
+      if (!bounds) return;
+      store.captureSync();
+      crud.updateElement(frame.id, { xywh: new Bound(bounds.x, bounds.y, bounds.w, bounds.h).serialize() });
+      store.captureSync();
+      notify();
+    },
+    /** Save the selected image as a file. */
+    async downloadImage() {
+      const [model] = gfx.selection.selectedElements;
+      const sourceId = model && "props" in model ? (model.props as { sourceId?: string }).sourceId : undefined;
+      if (!sourceId) return false;
+      const blob = await store.blobSync.get(sourceId);
+      if (!blob) return false;
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `image.${(blob.type.split("/")[1] ?? "png").replace("jpeg", "jpg").replace("svg+xml", "svg")}`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      return true;
+    },
+    /** Rotate shapes, texts and images by a quarter turn (notes do not rotate). */
+    rotateSelection(degrees = 90) {
+      this.styleSelection(["shape", "text", "image"], (model) => ({
+        rotate: (((model as unknown as { rotate?: number }).rotate ?? 0) + degrees) % 360,
+      }));
+    },
+    clearSelection() {
+      if (gfx.selection.selectedIds.length) gfx.selection.clear();
     },
     selectAll() {
       clearEditing();
@@ -905,7 +1361,7 @@ export function createCanvasController(editor: WhiteboardEditorElement) {
         gfx.selection.selectedElements.forEach((model) => {
           if (item(model).kind === "note" && !item(model).locked)
             crud.updateElement(model.id, {
-              background: { light: color, dark: color },
+              background: stickyPaper(color),
             });
         }),
       );
@@ -919,16 +1375,22 @@ export function createCanvasController(editor: WhiteboardEditorElement) {
       ) as EdgelessRootBlockComponent | null;
       if (root) {
         store.captureSync();
-        await duplicate(root, gfx.selection.selectedElements);
-        store.captureSync();
+        // Cloning finishes asynchronously; undo waits for it so the copy is
+        // one closed history step, even when Cmd/Ctrl+Z follows at once.
+        const originals = [...gfx.selection.selectedElements];
+        const originalIds = new Set(originals.map((model) => model.id));
+        const work = duplicate(root, originals).then(() => placeCopies(originalIds, originals)).finally(() => {
+          store.captureSync();
+          if (pendingHistoryWork === work) pendingHistoryWork = null;
+        });
+        pendingHistoryWork = work;
+        await work;
         notify();
       }
     },
     lockSelection() {
       if (!editable()) return;
-      const notes = gfx.selection.selectedElements.filter(
-        (model) => item(model).kind === "note",
-      );
+      const notes = gfx.selection.selectedElements;
       const lock = notes.some((model) => !item(model).locked);
       // The rich editor writes straight to the note, so a locked note must
       // stop being edited.

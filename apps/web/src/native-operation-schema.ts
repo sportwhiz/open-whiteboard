@@ -14,6 +14,7 @@ export const noteColor = z.enum([
   'green',
   'blue',
   'purple',
+  'pink',
 ]);
 export const anchor = z.union([
   z.enum(['top', 'right', 'bottom', 'left']),

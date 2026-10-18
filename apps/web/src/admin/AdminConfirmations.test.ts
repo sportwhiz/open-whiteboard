@@ -1,0 +1,21 @@
+import { describe, expect, it } from "vitest";
+import { mfaRequirementMessage, roleChangeConsequences } from "./AdminConfirmations";
+
+describe("administrative confirmation copy", () => {
+  it("mentions setting up a second factor only for a new administrator without one", () => {
+    const without = roleChangeConsequences({ name: "Mia", from: "member", to: "admin", hasSecondFactor: false });
+    expect(without[0]).toBe("Mia will be signed out on all devices.");
+    expect(without).toContain("Administrators must use a passkey or authenticator app, so Mia will be asked to set one up at the next sign-in.");
+    const withFactor = roleChangeConsequences({ name: "Mia", from: "member", to: "admin", hasSecondFactor: true });
+    expect(withFactor.join(" ")).not.toContain("passkey");
+  });
+  it("states the loss of administration and the limits of the guest role", () => {
+    const lines = roleChangeConsequences({ name: "Ada", from: "admin", to: "guest", hasSecondFactor: true }).join(" ");
+    expect(lines).toContain("Ada will lose access to Studio administration.");
+    expect(lines).toContain("can’t create folders or workbooks");
+  });
+  it("counts people without a second factor", () => {
+    expect(mfaRequirementMessage(1)).toMatch(/^1 person doesn’t have/);
+    expect(mfaRequirementMessage(3)).toMatch(/^3 people don’t have/);
+  });
+});

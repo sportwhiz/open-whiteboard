@@ -4,6 +4,7 @@ import {
   type AccountDraft,
 } from "./blocksuite/pending-board";
 import { authSnapshot } from "./auth-client";
+import { clearBoardDrafts } from "./collaboration-drafts";
 import type { AuthBootstrap } from "./auth-client";
 export type DraftIdentity = { namespace: string; userId: string };
 export function draftIdentity(
@@ -37,14 +38,17 @@ export function registerDraftDecision(listener: typeof decide) {
 export async function prepareAccountExit(identity: DraftIdentity) {
   await flushLocalDrafts();
   const drafts = await listAccountDrafts(identity.namespace, identity.userId);
-  if (!drafts.length) return;
   if (
-    !decide ||
-    !(await new Promise<boolean>((resolve) =>
-      decide!({ identity, drafts, resolve }),
-    ))
+    drafts.length && (
+      !decide ||
+      !(await new Promise<boolean>((resolve) =>
+        decide!({ identity, drafts, resolve }),
+      ))
+    )
   )
     throw new Error("Sign-out canceled. Your local changes are still here.");
+  // Unsent comments and brainstorm ideas belong to this person only.
+  clearBoardDrafts();
 }
 export function requireDraftOwner(identity: DraftIdentity) {
   const current = draftIdentity(authSnapshot());

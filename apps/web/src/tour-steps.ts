@@ -57,7 +57,7 @@ export function tourSteps(
         "Give related ideas a home",
         "Workbooks collect related boards. Folders organize your workbooks. Open a workbook to see its boards and sharing options.",
         "Sharing a workbook gives access to the boards inside it.",
-        ".sidebar-section h2",
+        ".sidebar-section-title",
         { reveal: "studio-navigation" },
       ),
       step(

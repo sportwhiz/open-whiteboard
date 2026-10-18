@@ -140,3 +140,28 @@ describe('anonymous board isolation in the browser client',()=>{
   expect(dispatch).not.toHaveBeenCalled();expect(guest.guestEndedReason()).toBeUndefined();
  });
 });
+
+it('keeps Studio return navigation separate after switching accounts on a board', async () => {
+  vi.stubGlobal('location', new URL('https://canvas.example.com'));
+  vi.stubGlobal('BroadcastChannel', undefined);
+  let id = 'first';
+  let namespace = 'installation-one';
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ mode: 'native', cacheNamespace: namespace, user: { id }, account: { authVersion: 1 } })));
+  const auth = await import('./auth-client');
+  const { studioSessionKey } = await import('./studio-session');
+  await auth.bootstrapAuth();
+  const saved = new Map([
+    [studioSessionKey('return'), '/?q=private-search'],
+    [studioSessionKey('return-card'), 'private-board'],
+  ]);
+  id = 'second';
+  await auth.bootstrapAuth(true);
+  expect(saved.get(studioSessionKey('return'))).toBeUndefined();
+  expect(saved.get(studioSessionKey('return-card'))).toBeUndefined();
+  id = 'first';
+  await auth.bootstrapAuth(true);
+  expect(saved.get(studioSessionKey('return'))).toBe('/?q=private-search');
+  namespace = 'installation-two';
+  await auth.bootstrapAuth(true);
+  expect(saved.get(studioSessionKey('return'))).toBeUndefined();
+});

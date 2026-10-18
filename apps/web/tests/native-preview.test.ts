@@ -28,6 +28,21 @@ function surface(blocks: Y.Map<Y.Map<unknown>>) {
 }
 
 describe('bounded native board previews', () => {
+  it('shows legacy MCP note paper as the editor renders it', () => {
+    const first = applyNativeOperations(fixture(), [{ type: 'create_note', ref: 'note', text: 'Old', x: 0, y: 0 }]);
+    const legacy = edit(first.snapshot, blocks => {
+      const note = blocks.get(first.refs.note)!;
+      const background = new Y.Map<unknown>(); background.set('light', '#ddd6fe'); background.set('dark', '#312e81');
+      note.set('prop:background', background);
+    });
+    expect(readNativePreview(legacy).notes[0]).toMatchObject({ color: '#ded6ff' });
+    const custom = edit(first.snapshot, blocks => {
+      const background = new Y.Map<unknown>(); background.set('light', '#ddd6fe'); background.set('dark', '#101010');
+      blocks.get(first.refs.note)!.set('prop:background', background);
+    });
+    expect(readNativePreview(custom).notes[0]).toMatchObject({ color: '#ddd6fe' });
+  });
+
   it('retains geometry, colors, captions and connector ports without returning document or table bodies', () => {
     const first = applyNativeOperations(fixture(), [
       { type: 'create_frame', ref: 'frame', title: 'Process', x: -100, y: -100, width: 1300, height: 1000 },
@@ -41,7 +56,7 @@ describe('bounded native board previews', () => {
     expect(preview.elements.find(e => e.id === first.refs.note)).toMatchObject({ type: 'note', text: 'Start', xywh: '[0,0,208,208]' });
     expect(preview.elements.find(e => e.id === first.refs.doc)?.text).toBe('Research');
     expect(preview.elements.some(e => e.text === 'Backlog')).toBe(true);
-    expect(preview.notes.find(e => e.id === first.refs.note)).toMatchObject({ color: '#fde68a', collapsed: true });
+    expect(preview.notes.find(e => e.id === first.refs.note)).toMatchObject({ color: '#fff0a6', collapsed: true });
     expect(preview.shapes.find(e => e.id === first.refs.shape)?.shape).toBe('diamond');
     expect(preview.connectors[0]).toMatchObject({ source: { id: first.refs.note, position: [1, .5] }, target: { id: first.refs.shape, position: [0, .5] } });
     const encoded = JSON.stringify(preview);

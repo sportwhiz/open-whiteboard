@@ -52,6 +52,43 @@ export type PendingInvitation = {
   status: 'pending' | 'accepted' | 'revoked' | 'expired';
 };
 
+/** A Studio account an owner can share with, from the "Add people" search. */
+export type SharePerson = {
+  id: string;
+  name: string;
+  /** Username for local accounts, otherwise email. */
+  handle: string;
+  color: string;
+  avatarUrl: string | null;
+  /** Effective access on the resource being shared, if any. */
+  role: Role | null;
+  /** True when that access comes from the workbook rather than the board. */
+  inherited: boolean;
+};
+
+/** POST …/share with an existing account: access is granted at once. */
+export type DirectShareResult = {
+  granted: true;
+  /** False when the person already had this access or more; nothing was written. */
+  changed: boolean;
+  notified: boolean;
+  collaborator: Collaborator;
+};
+
+/** POST …/share with an address that has no Studio account: a one-time link. */
+export type InvitationLinkResult = {
+  granted: false;
+  id: string;
+  token: string;
+  email: string;
+  role: Exclude<Role, 'owner'>;
+  createdAt: string;
+  expiresAt: string;
+  status: 'pending';
+};
+
+export type ShareResult = DirectShareResult | InvitationLinkResult;
+
 const ROLE_RANK: Record<Role, number> = {
   viewer: 0,
   commenter: 1,

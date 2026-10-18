@@ -1,18 +1,20 @@
 import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "./auth-client";
-import { formatTimer, remainingTimerSeconds, timerSoundEnabled } from "./board-timer";
+import { formatTimer, timerSoundEnabled } from "./board-timer";
+import { useCountdown } from "./useCountdown";
 import type { WorkshopTimer } from "./room-collaboration";
 import { UiIcon } from "./UiIcon";
 
 /** The countdown and completion signal belong to the board, not its optional panel. */
-export function BoardTimer({ boardId, timer, canControl, online, onOpen }: {
+export function BoardTimer({ boardId, timer, kind = 'timer', canControl, online, onOpen }: {
   boardId: string;
   timer: WorkshopTimer | null;
+  /** A brainstorm deadline shows here too, without timer controls. */
+  kind?: 'timer' | 'brainstorm';
   canControl: boolean;
   online: boolean;
   onOpen: () => void;
 }) {
-  const [now, setNow] = useState(Date.now);
   const [finished, setFinished] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
@@ -20,16 +22,8 @@ export function BoardTimer({ boardId, timer, canControl, online, onOpen }: {
   const previous = useRef(timer);
   const sounded = useRef("");
   const audio = useRef<AudioContext | null>(null);
-  const seconds = remainingTimerSeconds(timer, Math.max(now, Date.now()));
-
-  useEffect(() => {
-    if (timer?.status !== "running") return;
-    const update = () => setNow(Date.now());
-    update();
-    const interval = window.setInterval(update, 1000);
-    document.addEventListener("visibilitychange", update);
-    return () => { window.clearInterval(interval); document.removeEventListener("visibilitychange", update); };
-  }, [timer?.status, timer?.endsAt]);
+  // Shared with the Workshop panel so both always show the same second.
+  const seconds = useCountdown(timer);
 
   useEffect(() => {
     // Browsers require a gesture before audio. Prepare once during board use;
@@ -81,7 +75,7 @@ export function BoardTimer({ boardId, timer, canControl, online, onOpen }: {
   }, [timer, seconds]);
 
   const control = async () => {
-    if (!timer || !canControl || !online || pendingRef.current) return;
+    if (!timer || !canControl || !online || pendingRef.current || seconds === 0) return;
     pendingRef.current = true; setPending(true); setError("");
     try {
       const response = await apiFetch(`/api/v1/boards/${encodeURIComponent(boardId)}/collaboration/commands`, {
@@ -100,11 +94,14 @@ export function BoardTimer({ boardId, timer, canControl, online, onOpen }: {
   if (!timer || ((timer.status === "ended" || (timer.status === "running" && seconds === 0)) && !completed)) return null;
   return <aside className={`board-timer ${completed ? "complete" : ""}`} aria-label="Board timer">
     <div className="board-timer-controls">
-      <button className="board-timer-open" type="button" onClick={onOpen} aria-label="Open timer" title={timer.label}>
+      <button className="board-timer-open" type="button" onClick={onOpen} aria-label={kind === "brainstorm" ? "Open brainstorm" : "Open timer"} title={timer.label}>
         <UiIcon name="clock" />
-        <span><strong role="timer" aria-live="off">{completed ? "Time’s up" : formatTimer(seconds)}</strong><small>{!online ? "Offline" : completed ? "Session finished" : timer.status === "paused" ? "Paused" : "Session timer"}</small></span>
+        <span><strong role="timer" aria-live="off">{completed ? "Time’s up" : formatTimer(seconds)}</strong><small>{!online ? "Offline" : completed ? (kind === "brainstorm" ? "Still collecting ideas" : `${timer.label || "Timer"} finished`) : timer.status === "paused" ? `Paused · ${timer.label || "Timer"}` : kind === "brainstorm" ? `Brainstorm · ${timer.label}` : timer.label || "Timer"}</small></span>
       </button>
-      {completed ? <button type="button" className="board-timer-action" aria-label="Dismiss finished timer" onClick={() => setFinished(null)}><UiIcon name="close" /></button> : canControl ? <button type="button" className="board-timer-action" aria-label={timer.status === "paused" ? "Resume timer" : "Pause timer"} title={timer.status === "paused" ? "Resume" : "Pause"} disabled={pending || !online || seconds === 0} onClick={() => void control()}><UiIcon name={timer.status === "paused" ? "play" : "pause"} /></button> : null}
+      {completed ? <button type="button" className="board-timer-action" aria-label="Dismiss finished timer" onClick={() => setFinished(null)}><UiIcon name="close" /></button> : canControl && kind === "timer" ? (
+        // aria-disabled keeps keyboard focus on the control while the request runs.
+        <button type="button" className="board-timer-action" aria-label={timer.status === "paused" ? "Resume timer" : "Pause timer"} title={!online ? "Reconnect to control the timer" : timer.status === "paused" ? "Resume" : "Pause"} aria-disabled={pending || !online || seconds === 0} aria-busy={pending} onClick={() => void control()}><UiIcon name={timer.status === "paused" ? "play" : "pause"} /></button>
+      ) : null}
     </div>
     {completed && <span className="sr-only" role="status">The session timer has finished.</span>}
     {error && <p role="alert">{error}</p>}

@@ -1,0 +1,34 @@
+/* A newly created invitation link, shown once, attached to its invitation. */
+.identity-row.invite-row { flex-wrap: wrap; }
+.invite-row > .identity-actions { flex: 0 0 auto; }
+.invite-link {
+  flex: 1 1 100%;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent-soft) 55%, var(--surface));
+}
+.invite-link-title { display: block; margin: 0 0 8px; font-size: 13px; font-weight: 600; }
+.invite-link-field { display: flex; gap: 8px; align-items: stretch; }
+.identity-settings .invite-link-field input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--surface);
+}
+.invite-link-field button { flex: 0 0 auto; white-space: nowrap; }
+.identity-settings .invite-link-field button.copied { color: var(--success, var(--accent)); }
+.invite-link p { margin: 8px 0 0; color: var(--text-secondary); font-size: 12px; line-height: 1.5; }
+.identity-settings .invite-link .identity-link { color: var(--accent); margin-top: 6px; padding: 2px 0; min-height: 0; border: 0; background: none; font-size: 12px; }
+.invite-history { margin-top: 18px; }
+.invite-history summary { cursor: pointer; color: var(--text-secondary); font-size: 13px; font-weight: 550; }
+.invite-history[open] summary { margin-bottom: 8px; }
+@media (max-width: 480px) {
+  .invite-link-field { flex-direction: column; }
+  .invite-row > .identity-actions { flex: 1 1 100%; justify-content: flex-start; }
+}
+/* Focus lands here after a revoked row disappears; no ring on a non-control. */
+.identity-section h2[tabindex="-1"]:focus, .identity-section[tabindex="-1"]:focus { outline: none; }

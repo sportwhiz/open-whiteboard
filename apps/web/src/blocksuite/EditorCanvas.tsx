@@ -8,11 +8,12 @@ import { IndexedDBBlobSource } from '@blocksuite/sync';
 import { GfxControllerIdentifier, type GfxModel } from '@blocksuite/std/gfx';
 
 import { createEditor, fitEditorToContent } from './create-editor';
-import { canvasFitPadding } from './canvas-layout';
+import { fitCanvas, visibleModelArea } from './canvas-layout';
 import { readBoardViewport, writeBoardViewport } from './board-viewport';
 import { createPresenceThrottle } from './presence-throttle';
 import { CanvasChrome } from './CanvasChrome';
-import { createCanvasController, type CanvasController } from './canvas-controller';
+import { CommentPins } from './CommentPins';
+import { createCanvasController, topmostObject, type CanvasController } from './canvas-controller';
 import { getStoreExtensions } from './store-extensions';
 import { HttpBlobSource } from './http-blob-source';
 import {
@@ -136,7 +137,16 @@ export function EditorCanvas({ boardId, bootstrap, onCollaboration, onConnection
             // Initial layout and native model normalization are persisted, but
             // they should not appear as the person's first undoable action.
             store.resetHistory();
-            setController(createCanvasController(editor));
+            const canvasController = createCanvasController(editor);
+            // Browser regression scripts inspect canvas state in development.
+            if (import.meta.env.DEV) {
+              const audit = window as unknown as { auditController?: CanvasController };
+              audit.auditController = canvasController;
+              abortController.signal.addEventListener('abort', () => {
+                if (audit.auditController === canvasController) delete audit.auditController;
+              }, { once: true });
+            }
+            setController(canvasController);
           });
         });
         gfxRef.current = gfx;
@@ -193,8 +203,12 @@ export function EditorCanvas({ boardId, bootstrap, onCollaboration, onConnection
           followedViewport = { ...viewport };
           moveViewport(viewport);
         };
+        // The board page shows who is being followed outside the canvas.
+        const announceFollowing = (userId: string | null) =>
+          window.dispatchEvent(new CustomEvent('whiteboard-following', { detail: { userId } }));
         const stopFollowing = (restore = true) => {
           if (followedPresentationId) ignoredPresentationId = followedPresentationId;
+          if (followingUserId) announceFollowing(null);
           followingUserId = null;
           followedPresentationId = null;
           followedViewport = null;
@@ -206,6 +220,7 @@ export function EditorCanvas({ boardId, bootstrap, onCollaboration, onConnection
           const person = latestCollaboration.participants.find(item => item.id === userId);
           if (!person) return;
           previousViewport ??= viewportRecord();
+          if (followingUserId !== userId) announceFollowing(userId);
           followingUserId = userId;
           followedViewport = null;
           followedPresentationId = presentationId ?? null;
@@ -217,13 +232,19 @@ export function EditorCanvas({ boardId, bootstrap, onCollaboration, onConnection
           const presentation = next.presentation;
           if (presentation?.status === 'running') {
             if (presentation.presenterId !== next.currentUserId && ignoredPresentationId !== presentation.id && followingUserId === null) {
-              followUser(presentation.presenterId, presentation.id);
+              // Never yank the view away from someone mid-sentence; the page
+              // offers "Join" for this presentation instead.
+              const active = document.activeElement;
+              const writing = active instanceof HTMLElement && host.contains(active) &&
+                (active.isContentEditable || Boolean(active.closest('.sticky-text-editor')));
+              if (writing) ignoredPresentationId = presentation.id;
+              else followUser(presentation.presenterId, presentation.id);
             }
             const frameId = presentation.frameIds[presentation.frameIndex];
             const frameKey = `${presentation.id}:${presentation.frameIndex}`;
             if (frameId && frameKey !== lastPresentedFrame && (followingUserId === presentation.presenterId || presentation.presenterId === next.currentUserId)) {
               const frame = store.getModelById(frameId);
-              if (frame && 'elementBound' in frame) gfx.fitToScreen({ bounds: [(frame as typeof frame & { elementBound: GfxModel['elementBound'] }).elementBound], smooth: true, padding: canvasFitPadding(host) });
+              if (frame && 'elementBound' in frame) fitCanvas(host, gfx.viewport, (frame as typeof frame & { elementBound: GfxModel['elementBound'] }).elementBound, true);
               lastPresentedFrame = frameKey;
             }
           } else if (followedPresentationId) {
@@ -543,7 +564,11 @@ export function EditorCanvas({ boardId, bootstrap, onCollaboration, onConnection
             socket.send(JSON.stringify({ type: 'laser', x, y }));
           }
         };
-        const followEvent = (event: Event) => followUser((event as CustomEvent<{ userId: string }>).detail.userId);
+        // "Join" passes the presentation, so following ends with it.
+        const followEvent = (event: Event) => {
+          const detail = (event as CustomEvent<{ userId: string; presentationId?: string }>).detail;
+          followUser(detail.userId, detail.presentationId);
+        };
         const stopFollowEvent = () => stopFollowing();
         const placeComment = () => { placingComment = true; setStatus('Click the canvas to anchor the comment'); };
         const positionComment = (event: PointerEvent) => {
@@ -551,15 +576,30 @@ export function EditorCanvas({ boardId, bootstrap, onCollaboration, onConnection
           placingComment = false;
           const bounds = host.getBoundingClientRect();
           const [x, y] = gfx.viewport.toModelCoord(event.clientX - bounds.left, event.clientY - bounds.top);
-          window.dispatchEvent(new CustomEvent('whiteboard-comment-position', { detail: { x, y, objectId: gfx.selection.selectedIds[0] ?? null } }));
+          // Attach to the object under the click (not whatever was selected
+          // before); a frame's open interior counts as canvas.
+          const hit = topmostObject(gfx.getElementByPoint(x, y, { all: true }) as GfxModel[]);
+          window.dispatchEvent(new CustomEvent('whiteboard-comment-position', { detail: { x, y, objectId: hit?.id ?? null } }));
           setStatus('Comment anchor placed');
         };
         const stopOnManualNavigation = () => { if (followingUserId) stopFollowing(false); };
         const focusAnchor = (event: Event) => {
           const anchor = (event as CustomEvent<{ x: number; y: number; objectId: string | null }>).detail;
           const model = anchor.objectId ? store.getModelById(anchor.objectId) : null;
-          if (model && 'elementBound' in model) gfx.fitToScreen({ bounds: [(model as typeof model & { elementBound: GfxModel['elementBound'] }).elementBound], smooth: true, padding: canvasFitPadding(host) });
+          if (model && 'elementBound' in model) fitCanvas(host, gfx.viewport, (model as typeof model & { elementBound: GfxModel['elementBound'] }).elementBound, true);
           else gfx.viewport.setCenter(anchor.x, anchor.y);
+        };
+        // The facilitator's live view for the collaboration panel (our own
+        // presence is not echoed back). Answers synchronously into the holder
+        // object: the visible model area, excluding a side panel that overlays
+        // the canvas, and its centre with the zoom.
+        const answerViewport = (event: Event) => {
+          const holder = (event as CustomEvent<Record<string, unknown> | null>).detail;
+          if (!holder || typeof holder !== 'object') return;
+          const area = visibleModelArea(host, gfx.viewport);
+          holder.viewport = { x: area.x + area.width / 2, y: area.y + area.height / 2, zoom: gfx.viewport.zoom };
+          holder.bounds = area;
+          holder.selection = [...gfx.selection.selectedIds];
         };
         const bringEveryone = () => {
           if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'attention', viewport: viewportRecord() }));
@@ -584,13 +624,15 @@ export function EditorCanvas({ boardId, bootstrap, onCollaboration, onConnection
         host.addEventListener('pointermove', sendPointer);
         host.addEventListener('pointerdown', positionComment, true);
         host.addEventListener('pointerdown', stopOnManualNavigation, true);
-        host.addEventListener('wheel', stopOnManualNavigation, { passive: true });
+        // Capture: the editor consumes wheel events before they bubble here.
+        host.addEventListener('wheel', stopOnManualNavigation, { passive: true, capture: true });
         editor.addEventListener('whiteboard-manual-navigation', stopOnManualNavigation);
         window.addEventListener('whiteboard-follow', followEvent);
         window.addEventListener('whiteboard-stop-following', stopFollowEvent);
         window.addEventListener('whiteboard-bring-everyone', bringEveryone);
         window.addEventListener('whiteboard-place-comment', placeComment);
         window.addEventListener('whiteboard-focus-anchor', focusAnchor);
+        window.addEventListener('whiteboard-viewport-query', answerViewport);
         window.addEventListener('keydown', keyDown, true);
         window.addEventListener('keyup', keyUp);
 
@@ -612,13 +654,14 @@ export function EditorCanvas({ boardId, bootstrap, onCollaboration, onConnection
             host.removeEventListener('pointermove', sendPointer);
             host.removeEventListener('pointerdown', positionComment, true);
             host.removeEventListener('pointerdown', stopOnManualNavigation, true);
-            host.removeEventListener('wheel', stopOnManualNavigation);
+            host.removeEventListener('wheel', stopOnManualNavigation, { capture: true });
             editor.removeEventListener('whiteboard-manual-navigation', stopOnManualNavigation);
             window.removeEventListener('whiteboard-follow', followEvent);
             window.removeEventListener('whiteboard-stop-following', stopFollowEvent);
             window.removeEventListener('whiteboard-bring-everyone', bringEveryone);
             window.removeEventListener('whiteboard-place-comment', placeComment);
             window.removeEventListener('whiteboard-focus-anchor', focusAnchor);
+            window.removeEventListener('whiteboard-viewport-query', answerViewport);
             window.removeEventListener('keydown', keyDown, true);
             window.removeEventListener('keyup', keyUp);
             if (reconnectTimer) clearTimeout(reconnectTimer);
@@ -664,15 +707,31 @@ export function EditorCanvas({ boardId, bootstrap, onCollaboration, onConnection
       </p>
       <div className="editor-canvas" ref={hostRef} tabIndex={-1} />
       {!controller && status.startsWith('Loading') ? <div className="canvas-loading" role="status"><span className="canvas-spinner" aria-hidden="true" />Opening your board…</div> : null}
+      {controller && hostRef.current && collaboration ? <CommentPins
+        threads={collaboration.comments}
+        subscribe={controller.subscribeView}
+        selectedIds={controller.selectedIds}
+        toView={(x, y) => gfxRef.current?.viewport.toViewCoord(x, y) ?? [x, y]}
+        objectBounds={controller.viewBounds}
+        hidden={collaboration.presentation?.status === 'running'}
+        width={hostRef.current.clientWidth}
+        height={hostRef.current.clientHeight}
+      /> : null}
       {controller && hostRef.current ? <CanvasChrome controller={controller} host={hostRef.current} onComment={() => onComment?.()} canComment={Boolean(collaboration?.capabilities.comment)} /> : null}
       {following ? <div className="follow-banner"><span>{following}</span><button type="button" onClick={() => window.dispatchEvent(new Event('whiteboard-stop-following'))}>Stop following</button></div> : null}
       {recovery ? <div className="recovery-banner" role="alert"><span>{recovery.reason === 'restore' ? 'This board was restored. Your older local copy was kept separate' : 'Your access changed'} with {recovery.count} local {recovery.count === 1 ? 'change' : 'changes'} still on this device.</span><a href={recovery.url} download={`whiteboard-recovery-${boardId.replace(/[^a-z0-9]+/giu, '-')}.json`}>Download recovery</a><button type="button" onClick={() => void discardPendingBoard(recovery.key).then(() => { URL.revokeObjectURL(recovery.url); setRecovery(null); })}>Discard local copy</button></div> : null}
-      <div className="reaction-cloud" aria-live="polite">{reactions.map(reaction => <span key={reaction.id} title={reaction.name}>{reaction.emoji}</span>)}</div>
+      <div className="reaction-cloud" aria-live="polite">{reactions.map(reaction => <span key={reaction.id} title={reaction.name}><span className="reaction-emoji">{reaction.emoji}</span><span className="reaction-name">{reaction.name}</span></span>)}</div>
       <div className="remote-cursors" aria-hidden="true">
         {collaboration?.participants.map(participant => {
           if (participant.id === collaboration.currentUserId) return null;
           const style = remoteSelectionStyle(participant.selection);
-          return style ? <span className="remote-selection" key={`selection:${participant.connectionId}`} style={{ ...style, color: participant.color }}><b style={{ background: participant.color, color: avatarInk(participant.color) }}>{participant.name}</b></span> : null;
+          // One name per person: the cursor carries it while it is in view;
+          // otherwise the selection does, inside its corner so it never
+          // covers the object above.
+          const cursor = participant.cursor && gfxRef.current?.viewport.toViewCoord(participant.cursor.x, participant.cursor.y);
+          const host = hostRef.current;
+          const cursorVisible = Boolean(cursor && host && cursor[0] >= 0 && cursor[1] >= 0 && cursor[0] <= host.clientWidth && cursor[1] <= host.clientHeight);
+          return style ? <span className="remote-selection" key={`selection:${participant.connectionId}`} style={{ ...style, color: participant.color }}>{cursorVisible ? null : <b style={{ background: participant.color, color: avatarInk(participant.color) }}>{participant.name}</b>}</span> : null;
         })}
         {collaboration?.participants.map(participant => {
           if (participant.id === collaboration.currentUserId) return null;

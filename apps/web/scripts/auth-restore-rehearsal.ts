@@ -183,9 +183,11 @@ try {
     0,
   );
   await stop();
+  // Pin one factor by id: with several enrolled people, LIMIT 1 can follow the
+  // secret index, whose order changes once every secret is re-encrypted.
   const originalFactor = database
-    .prepare("SELECT secret FROM auth_two_factors LIMIT 1")
-    .get() as { secret: string };
+    .prepare("SELECT id, secret FROM auth_two_factors ORDER BY id LIMIT 1")
+    .get() as { id: string; secret: string };
   const originalSeed = await symmetricDecrypt({
     key: source.vars.AUTH_SECRET,
     data: originalFactor.secret,
@@ -240,8 +242,8 @@ try {
     /Would re-encrypt 0 /,
   );
   const encrypted = database
-    .prepare("SELECT secret FROM auth_two_factors LIMIT 1")
-    .get() as { secret: string };
+    .prepare("SELECT secret FROM auth_two_factors WHERE id = ?")
+    .get(originalFactor.id) as { secret: string };
   const seed = await symmetricDecrypt({
     key: { currentVersion: 2, keys: new Map([[2, newAuth]]) },
     data: encrypted.secret,

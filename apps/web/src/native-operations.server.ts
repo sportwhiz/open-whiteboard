@@ -3,6 +3,7 @@ import { avatarInk } from './avatar-color';
 import { generateKeyBetween } from 'fractional-indexing';
 
 import type { NativeBoardSnapshot } from './blocksuite/runtime/snapshot';
+import { stickyPaper } from './blocksuite/sticky-palette';
 
 import {
   nativeBatchSchema,
@@ -11,12 +12,14 @@ import {
 export type { NativeOperation } from './native-operation-schema';
 type ConnectorAnchor = 'top' | 'right' | 'bottom' | 'left';
 
+// API color names map onto the same palette as notes created in the editor.
 const NOTE_COLORS = {
-  yellow: { light: '#fde68a', dark: '#704200' },
-  orange: { light: '#ffc58f', dark: '#843b06' },
-  green: { light: '#c9f8c1', dark: '#3b5315' },
-  blue: { light: '#ceecff', dark: '#004b7b' },
-  purple: { light: '#ddd6fe', dark: '#312e81' },
+  yellow: stickyPaper('yellow'),
+  orange: stickyPaper('orange'),
+  green: stickyPaper('green'),
+  blue: stickyPaper('blue'),
+  purple: stickyPaper('purple'),
+  pink: stickyPaper('pink'),
 };
 
 function decode(value: string) {

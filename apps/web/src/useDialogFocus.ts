@@ -1,4 +1,5 @@
 import { useEffect, useRef, type RefObject } from 'react';
+import { focusOrFallback } from './usePopover';
 
 const dialogs: HTMLElement[] = [];
 const hiddenBranches = new Map<HTMLElement, boolean>();
@@ -71,7 +72,7 @@ export function useDialogFocus(ref: RefObject<HTMLElement>, enabled: boolean, on
       const index = dialogs.lastIndexOf(dialog);
       if (index >= 0) dialogs.splice(index, 1);
       isolateActiveDialog();
-      if (previous?.isConnected) previous.focus({ preventScroll: true });
+      focusOrFallback(previous);
     };
   }, [ref, enabled]);
 }

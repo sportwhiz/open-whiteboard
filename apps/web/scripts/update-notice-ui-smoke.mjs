@@ -30,7 +30,7 @@ try {
       await page.getByPlaceholder("Search boards and notes").click();
       await page.waitForTimeout(3000);
       assert.equal(await dialog.count(),0,"The prompt must not take focus while someone is editing text");
-      await page.getByRole("heading",{name:"Your studio",exact:true}).click();
+      await page.getByRole("heading",{name:"All boards",exact:true}).click();
     }
     await dialog.waitFor();
     await page.screenshot({path:`${screenshots}/${role}-${theme}.png`});
@@ -67,7 +67,7 @@ try {
     }
     // Installing the release (no pending notice) clears the persistent affordance.
     notice=null;await other.reload();
-    await other.getByRole("heading",{name:"Your studio",exact:true}).waitFor();
+    await other.getByRole("heading",{name:"All boards",exact:true}).waitFor();
     assert.equal(await other.locator(".update-notice-pill").count(),0);
     assert.deepEqual(mutations,[],"A notice must never install or mutate hosting settings");
     assert.deepEqual(failures,[]);

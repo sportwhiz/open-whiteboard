@@ -1,7 +1,16 @@
-import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useLayoutEffect,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   authSnapshot,
   bootstrapAuth,
+  previousAccount,
+  rememberAccount,
   subscribeAuth,
   type AuthBootstrap,
 } from "./auth-client";
@@ -17,6 +26,22 @@ const AuthPage = lazy(() =>
 );
 const GuestAccess = lazy(() => import('./GuestAccess').then(module => ({default:module.GuestAccess})));
 const UpdateNoticeHost = lazy(() => import('./UpdateNotice').then(module => ({default:module.UpdateNoticeHost})));
+function isIdentityPage(location: URL) {
+  return (
+    [
+      "/login",
+      "/setup",
+      "/verify",
+      "/recover",
+      "/operator-recovery",
+      "/magic",
+      "/invite",
+      "/account/owner-transfer",
+    ].includes(location.pathname) ||
+    location.hash.startsWith("#invite=") ||
+    location.hash.startsWith("#invitation=")
+  );
+}
 export function AuthGate({ children }: { children: ReactNode }) {
   const location = useAppLocation();
   if (location.pathname.startsWith('/guest/')) return <Suspense fallback={<main className="canvas-loading">Opening your shared board…</main>}><GuestAccess /></Suspense>;
@@ -93,6 +118,28 @@ function AuthContent({ children }: { children: ReactNode }) {
     );
     return () => clearTimeout(timer);
   }, [bootstrap?.account?.expiresAt]);
+  const previous = previousAccount();
+  // A different person signed in on this tab. The page left open belongs to
+  // the previous account, so start the new one at their own Studio instead.
+  // Deep links still work for the same person and for invitation links.
+  const switchedAccount = Boolean(
+    bootstrap?.mode === "native" &&
+      bootstrap.user &&
+      previous.id &&
+      previous.id !== bootstrap.user.id &&
+      !isIdentityPage(location) &&
+      `${location.pathname}${location.search}${location.hash}` !== "/",
+  );
+  useLayoutEffect(() => {
+    if (bootstrap?.mode !== "native" || !bootstrap.user) return;
+    if (switchedAccount) {
+      // Replace, so Back doesn't return to the previous person's page.
+      history.replaceState(null, "", "/");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+      return;
+    }
+    rememberAccount(bootstrap.user.id);
+  }, [bootstrap?.mode, bootstrap?.user?.id, switchedAccount]);
   if (error)
     return (
       <main className="identity-page">
@@ -119,19 +166,7 @@ function AuthContent({ children }: { children: ReactNode }) {
     );
   if (bootstrap.mode !== "native") return children;
   const account = bootstrap.account;
-  const identityPage =
-    [
-      "/login",
-      "/setup",
-      "/verify",
-      "/recover",
-      "/operator-recovery",
-      "/magic",
-      "/invite",
-      "/account/owner-transfer",
-    ].includes(location.pathname) ||
-    location.hash.startsWith("#invite=") ||
-    location.hash.startsWith("#invitation=");
+  const identityPage = isIdentityPage(location);
   const restrictedSettings =
     location.pathname === "/settings/account" && Boolean(account?.verified);
   if (
@@ -152,8 +187,20 @@ function AuthContent({ children }: { children: ReactNode }) {
           </main>
         }
       >
-        <AuthPage bootstrap={bootstrap} refresh={refresh} />
+        <AuthPage
+          bootstrap={bootstrap}
+          refresh={refresh}
+          signedOut={
+            !bootstrap.user && Boolean(previous.id) && !previous.intentional
+          }
+        />
       </Suspense>
+    );
+  if (switchedAccount)
+    return (
+      <main className="canvas-loading" role="status">
+        Opening your Studio…
+      </main>
     );
   return (
     <div

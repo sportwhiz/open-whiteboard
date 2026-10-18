@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { api } from "./auth-client";
+import { api, ApiError } from "./auth-client";
 import { UiIcon } from "./UiIcon";
 import "./guest-sharing.css";
 type GuestLink = {
@@ -27,8 +27,13 @@ export function GuestSharing({ boardId }: { boardId: string }) {
     [visibleLink, setVisibleLink] = useState("");
   const load = async () =>
     setLinks((await api<{ links: GuestLink[] }>(endpoint)).links);
+  // Guest links need application sign-in; say so calmly instead of offering a retry.
+  const [unavailable, setUnavailable] = useState("");
   useEffect(() => {
-    void load().catch((failure) => setError(failure.message));
+    void load().catch((failure) => {
+      if (failure instanceof ApiError && failure.code === "GUEST_LINKS_UNAVAILABLE") setUnavailable(failure.message);
+      else setError(failure.message);
+    });
   }, [endpoint]);
   const active =
     links?.filter(
@@ -125,7 +130,7 @@ export function GuestSharing({ boardId }: { boardId: string }) {
           </h3>
           <p>Invite guests to this board without accounts.</p>
         </div>
-        {!creating && !editing && (
+        {!creating && !editing && !unavailable && (
           <button
             type="button"
             className="guest-create"
@@ -152,7 +157,8 @@ export function GuestSharing({ boardId }: { boardId: string }) {
           )}
         </p>
       )}
-      {!links && !error && <p>Loading guest access…</p>}
+      {unavailable ? <p className="guest-sharing-off"><span /> Not available · {unavailable}</p> : null}
+      {!links && !error && !unavailable && <p>Loading guest access…</p>}
       {links && !active.length && !creating && (
         <p className="guest-sharing-off">
           <span /> Off · Only people with board access can open it.

@@ -26,10 +26,35 @@
 .editor-canvas .affine-edgeless-viewport {
   background:var(--canvas);
 }
+/* Dots read as a quiet reference grid at any zoom: a full pixel radius
+   (crisp on standard and retina screens), slightly stronger than the
+   studio's decorative dots, and softer in dark mode. */
+.editor-region { --canvas-grid-dot: #c3cad5; }
+:root[data-theme="dark"] .editor-region { --canvas-grid-dot: #3a434f; }
 .editor-canvas.canvas-grid .affine-edgeless-viewport {
-  background-image:radial-gradient(var(--grid-dot) 0.7px, transparent 0.7px);
+  background-image:radial-gradient(circle, var(--canvas-grid-dot) 1px, transparent 1.25px);
   background-size: var(--grid-spacing, 24px) var(--grid-spacing, 24px);
-  background-position: var(--grid-position, 0 0);
+  background-position: calc(var(--grid-position-x, 0px) - var(--grid-spacing, 24px) / 2) calc(var(--grid-position-y, 0px) - var(--grid-spacing, 24px) / 2);
+}
+/* Keyboard focus on the board itself (F6 or Tab), drawn inside the canvas. */
+/* Shows where keyboard focus went, then settles to a faint edge so it does
+   not frame the whole screen while working; selections carry the focus. */
+.editor-canvas.canvas-keyboard-focus::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  z-index: 4;
+  border-radius: 10px;
+  box-shadow: inset 0 0 0 2px var(--accent);
+  pointer-events: none;
+  animation: canvas-focus-settle 1.4s ease-out forwards;
+}
+@keyframes canvas-focus-settle {
+  0%, 45% { opacity: 1; }
+  100% { opacity: .18; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .editor-canvas.canvas-keyboard-focus::after { animation: none; opacity: .35; }
 }
 .editor-canvas [data-testid="edgeless-note-container"][data-collapse="true"] {
   font-size: 20px;
@@ -96,7 +121,7 @@
 }
 .sticky-text-editor {
   position: absolute;
-  z-index: 8;
+  z-index: 4;
   pointer-events: auto;
   resize: none;
   border:0;
@@ -132,7 +157,10 @@
 }
 .canvas-notice {
   position: absolute;
-  top: 20px;
+  /* A snackbar above the bottom bars, clear of the floating header. */
+  top: auto;
+  bottom: 84px;
+  z-index: 12;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
@@ -517,8 +545,7 @@
   background:var(--surface);
   box-shadow: 0 8px 24px #23304a14;
 }
-.zoom-menu button,
-.arrange-menu button {
+.zoom-menu button {
   display: block;
   width: 100%;
   text-align: left;
@@ -528,8 +555,7 @@
   background:transparent;
   font-size: 12px;
 }
-.zoom-menu button:hover,
-.arrange-menu button:hover {
+.zoom-menu button:hover:not(:disabled) {
   background:var(--canvas);
 }
 .canvas-navigator {
@@ -737,7 +763,7 @@
   background: #fffbe8;
   border-color: #26344c16;
 }
-.sticky-text-popover button:hover,
+.sticky-text-popover button:hover:not(:disabled),
 .sticky-text-popover button[aria-pressed="true"] {
   border-color: var(--accent);
 }
@@ -760,46 +786,15 @@
 .editor-canvas [data-whiteboard-sticky] .inline-editor {
   font-family: Arial, Helvetica, sans-serif;
 }
-.arrange-controls {
-  position: absolute;
-  top: 16px;
-  left: 50%;
-  transform: translateX(-50%);
-  pointer-events: auto;
-}
-.arrange-controls > button {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 12px;
-  border:1px solid var(--canvas-border);
-  border-radius:7px;
-  background:var(--surface);
-  box-shadow: 0 2px 8px #23304a08;
-}
-.arrange-controls > button span {
-  color:var(--text-secondary);
-  font-size: 11px;
-  padding-left: 7px;
-  border-left:1px solid var(--canvas-border);
-}
-.arrange-menu {
-  position: absolute;
-  top: 48px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 210px;
-  background:var(--surface);
-  border:1px solid var(--canvas-border);
-  padding: 5px;
-  border-radius:8px;
-  box-shadow: 0 8px 30px #23304a16;
-}
 .canvas-mode-hint {
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
-  bottom: 23px;
+  bottom: 19px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  /* Stays legible over notes without becoming another floating bar. */
+  background: color-mix(in srgb, var(--canvas) 82%, transparent);
   color:var(--text-secondary);
   font-size: 12px;
   white-space: nowrap;
@@ -1255,9 +1250,6 @@
   .sticky-selection-actions > button {
     font-size: 11px;
   }
-  .arrange-controls {
-    top: 66px;
-  }
   .canvas-empty {
     width: calc(100% - 40px);
     top: 40%;
@@ -1318,7 +1310,343 @@
 .pattern-diagram-preview { display: block; width: 100%; height: 100%; }
 .pattern-preview-frame { fill: var(--surface); stroke: var(--border); stroke-width: 8; }
 .pattern-preview-edge { fill: none; stroke: var(--text-secondary); stroke-width: 10; }
-/* The phone toolbar scrolls sideways, so its menus open inline in the bar. */
+
+/* Compact paper picker keeps the text tools close to the selected note. */
+.paper-color-chip { width: 20px; height: 20px; border: 1px solid #26344c30; border-radius: 5px; }
+.sticky-text-popover.paper-colors { left: 0; transform: none; }
+.zoom-presets { display: flex; gap: 3px; padding: 5px 0 0; border-top: 1px solid var(--canvas-border); }
+.zoom-presets button { width: auto; flex: 1; padding: 9px 7px; text-align: center; }
+.zoom-presets button[aria-pressed="true"] { background: var(--canvas); color: var(--accent); }
+[data-popover="open"] :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Formatting popovers must stay above the live text-editing layer. */
+.sticky-selection-actions { z-index: 9; }
+.tool-palette, .zoom-menu { z-index: 10; }
+
+/* ── Contextual selection toolbar ─────────────────────────────────────────
+   Placement is computed in JS (above, below or pinned inside the selection);
+   its menus open away from the selection so they never cover it. */
+/* No position transition: the toolbar must move with the object while the
+   camera pans or zooms, not trail behind it. */
+.sticky-selection-actions[data-side="above"] .sticky-text-popover {
+  top: auto;
+  bottom: calc(100% + 10px);
+}
+.sticky-selection-actions .next-step-button { color: var(--text); }
+.sticky-text-popover.arrange-popover {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  width: 152px;
+  padding: 8px;
+}
+.arrange-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+.arrange-grid button { width: 100%; height: 36px; font-weight: 400; }
+.arrange-grid .canvas-icon { width: 18px; height: 18px; }
+.arrange-popover .arrange-group {
+  display: flex;
+  width: 100%;
+  height: 32px;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 8px;
+  border-top: 1px solid var(--canvas-border);
+  border-radius: 0 0 6px 6px;
+  font-size: 12px;
+  font-weight: 400;
+}
+.arrange-group kbd, .zoom-menu kbd { font: inherit; color: var(--text-secondary); font-size: 11px; }
+.arrange-note { margin: 0; padding: 0 4px; color: var(--text-secondary); font-size: 11px; line-height: 1.4; }
+
+/* ── Tooltips with shortcut hints for icon buttons ─────────────────────── */
+@media (hover: hover) {
+  .canvas-chrome [data-tip],
+  .canvas-comment-pin[data-tip] { position: relative; }
+  .canvas-chrome [data-tip]::after,
+  .canvas-comment-pin[data-tip]::after {
+    content: attr(data-tip);
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 8px);
+    z-index: 20;
+    padding: 6px 9px;
+    border-radius: 6px;
+    background: var(--text);
+    color: var(--surface);
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1.3;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transform: translate(-50%, 2px);
+    transition: opacity 90ms, transform 90ms;
+    transition-delay: 0ms;
+  }
+  .canvas-chrome [data-tip]:hover::after,
+  .canvas-chrome [data-tip]:focus-visible::after,
+  .canvas-comment-pin[data-tip]:hover::after,
+  .canvas-comment-pin[data-tip]:focus-visible::after {
+    opacity: 1;
+    transform: translate(-50%, 0);
+    transition-delay: 350ms;
+  }
+  /* Controls along the top open their tips downward. */
+  .canvas-utilities [data-tip]::after,
+  .sticky-selection-actions[data-side="below"] [data-tip]::after,
+  .sticky-selection-actions[data-side="inside"] [data-tip]::after,
+  .canvas-comment-pin[data-tip]::after {
+    bottom: auto;
+    top: calc(100% + 8px);
+  }
+  .canvas-utilities [data-tip]::after { left: 0; transform: translate(0, -2px); }
+  .canvas-utilities [data-tip]:hover::after,
+  .canvas-utilities [data-tip]:focus-visible::after { transform: translate(0, 0); }
+  .canvas-bottom-right .help-button[data-tip]::after { left: auto; right: 0; transform: translate(0, 2px); }
+  .canvas-bottom-right .help-button[data-tip]:hover::after,
+  .canvas-bottom-right .help-button[data-tip]:focus-visible::after { transform: none; }
+  /* Popover menus are open already; their tips should not wait. */
+  [data-popover="open"] [data-tip]:hover::after { transition-delay: 150ms; }
+  .sticky-text-popover [data-tip]::after,
+  .canvas-context-menu [data-tip]::after { top: auto; bottom: calc(100% + 6px); }
+}
+
+/* ── Zoom menu ──────────────────────────────────────────────────────────── */
+.zoom-menu > button { display: flex; justify-content: space-between; align-items: center; gap: 18px; }
+.zoom-menu > button[data-shortcut]::after { content: attr(data-shortcut); color: var(--text-secondary); font-size: 11px; }
+.zoom-menu > button[data-note] { flex-wrap: wrap; row-gap: 2px; }
+.zoom-menu > button[data-note]::after { content: attr(data-note); flex-basis: 100%; color: var(--text-secondary); font-size: 11px; }
+.zoom-menu > button:disabled { opacity: 1; color: var(--text-secondary); }
+.zoom-menu .zoom-presets { margin-top: 4px; }
+
+/* ── Context menu ───────────────────────────────────────────────────────── */
+.canvas-context-menu {
+  position: absolute;
+  z-index: 30;
+  min-width: 228px;
+  padding: 5px;
+  border: 1px solid var(--canvas-border);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 12px 34px #1a243a24, 0 2px 6px #1a243a12;
+  pointer-events: auto;
+  animation: canvas-menu-in 90ms ease-out;
+}
+@keyframes canvas-menu-in { from { opacity: 0; transform: scale(.98); } }
+.context-section + .context-section { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--canvas-border); }
+.context-label { display: block; padding: 4px 10px 5px; color: var(--text-secondary); font-size: 11px; font-weight: 600; }
+.context-items { display: flex; flex-direction: column; }
+.context-section.icons .context-items { display: grid; grid-template-columns: repeat(9, 1fr); gap: 2px; padding: 0 3px 2px; }
+.canvas-context-menu button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  width: 100%;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 13px;
+  text-align: left;
+}
+.context-section.icons button { justify-content: center; padding: 0; min-height: 30px; }
+.context-section.icons .canvas-icon { width: 17px; height: 17px; }
+.canvas-context-menu button:hover:not(:disabled),
+.canvas-context-menu button:focus-visible { background: var(--surface-hover); outline: none; }
+.canvas-context-menu button:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.canvas-context-menu button.danger { color: var(--danger); }
+.canvas-context-menu kbd { font: inherit; font-size: 11px; color: var(--text-secondary); white-space: nowrap; }
+
+/* ── Comment pins ───────────────────────────────────────────────────────── */
+.canvas-comment-pins { position: absolute; inset: 0; z-index: 3; pointer-events: none; overflow: hidden; }
+.canvas-comment-pin {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  /* The pin's tip is its bottom-left corner, at the anchor. */
+  transform: translate(-2px, calc(-100% + 2px));
+  border: 2px solid var(--surface);
+  border-radius: 14px 14px 14px 3px;
+  background: var(--pin-color, var(--accent));
+  color: var(--pin-ink, #fff);
+  box-shadow: 0 2px 7px #16203a33;
+  font: 600 12px/1 var(--font-display, inherit);
+  cursor: pointer;
+  pointer-events: auto;
+  transition: transform 100ms ease-out, box-shadow 100ms;
+}
+.canvas-comment-pin:hover { transform: translate(-2px, calc(-100% + 2px)) scale(1.08); }
+.canvas-comment-pin:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.canvas-comment-pin.active {
+  box-shadow: 0 0 0 3px var(--accent), 0 4px 12px #16203a40;
+  transform: translate(-2px, calc(-100% + 2px)) scale(1.12);
+  z-index: 1;
+}
+.pin-count {
+  position: absolute;
+  top: -7px;
+  right: -9px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border: 2px solid var(--surface);
+  border-radius: 9px;
+  background: var(--text);
+  color: var(--surface);
+  font-size: 10px;
+  line-height: 13px;
+  box-sizing: border-box;
+}
+.editor-region:has(.sticky-text-editor) .canvas-comment-pin { opacity: .55; }
+
+/* ── Keyboard shortcuts sheet ───────────────────────────────────────────── */
+.shortcut-section h3 { margin: 22px 0 2px; font-size: 12px; font-weight: 600; color: var(--text-secondary); letter-spacing: .02em; text-transform: uppercase; }
+
+/* The mode hint sits between the history and zoom bars; it is hidden when a
+   side panel leaves too little room rather than running underneath them. */
+.canvas-chrome.canvas-narrow .canvas-mode-hint,
+.canvas-mode-hint.hint-blocked { visibility: hidden; }
+.canvas-mode-hint { max-width: calc(100% - 640px); overflow: hidden; text-overflow: ellipsis; }
+.canvas-mode-hint:empty { display: none; }
+
 @media (max-width: 600px) {
-  .sticky-text-popover { position: static; transform: none; padding: 0 0 0 4px; border:0; box-shadow: none; }
+  .canvas-utilities { padding: 3px; }
+  .canvas-utilities .canvas-icon-button { width: 34px; height: 34px; }
+  .canvas-utilities [aria-label="Toggle grid"] { display: none; }
+  .canvas-context-menu { min-width: 210px; }
+  .canvas-context-menu button { min-height: 38px; }
+}
+
+/* After a click, the menu's programmatic focus is not a keyboard position. */
+.canvas-chrome[data-input="pointer"] [data-popover="open"] :focus-visible { outline: none; box-shadow: none; }
+
+
+/* After a click, a menu's first item is focused for arrow keys; its tooltip
+   would compete with the one under the pointer. */
+.canvas-chrome[data-input="pointer"] [data-tip]:focus-visible:not(:hover)::after { opacity: 0; transition-delay: 0ms; }
+/* Disabled arrangements stay explainable: dim the icon, not its tooltip. */
+.arrange-grid button:disabled { opacity: 1; }
+.arrange-grid button:disabled .canvas-icon { opacity: .3; }
+
+/* A selected object's resize and rotate handles take precedence over its pins. */
+.canvas-comment-pin.behind-selection { pointer-events: none; opacity: .45; }
+
+.canvas-modal .help-tour {
+  display: inline-flex;
+  align-items: center;
+  margin: 16px 0 4px;
+  padding: 9px 16px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font-weight: 600;
+}
+
+/* Phones: the selection toolbar wraps onto a second row so every action is
+   reachable, and its menus open above it, centred on the toolbar. */
+@media (max-width: 600px) {
+  .sticky-selection-actions {
+    flex-wrap: wrap;
+    justify-content: center;
+    overflow: visible !important;
+    width: max-content;
+    max-width: calc(100% - 16px);
+    gap: 4px 6px !important;
+    padding: 6px 8px !important;
+  }
+  .sticky-selection-actions .selection-divider { display: none; }
+  .sticky-selection-actions .sticky-text-select { max-width: 96px; height: 32px; }
+  .sticky-selection-actions .canvas-icon-button.small { width: 34px; height: 34px; }
+  .sticky-selection-actions .sticky-text-menu { position: static; }
+  .sticky-selection-actions .sticky-text-popover,
+  .sticky-selection-actions .sticky-text-popover.paper-colors {
+    width: max-content;
+    top: auto;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    max-width: calc(100vw - 24px);
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  /* The tool rail scrolls sideways; fade the edge that has more tools. */
+  .creation-rail { scroll-snap-type: x proximity; scrollbar-width: none; }
+  .creation-rail::-webkit-scrollbar { display: none; }
+  .creation-rail.more-right { mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent); }
+  .creation-rail.more-left { mask-image: linear-gradient(to left, #000 calc(100% - 36px), transparent); }
+  .creation-rail.more-left.more-right { mask-image: linear-gradient(to right, transparent, #000 36px, #000 calc(100% - 36px), transparent); }
+}
+
+/* A collaborator's selection names them inside its own bottom-right corner
+   (only when their cursor is off screen), not over the object above. */
+.remote-cursors .remote-selection b { top: auto; left: auto; bottom: 4px; right: 4px; border-radius: 0.35rem; }
+
+/* ── Element toolbar (shapes, connectors, text, images, frames, groups) ─ */
+.editor-canvas.whiteboard-product-toolbar affine-toolbar-widget { display: none !important; }
+.element-toolbar .toolbar-text-chip { font-size: 12px; font-weight: 600; min-width: 18px; text-align: center; }
+.element-toolbar .stroke-chip { width: 16px; height: 16px; border: 3px solid; border-radius: 4px; box-sizing: border-box; }
+.element-toolbar .line-chip { width: 18px; border-radius: 2px; }
+.element-toolbar .labelled-action {
+  display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 8px;
+  border: 0; border-radius: 6px; background: transparent; font-size: 12px; white-space: nowrap;
+}
+.element-toolbar .labelled-action:hover:not(:disabled) { background: var(--canvas); }
+.element-toolbar .labelled-action .canvas-icon { width: 16px; height: 16px; }
+.element-toolbar .selection-count { padding: 0 6px; color: var(--text-secondary); font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.sticky-text-popover .swatch-choice {
+  width: 26px; height: 26px; padding: 0; border-radius: 6px;
+  background: var(--swatch) !important; border: 1px solid #26344c22 !important;
+}
+.sticky-text-popover .swatch-choice.ring { border-radius: 50%; }
+.sticky-text-popover .swatch-choice.none {
+  background: linear-gradient(135deg, transparent 45%, var(--danger) 45% 55%, transparent 55%) !important;
+}
+.sticky-text-popover .swatch-choice[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent); }
+.sticky-text-popover.list, .sticky-text-popover.stacked { flex-direction: column; align-items: stretch; min-width: 168px; }
+.sticky-text-popover .swatch-row { display: flex; gap: 4px; flex-wrap: wrap; }
+.sticky-text-popover .swatch-row + .swatch-row { padding-top: 6px; border-top: 1px solid var(--canvas-border); }
+.sticky-text-popover .text-choice {
+  display: flex; width: 100%; height: 32px; padding: 0 10px; justify-content: space-between; align-items: center; gap: 18px;
+  font-size: 12px; font-weight: 400; text-align: left;
+}
+.sticky-text-popover .text-choice.compact { width: auto; flex: 1; justify-content: center; }
+.sticky-text-popover .text-choice kbd { font: inherit; color: var(--text-secondary); font-size: 11px; }
+.sticky-text-popover .text-choice.danger { color: var(--danger); }
+.sticky-text-popover .text-choice[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+
+/* Menus flip when the header or bottom bars would cover them. */
+.sticky-text-popover[data-flip="down"] { top: calc(100% + 10px) !important; bottom: auto !important; }
+.sticky-text-popover[data-flip="up"] { top: auto !important; bottom: calc(100% + 10px) !important; }
+
+.canvas-notice.info { border-color: var(--canvas-border); color: var(--text); background: var(--surface); box-shadow: 0 6px 22px #23304a1f; }
+@media (max-width: 600px) { .canvas-notice { bottom: 210px; } }
+
+/* A locked object carries a small lock badge on its corner. */
+.lock-badge {
+  position: absolute; z-index: 6; display: grid; place-items: center; width: 20px; height: 20px;
+  border-radius: 50%; background: var(--surface); color: var(--text-secondary);
+  border: 1px solid var(--canvas-border); box-shadow: 0 1px 4px #16203a26; pointer-events: none;
+}
+.lock-badge .canvas-icon { width: 12px; height: 12px; }
+/* Disabled controls look disabled, selects included. */
+.sticky-selection-actions .sticky-text-select:disabled { opacity: .45; cursor: default; }
+/* Selects match the toolbar instead of using the platform's chevrons. */
+.sticky-selection-actions .sticky-text-select {
+  appearance: none; -webkit-appearance: none;
+  padding: 0 26px 0 10px;
+  background: var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%237a8597' stroke-width='1.6'%3E%3Cpath d='m3 4.5 3 3 3-3'/%3E%3C/svg%3E") no-repeat right 8px center / 12px 12px;
+}
+.sticky-selection-actions .sticky-text-select:hover:not(:disabled) { border-color: var(--text-secondary); }
+/* Phones: an explicit button reveals the tools hidden off the rail's edge. */
+.rail-more { display: none; }
+@media (max-width: 600px) {
+  .canvas-chrome.rail-has-more .rail-more {
+    position: absolute; right: 12px; bottom: 81px; z-index: 6; display: grid; place-items: center;
+    width: 28px; height: 40px; padding: 0; border: 1px solid var(--canvas-border); border-radius: 8px;
+    background: var(--surface); color: var(--text); box-shadow: -6px 0 12px var(--surface); pointer-events: auto;
+  }
+  .rail-more svg { width: 12px; height: 12px; }
 }

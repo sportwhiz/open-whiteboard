@@ -1,5 +1,6 @@
+import { useDetailsPopover } from "./usePopover";
 import { UiIcon } from "./UiIcon";
-import { useEffect, useRef, useSyncExternalStore } from "react";
+import { useRef, useSyncExternalStore } from "react";
 export type ThemePreference = "light" | "dark" | "system";
 const KEY = "whiteboard-appearance";
 const media = window.matchMedia("(prefers-color-scheme: dark)");
@@ -68,24 +69,7 @@ export function ThemeMenu() {
     () => preference + ":" + resolvedTheme(),
   );
   const ref = useRef<HTMLDetailsElement>(null);
-  useEffect(() => {
-    const close = (event: PointerEvent) => {
-      if (!ref.current?.contains(event.target as Node) && ref.current)
-        ref.current.open = false;
-    };
-    const key = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && ref.current?.open) {
-        ref.current.open = false;
-        ref.current.querySelector("summary")?.focus();
-      }
-    };
-    document.addEventListener("pointerdown", close);
-    window.addEventListener("keydown", key);
-    return () => {
-      document.removeEventListener("pointerdown", close);
-      window.removeEventListener("keydown", key);
-    };
-  }, []);
+  useDetailsPopover(ref);
   return (
     <details className="theme-menu" ref={ref}>
       <summary aria-label="Appearance" title="Appearance">

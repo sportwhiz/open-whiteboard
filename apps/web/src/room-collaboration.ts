@@ -79,6 +79,8 @@ export type BrainstormSession = {
   revealedAt: string | null;
   drafts: Record<string, BrainstormDraft>;
   revealedIds: string[];
+  /** Board area holding the revealed ideas, so everyone can jump to them. */
+  revealedArea?: { x: number; y: number; width: number; height: number } | null;
 };
 
 export type PresentationSession = {
@@ -89,6 +91,10 @@ export type PresentationSession = {
   frameIndex: number;
   viewport: { x: number; y: number; zoom: number } | null;
   updatedAt: string;
+  /** When the presenter's last connection closed (optional; older versions omit it). */
+  presenterLeftAt?: string | null;
+  /** Why it ended, when it did not end by choice (optional). */
+  endedReason?: 'presenter-left' | null;
 };
 
 export type ActivityEntry = {
@@ -117,11 +123,17 @@ export type RoomCollaborationState = {
   raisedHands: Record<string, string>;
   checkpoints: NamedCheckpoint[];
   activity: ActivityEntry[];
+  /**
+   * Who is running the session: whoever last started an activity or took
+   * over. Optional so state written here still parses in older versions.
+   */
+  facilitatorId?: string | null;
 };
 
 export type PublicCollaborationState = Omit<RoomCollaborationState, 'voteRounds' | 'brainstorm'> & {
   voteRounds: Array<Omit<VoteRound, 'ballots' | 'ballotNames'> & {
     myVotes: string[];
+    votedCount: number;
     results: Record<string, number> | null;
     voterNames: Record<string, string[]> | null;
   }>;
@@ -129,6 +141,9 @@ export type PublicCollaborationState = Omit<RoomCollaborationState, 'voteRounds'
     myDrafts: BrainstormDraft[];
     submittedCount: number;
     participantCount: number;
+    unsubmittedCount: number;
+    unsubmittedPeople: number;
+    writingCount: number;
   }) | null;
   participants: RoomParticipant[];
   capabilities: Capabilities;

@@ -64,12 +64,23 @@ export async function conformance(ctx: {
     email: memberEmail,
     password,
   });
-  const invitation = await owner.call(
+  // The member is an admitted Studio account, so sharing grants access at
+  // once (no acceptance step) and tells them with a notification.
+  const shared = await owner.call(
     `/api/v1/boards/${encodeURIComponent(board.id)}/share`,
     { email: memberEmail, role: "editor", expiresInDays: 1 },
     201,
   );
-  await member.call("/api/v1/invitations/accept", { token: invitation.token });
+  assert.equal(shared.granted, true);
+  assert.equal(shared.collaborator.id, memberId);
+  assert.equal(shared.collaborator.role, "editor");
+  assert.equal("token" in shared, false, "A direct share issues no link");
+  const shareNotifications = database
+    .prepare(
+      "SELECT kind FROM notifications WHERE user_id = ? AND board_id = ? AND kind = 'share'",
+    )
+    .all(memberId, board.id) as { kind: string }[];
+  assert.equal(shareNotifications.length, 1, "The share notified its recipient");
   await owner.call(`/api/v1/boards/${encodeURIComponent(board.id)}/semantic`);
   // Omit the invalidation outbox deliberately: the socket's authoritative lease
   // must still stop traffic after an account is revoked.
@@ -604,6 +615,53 @@ export async function conformance(ctx: {
   assert.equal(
     movedFolders.filter((folder) => folder.parent_id === null).length,
     1,
+  );
+  // Studio management under native routing: folders (auth/content.ts), trash,
+  // restore and workbook delete/restore (Worker routes) behave as in the Studio.
+  const filed = await member.call(
+    "/api/v1/workbooks",
+    { title: "Native filed workbook", folderId: folderA.id },
+    201,
+  );
+  const filedBoard = await member.call(
+    "/api/v1/boards",
+    { title: "Native trash fixture", workbookId: filed.id },
+    201,
+  );
+  const folderPath = `/api/v1/folders/${encodeURIComponent(folderA.id)}`;
+  assert.equal(
+    (await member.call(folderPath, { title: "Renamed natively" }, 200, "PATCH")).title,
+    "Renamed natively",
+  );
+  await owner.call(folderPath, undefined, 404, "DELETE");
+  const removed = await member.call(folderPath, undefined, 200, "DELETE");
+  assert.equal(removed.unfiled, 1);
+  // Undo: the folder comes back with its workbook filed in it again.
+  await owner.call(`${folderPath}/restore`, removed, 404);
+  assert.equal((await member.call(`${folderPath}/restore`, removed, 200)).refiled, 1);
+  assert.equal(
+    (await member.call("/api/v1/catalog")).workbooks.find((item: { id: string }) => item.id === filed.id).folderId,
+    folderA.id,
+  );
+  assert.equal((await member.call(folderPath, undefined, 200, "DELETE")).unfiled, 1);
+  let studio = await member.call("/api/v1/catalog");
+  assert.equal(studio.folders.some((item: { id: string }) => item.id === folderA.id), false);
+  assert.equal(studio.workbooks.find((item: { id: string }) => item.id === filed.id).folderId, null);
+  assert.ok(studio.boards.some((item: { id: string }) => item.id === filedBoard.id));
+  const boardRoute = `/api/v1/boards/${encodeURIComponent(filedBoard.id)}`;
+  await member.call(`${boardRoute}/catalog`, undefined, 200, "DELETE");
+  assert.ok((await member.call("/api/v1/trash")).boards.some((item: { id: string }) => item.id === filedBoard.id));
+  await owner.call(`${boardRoute}/restore`, {}, 404);
+  await member.call(`${boardRoute}/restore`, {}, 200);
+  const workbookRoute = `/api/v1/workbooks/${encodeURIComponent(filed.id)}`;
+  assert.equal((await member.call(workbookRoute, undefined, 200, "DELETE")).boards, 1);
+  assert.ok((await member.call("/api/v1/trash")).workbooks.some((item: { id: string }) => item.id === filed.id));
+  await member.call(`${boardRoute}/restore`, { workbookId: filed.id }, 404);
+  assert.equal((await member.call(`${workbookRoute}/restore`, {}, 200)).boards, 1);
+  studio = await member.call("/api/v1/catalog");
+  assert.ok(studio.boards.some((item: { id: string }) => item.id === filedBoard.id));
+  console.log(
+    "Native Studio: folder rename/delete/undo via auth routes, trash list/restore, workbook delete/restore and invitation notifications.",
   );
   const wb = await member.call(
     "/api/v1/workbooks",

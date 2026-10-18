@@ -108,6 +108,18 @@ export default defineConfig({
       'debug',
       'deepmerge',
       'extend',
+      // Imported by board layer ordering. Pre-bundle it so a fresh dev server
+      // never re-optimizes and reloads the page while a board is open.
+      'fractional-indexing',
+      // The code highlighter loads lazily on first board open; listing it here
+      // avoids the same mid-session re-optimization and reload.
+      'shiki/core',
+      'shiki/engine/oniguruma',
+      'shiki/wasm',
+      'shiki/themes/dark-plus.mjs',
+      'shiki/themes/light-plus.mjs',
+      'shiki/langs',
+      'shiki/bundle/full',
       'lodash.clonedeep',
       'lodash.ismatch',
       'lodash.merge',

@@ -1,13 +1,26 @@
 import { apiFetch } from "./auth-client";
 import { UiIcon, type UiIconName } from "./UiIcon";
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 
 import type { PublicCollaborationState } from './room-collaboration';
 import { avatarInk } from './avatar-color';
-import { remainingTimerSeconds, timerSoundEnabled } from './board-timer';
+import { formatTimer, timerSoundEnabled } from './board-timer';
+import { useCountdown } from './useCountdown';
+import { holdsUnsentText, threadLink, useBoardDraft } from './collaboration-drafts';
+import { focusOrFallback } from './usePopover';
+import { shouldRescueFocus, visibleCanvasCentre, whenCanvasReady } from './panel-focus';
+import { useCollaborationCommands } from './collaboration-commands';
+import { facilitation } from './facilitation';
+import { WorkshopBrainstorm } from './WorkshopBrainstorm';
+import { WorkshopVoting } from './WorkshopVoting';
+import { CommentThreadCard } from './CommentThread';
+import { mentionedIds, useMentionPicker, type MentionPerson } from './MentionPicker';
+import { anchorLabel, describeAnchor, objectAt, quote, eligibleVoterIds, uniqueParticipants, type Anchor, type SemanticBoard } from './collaboration-labels';
 
-type SemanticBoard = { notes: { id: string; text: string }[]; frames: { id: string; title: string }[] };
+
 type PanelTab = 'comments' | 'workshop' | 'present' | 'activity' | 'people';
+type WorkshopView = 'overview' | 'timer' | 'brainstorm' | 'voting' | 'signals';
+type Area = { x: number; y: number; width: number; height: number };
 
 const PANEL_COPY: Record<PanelTab, { title: string; description: string }> = {
   comments: { title: 'Comments', description: 'Discuss ideas and pin feedback to the canvas.' },
@@ -16,155 +29,462 @@ const PANEL_COPY: Record<PanelTab, { title: string; description: string }> = {
   activity: { title: 'Activity', description: 'Review checkpoints and recent collaboration.' },
   people: { title: 'People', description: 'See who is here and follow their view.' },
 };
+const WORKSHOP_COPY: Record<Exclude<WorkshopView, 'overview'>, { title: string; description: string }> = {
+  timer: { title: 'Timer', description: 'Set a pace for your session.' },
+  brainstorm: { title: 'Private brainstorming', description: 'Write privately, then reveal ideas together.' },
+  voting: { title: 'Voting', description: 'Choose the ideas to take forward.' },
+  signals: { title: 'Reactions and hands', description: 'React to an idea or raise your hand.' },
+};
+const REACTIONS = [
+  { emoji: '👍', label: 'Thumbs up' }, { emoji: '❤️', label: 'Love' }, { emoji: '🎉', label: 'Celebrate' },
+  { emoji: '👏', label: 'Applause' }, { emoji: '💡', label: 'Idea' }, { emoji: '❓', label: 'Question' },
+];
+const enabledControls = (root: ParentNode) => Array.from(root.querySelectorAll<HTMLElement>(
+  'button:not(:disabled):not([aria-disabled="true"]), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), a[href]',
+)).filter(item => item.getClientRects().length > 0);
 
-export function CollaborationPanel({ boardId, state, tab, timerRequest = 0, onTimerRequestHandled, onClose }: {
+export function CollaborationPanel({ boardId, state, tab, viewRequest, onViewRequestHandled, threadRequest, onThreadRequestHandled, followingUserId, mentionThreads, onMentionSeen, onClose }: {
   boardId: string;
   state: PublicCollaborationState;
   tab: PanelTab;
-  timerRequest?: number;
-  onTimerRequestHandled: () => void;
+  viewRequest?: { view: WorkshopView; nonce: number } | null;
+  onViewRequestHandled?: () => void;
+  threadRequest?: { threadId: string; nonce: number } | null;
+  onThreadRequestHandled?: () => void;
+  followingUserId?: string | null;
+  /** Threads that mention you and are unread. */
+  mentionThreads?: string[];
+  onMentionSeen?: (threadId: string) => void;
   onClose: () => void;
 }) {
-  const [error, setError] = useState('');
-  const [workshopView, setWorkshopView] = useState<'overview' | 'timer' | 'brainstorm' | 'voting' | 'signals'>('overview');
-  const [pending, setPending] = useState(false);
-  const pendingRef = useRef(false);
+  const panelRef = useRef<HTMLElement>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+  const lastFocus = useRef<{ element: HTMLElement; group: string | null; scope: string | null } | null>(null);
+  const [announcement, setAnnouncementText] = useState('');
+  // Clear first so a repeated message ("Reply sent.") is announced again.
+  const setAnnouncement = useCallback((text: string) => {
+    setAnnouncementText('');
+    window.setTimeout(() => setAnnouncementText(text), 60);
+  }, []);
+  const [workshopView, setWorkshopView] = useState<WorkshopView>(() => viewRequest?.view ?? 'overview');
   const [commentFilter, setCommentFilter] = useState<'open' | 'resolved' | 'all'>('open');
-  const [comment, setComment] = useState('');
-  const [replies, setReplies] = useState<Record<string, string>>({});
+  const [comment, setComment] = useBoardDraft(boardId, 'comment', '');
+  const [commentAnchor, setCommentAnchor] = useBoardDraft<Anchor | null>(boardId, 'comment-anchor', null);
+  const [replies, setReplies] = useBoardDraft<Record<string, string>>(boardId, 'replies', {});
   const [editingReply, setEditingReply] = useState<{ threadId: string; replyId: string; body: string } | null>(null);
-  const [draft, setDraft] = useState('');
-  const [commentAnchor, setCommentAnchor] = useState<{ x: number; y: number; objectId: string | null } | null>(null);
   const [placingComment, setPlacingComment] = useState(false);
+  const [activeThread, setActiveThread] = useState<string | null>(() => new URLSearchParams(location.search).get('thread'));
   const [mutedThreads, setMutedThreads] = useState<string[]>([]);
+  const [boardPeople, setBoardPeople] = useState<MentionPerson[]>([]);
   const [semantic, setSemantic] = useState<SemanticBoard>({ notes: [], frames: [] });
-  const [now, setNow] = useState(Date.now());
   const [timerMinutes, setTimerMinutes] = useState(5);
+  const [timerLabel, setTimerLabel] = useState('');
+  const [confirmTakeOver, setConfirmTakeOver] = useState(false);
+  const takeOverRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => { if (confirmTakeOver) takeOverRef.current?.focus({ preventScroll: true }); }, [confirmTakeOver]);
   const [timerSound, setTimerSound] = useState(timerSoundEnabled);
-  const [brainstormTitle, setBrainstormTitle] = useState('Silent brainstorm');
-  const [brainstormInstructions, setBrainstormInstructions] = useState('Write one idea per sticky note.');
-  const [brainstormMinutes, setBrainstormMinutes] = useState(5);
-  const [draftColor, setDraftColor] = useState<'yellow' | 'orange' | 'green' | 'blue' | 'purple'>('yellow');
-  const [voteLimit, setVoteLimit] = useState(3);
-  const [voteCap, setVoteCap] = useState(1);
-  const [voteMinutes, setVoteMinutes] = useState(5);
-  const [voteAnonymous, setVoteAnonymous] = useState(true);
-  const [voteTargets, setVoteTargets] = useState<string[]>([]);
   const [checkpointLabel, setCheckpointLabel] = useState('');
   const endpoint = `/api/v1/boards/${encodeURIComponent(boardId)}`;
-  const command = async (action: string, values: Record<string, unknown> = {}) => {
-    if (pendingRef.current) return null;
-    pendingRef.current = true; setPending(true); setError('');
-    try {
-      const response = await apiFetch(`${endpoint}/collaboration/commands`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, operationId: crypto.randomUUID(), ...values }) });
-      const result = await response.json().catch(() => ({})) as { error?: string };
-      if (!response.ok) throw new Error(result.error ?? `Request failed (${response.status})`);
-      return result;
-    } catch (error) { setError(error instanceof Error ? error.message : 'The action could not be completed. Try again.'); return null; }
-    finally { pendingRef.current = false; setPending(false); }
-  };
-  const timerSeconds = remainingTimerSeconds(state.timer, Math.max(now, Date.now()));
+  const timerSeconds = useCountdown(state.timer);
 
-  useEffect(() => {
-    if (!timerRequest) return;
-    setWorkshopView('timer');
-    onTimerRequestHandled();
-  }, [timerRequest, onTimerRequestHandled]);
+  const { command, pending, error, setError } = useCollaborationCommands(boardId, state);
+  const role = facilitation(state);
+  const leads = role.leads;
 
+  // Restore focus to whatever opened the panel. A menu item that has since
+  // closed with its menu falls back to the menu button.
   useEffect(() => {
-    if (tab !== 'workshop' && tab !== 'present') return;
-    void apiFetch(`${endpoint}/semantic`).then(response => response.json()).then((result: { board?: SemanticBoard }) => setSemantic(result.board ?? { notes: [], frames: [] })).catch(() => undefined);
-  }, [boardId, tab, workshopView]);
-  useEffect(() => {
-    if (tab !== 'comments') return;
-    void apiFetch(`${endpoint}/comment-preferences`).then(response => response.json()).then((value: { mutedThreadIds?: string[] }) => setMutedThreads(value.mutedThreadIds ?? [])).catch(() => undefined);
-  }, [boardId, tab]);
-  useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(timer); }, []);
-  useEffect(() => { if (!voteTargets.length && semantic.notes.length) setVoteTargets(semantic.notes.slice(0, 12).map(note => note.id)); }, [semantic.notes.length]);
-  useEffect(() => {
-    const positioned = (event: Event) => {
-      setCommentAnchor((event as CustomEvent<{ x: number; y: number; objectId: string | null }>).detail);
-      setPlacingComment(false);
+    const trigger = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
+    return () => {
+      const active = document.activeElement;
+      if (active === document.body || active === null || panelRef.current?.contains(active)) focusOrFallback(trigger);
     };
-    window.addEventListener('whiteboard-comment-position', positioned);
-    return () => window.removeEventListener('whiteboard-comment-position', positioned);
   }, []);
   useEffect(() => {
-    if (tab !== 'comments') return;
-    const threadId = new URLSearchParams(location.search).get('thread');
-    if (threadId && state.comments.some(thread => thread.id === threadId && thread.resolvedAt)) setCommentFilter('all');
-    if (threadId) window.setTimeout(() => document.getElementById(threadId)?.scrollIntoView({ block: 'center' }), 50);
-  }, [tab, state.comments.length]);
+    if (tab === 'comments' && (threadRequest || new URLSearchParams(location.search).has('thread'))) return;
+    headingRef.current?.focus({ preventScroll: true });
+  }, [tab, workshopView]);
 
-  const panelCopy = tab === 'workshop' && workshopView !== 'overview'
-    ? {
-        timer: { title: 'Timer', description: 'Set a pace for your session.' },
-        brainstorm: { title: 'Private brainstorming', description: 'Write privately, then reveal ideas together.' },
-        voting: { title: 'Voting', description: 'Choose the ideas to take forward.' },
-        signals: { title: 'Reactions', description: 'React to an idea or raise your hand.' },
-      }[workshopView]
+  // Never strand keyboard users on the page body when the control they used
+  // disappears or becomes disabled (a vote limit, a remote "End vote", a
+  // resolved thread). It never moves focus that someone moved elsewhere.
+  useEffect(() => {
+    const panel = panelRef.current;
+    if (!panel) return;
+    const remember = (event: FocusEvent) => {
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      lastFocus.current = target && panel.contains(target)
+        ? { element: target, group: target.closest<HTMLElement>('[data-focus-group]')?.dataset.focusGroup ?? null, scope: target.closest<HTMLElement>('[data-focus-scope]')?.dataset.focusScope ?? null }
+        : null;
+    };
+    // A click anywhere outside the panel (the canvas, its toolbars) is a
+    // deliberate move; a click on panel background lets go of focus too.
+    const pointer = (event: PointerEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (!target || !panel.contains(target) || !target.closest('button, input, textarea, select, a[href], [tabindex]')) lastFocus.current = null;
+    };
+    let frame = 0;
+    const rescue = () => {
+      cancelAnimationFrame(frame);
+      // Browsers move focus off a disabled control a frame later; check again then.
+      rescueFocus();
+      frame = requestAnimationFrame(rescueFocus);
+    };
+    // Only DOM changes inside the panel can remove or disable its controls.
+    const changes = new MutationObserver(rescue);
+    changes.observe(panel, { childList: true, subtree: true, attributes: true, attributeFilter: ['disabled', 'aria-disabled'] });
+    document.addEventListener('focusin', remember);
+    document.addEventListener('pointerdown', pointer, true);
+    return () => {
+      cancelAnimationFrame(frame);
+      changes.disconnect();
+      document.removeEventListener('focusin', remember);
+      document.removeEventListener('pointerdown', pointer, true);
+    };
+  }, []);
+  const rescueFocus = useCallback(() => {
+    const panel = panelRef.current;
+    const lost = lastFocus.current;
+    if (!panel || !lost) return;
+    const active = document.activeElement;
+    if (!shouldRescueFocus({
+      lostConnected: lost.element.isConnected && panel.contains(lost.element),
+      lostDisabled: lost.element.matches(':disabled, [aria-disabled="true"]') || !lost.element.getClientRects().length,
+      activeIsBody: !active || active === document.body,
+      activeIsLost: active === lost.element,
+    })) return;
+    const byData = (name: string, value: string | null) => value ? panel.querySelector<HTMLElement>(`[data-${name}="${CSS.escape(value)}"]`) : null;
+    const group = byData('focus-group', lost.group);
+    const scope = byData('focus-scope', lost.scope);
+    const target = group && enabledControls(group)[0] ? enabledControls(group)[0]
+      : scope ? (scope.querySelector<HTMLElement>('[data-landing]') ?? (scope.hasAttribute('data-landing-heading') ? null : enabledControls(scope)[0]) ?? null)
+      : null;
+    (target ?? headingRef.current)?.focus({ preventScroll: true });
+  }, []);
+
+  useEffect(() => {
+    if (!viewRequest) return;
+    setWorkshopView(viewRequest.view);
+    onViewRequestHandled?.();
+  }, [viewRequest, onViewRequestHandled]);
+
+  useEffect(() => {
+    if (tab !== 'workshop' && tab !== 'present' && tab !== 'comments') return;
+    const abort = new AbortController();
+    void apiFetch(`${endpoint}/semantic`, { signal: abort.signal }).then(response => response.json()).then((result: { board?: SemanticBoard }) => setSemantic(result.board ?? { notes: [], frames: [] })).catch(() => undefined);
+    return () => abort.abort();
+  }, [boardId, tab, workshopView, tab === 'comments' ? state.comments.length : 0, state.brainstorm?.status]);
+  useEffect(() => {
+    if (tab !== 'comments') return;
+    // Everyone who can open the board, for @mentions (online or not).
+    void apiFetch(`${endpoint}/people`).then(response => response.ok ? response.json() : { people: [] }).then((value: { people?: MentionPerson[] }) => setBoardPeople(value.people ?? [])).catch(() => undefined);
+    void apiFetch(`${endpoint}/comment-preferences`).then(response => response.json()).then((value: { mutedThreadIds?: string[] }) => setMutedThreads(value.mutedThreadIds ?? [])).catch(() => undefined);
+  }, [boardId, tab]);
+
+  // Comment placement: after the canvas click, typing should go to the
+  // comment, not into the sticky that the same click selected.
+  useEffect(() => {
+    let cancelFocus: (() => void) | undefined;
+    const positioned = (event: Event) => {
+      setCommentAnchor((event as CustomEvent<Anchor>).detail);
+      setPlacingComment(false);
+      cancelFocus?.();
+      const focus = () => { cancelFocus?.(); requestAnimationFrame(() => composerRef.current?.focus({ preventScroll: true })); };
+      const fallback = window.setTimeout(focus, 400);
+      window.addEventListener('pointerup', focus, { once: true });
+      cancelFocus = () => { window.clearTimeout(fallback); window.removeEventListener('pointerup', focus); cancelFocus = undefined; };
+    };
+    window.addEventListener('whiteboard-comment-position', positioned);
+    return () => { cancelFocus?.(); window.removeEventListener('whiteboard-comment-position', positioned); };
+  }, [setCommentAnchor]);
+
+  // Thread selection is shared with the canvas: pins highlight the selected
+  // thread, and the URL can be copied while the panel is open.
+  const highlight = useCallback((threadId: string | null) => {
+    window.dispatchEvent(new CustomEvent('whiteboard-highlight-thread', { detail: { threadId } }));
+  }, []);
+  const selectThread = useCallback((threadId: string, options: { pan?: boolean; focus?: boolean } = {}) => {
+    const thread = state.comments.find(item => item.id === threadId);
+    if (!thread) return false;
+    setActiveThread(threadId);
+    highlight(threadId);
+    const url = new URL(location.href);
+    url.searchParams.set('thread', threadId);
+    history.replaceState(history.state, '', url);
+    setCommentFilter(filter => thread.resolvedAt ? (filter === 'open' ? 'all' : filter) : (filter === 'resolved' ? 'all' : filter));
+    if (options.pan) window.dispatchEvent(new CustomEvent('whiteboard-focus-anchor', { detail: thread.anchor }));
+    window.setTimeout(() => {
+      const article = document.getElementById(threadId);
+      article?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      if (options.focus) article?.focus({ preventScroll: true });
+    }, 60);
+    return true;
+  }, [state.comments, highlight]);
+  useEffect(() => {
+    if (tab !== 'comments') return;
+    const requested = threadRequest?.threadId ?? new URLSearchParams(location.search).get('thread');
+    if (!requested) return;
+    if (!selectThread(requested, { focus: true })) return;
+    onThreadRequestHandled?.();
+    onMentionSeen?.(requested);
+    // A deep link can arrive before the canvas has loaded and fitted the
+    // board; pan to the thread and light up its pin once the canvas answers.
+    const thread = state.comments.find(item => item.id === requested);
+    return whenCanvasReady(() => {
+      if (thread) window.dispatchEvent(new CustomEvent('whiteboard-focus-anchor', { detail: thread.anchor }));
+      highlight(requested);
+    });
+  }, [tab, threadRequest?.nonce, state.comments.length > 0]);
+  useEffect(() => {
+    if (tab !== 'comments') return;
+    return () => {
+      highlight(null);
+      // A closed panel must not reopen on reload.
+      const url = new URL(location.href);
+      if (url.searchParams.has('thread')) { url.searchParams.delete('thread'); history.replaceState(history.state, '', url); }
+    };
+  }, [tab, highlight]);
+
+  const panelCopy = tab === 'workshop' && workshopView !== 'overview' ? WORKSHOP_COPY[workshopView]
+    : tab === 'workshop' && !leads ? { title: 'Workshop', description: 'Join the timer, brainstorm and vote with your group.' }
     : PANEL_COPY[tab];
   const runningVote = state.voteRounds.find(round => round.status === 'running');
   const latestVote = state.voteRounds[0];
   const brainstorm = state.brainstorm;
-  const isPresenter = state.presentation?.presenterId === state.currentUserId || state.capabilities.manage;
+  const people = useMemo(() => uniqueParticipants(state.participants), [state.participants]);
+  // Guest URLs carry their access token; guests never get a shareable thread link.
+  const isGuest = state.currentUserId.startsWith('guest:');
+  const presentation = state.presentation;
+  const isPresenter = presentation?.presenterId === state.currentUserId || (presentation?.status === 'running' && state.capabilities.manage);
   const raised = useMemo(() => Object.entries(state.raisedHands).sort((a, b) => a[1].localeCompare(b[1])), [state.raisedHands]);
+  const nameOf = (userId: string) => userId === state.currentUserId ? 'You' : people.find(item => item.id === userId)?.name ?? 'Participant';
+  const timerText = formatTimer(timerSeconds);
+  const visibleThreads = state.comments.filter(thread => commentFilter === 'all' || Boolean(thread.resolvedAt) === (commentFilter === 'resolved'));
 
-  const mentionsFor = (text: string) => state.participants.filter(person => text.toLocaleLowerCase().includes(`@${person.name}`.toLocaleLowerCase())).map(person => person.id);
-  const addComment = async (event: FormEvent) => { event.preventDefault(); if (!comment.trim()) return; const anchor = commentAnchor ?? { x: 120, y: 120, objectId: null }; const result = await command('add_comment', { body: comment, mentions: mentionsFor(comment), ...anchor }); if (!result) return; setComment(''); setCommentAnchor(null); };
-  const saveDraft = async (event: FormEvent) => { event.preventDefault(); if (!draft.trim()) return; const result = await command('save_draft', { text: draft, color: draftColor }); if (!result) return; setDraft(''); };
+  // People to mention: everyone with access (from the server), plus anyone
+  // online who is not in that list (guests see only who is online).
+  const mentionPeople = useMemo(() => {
+    const byId = new Map(boardPeople.map(person => [person.id, person]));
+    for (const person of uniqueParticipants(state.participants)) if (!person.guest && !byId.has(person.id)) byId.set(person.id, { id: person.id, name: person.name, color: person.color });
+    return [...byId.values()].filter(person => person.id !== state.currentUserId);
+  }, [boardPeople, state.participants, state.currentUserId]);
+  const mentionsFor = (text: string) => mentionedIds(text, mentionPeople);
+  const composerMentions = useMentionPicker({ value: comment, onValue: setComment, people: mentionPeople, field: composerRef });
+  const addComment = async (event?: FormEvent) => {
+    event?.preventDefault();
+    if (!comment.trim()) return;
+    // A pinned comment is attached to the object under its pin. An unpinned
+    // comment belongs to the board, at the place its author was looking.
+    const view = visibleCanvasCentre(state.participants.find(person => person.id === state.currentUserId && person.viewport)?.viewport);
+    const anchor = commentAnchor
+      ? { ...commentAnchor, objectId: commentAnchor.objectId ?? objectAt(commentAnchor, semantic) }
+      : { x: Math.round(view?.x ?? 120), y: Math.round(view?.y ?? 120), objectId: null };
+    const result = await command('add_comment', { body: comment, mentions: mentionsFor(comment), ...anchor });
+    if (!result) return;
+    setComment(''); setCommentAnchor(null); setCommentFilter(filter => filter === 'resolved' ? 'open' : filter);
+    // Your new thread opens, ready for follow-up or to resolve.
+    const created = result.state?.comments[0];
+    if (created) { setActiveThread(created.id); highlight(created.id); }
+    setAnnouncement('Comment added.');
+    composerRef.current?.focus({ preventScroll: true });
+  };
+  const submitOnModifierEnter = (submit: () => void) => (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); submit(); }
+  };
+  const showArea = (area: Area, objectId: string | null = null) => {
+    window.dispatchEvent(new CustomEvent('whiteboard-focus-anchor', { detail: { x: area.x + area.width / 2, y: area.y + area.height / 2, objectId } }));
+  };
+  const toggleThread = async (threadId: string, resolved: boolean) => {
+    const index = visibleThreads.findIndex(item => item.id === threadId);
+    const neighbor = visibleThreads[index + 1] ?? visibleThreads[index - 1];
+    if (!await command(resolved ? 'reopen_comment' : 'resolve_comment', { threadId })) return;
+    setAnnouncement(resolved ? 'Thread reopened.' : 'Thread resolved.');
+    requestAnimationFrame(() => {
+      if (document.getElementById(threadId)) return;
+      const next = neighbor ? document.getElementById(neighbor.id) : null;
+      (next ?? composerRef.current ?? headingRef.current)?.focus({ preventScroll: true });
+      if (activeThread === threadId) { setActiveThread(null); highlight(null); }
+    });
+  };
+  // Escape with unsent text keeps the panel open and the text intact; a
+  // second Escape (now from the panel heading) closes the panel.
+  const keepUnsentText = (event: ReactKeyboardEvent) => {
+    if (event.key !== 'Escape' || event.defaultPrevented) return;
+    if (editingReply && event.target instanceof HTMLInputElement && event.target.closest('.reply-editor')) {
+      event.preventDefault();
+      const replyId = editingReply.replyId;
+      setEditingReply(null);
+      requestAnimationFrame(() => panelRef.current?.querySelector<HTMLElement>(`[data-reply-edit="${CSS.escape(replyId)}"]`)?.focus());
+      return;
+    }
+    if (holdsUnsentText(event.target)) {
+      event.preventDefault();
+      headingRef.current?.focus({ preventScroll: true });
+      setAnnouncement('Your draft is kept. Press Escape again to close the panel.');
+    }
+  };
+
+  // Editors who are not running the session can take over deliberately.
+  const facilitatorName = role.facilitatorId ? nameOf(role.facilitatorId) : 'Someone';
+  const takeOver = role.canTakeOver ? <div className="take-over" data-focus-group="take-over">
+    {confirmTakeOver ? <>
+      <span>Take over from {facilitatorName}? You will see the facilitator controls; they will not.</span>
+      <span className="button-row"><button type="button" className="primary-panel-action" ref={takeOverRef} onClick={() => void command('take_facilitation').then(result => { setConfirmTakeOver(false); if (result) setAnnouncement('You are now facilitating.'); })}>Take over</button><button type="button" onClick={() => setConfirmTakeOver(false)}>Cancel</button></span>
+    </> : <>
+      <span>{facilitatorName} is facilitating.</span>
+      <button type="button" className="text-action" onClick={() => setConfirmTakeOver(true)}>Take over facilitation</button>
+    </>}
+  </div> : null;
+
+  const workshopCards: { id: Exclude<WorkshopView, 'overview'>; title: string; description: string; icon: UiIconName; status?: string; live?: boolean }[] = [
+    { id: 'timer', title: 'Timer', description: 'Set a pace and keep a session on track.', icon: 'clock', live: state.timer?.status === 'running' && timerSeconds > 0,
+      status: state.timer && state.timer.status !== 'ended' && timerSeconds > 0 ? `${timerText} ${state.timer.status === 'paused' ? '· paused' : 'left'}` : undefined },
+    { id: 'brainstorm', title: 'Private brainstorming', description: 'Collect individual ideas, then reveal together.', icon: 'notes', live: brainstorm?.status === 'running',
+      status: brainstorm?.status === 'running' ? `Collecting · ${brainstorm.submittedCount} ${brainstorm.submittedCount === 1 ? 'idea' : 'ideas'} submitted`
+        : brainstorm?.status === 'closed' ? `Closed · ${brainstorm.submittedCount} ready to reveal` : undefined },
+    { id: 'voting', title: 'Voting', description: 'Find the ideas your group wants to explore.', icon: 'vote', live: Boolean(runningVote),
+      status: runningVote ? `Voting open · ${Math.max(0, runningVote.votesPerUser - runningVote.myVotes.length)} of ${runningVote.votesPerUser} votes left` : latestVote?.status === 'ended' ? 'Results ready' : undefined },
+    { id: 'signals', title: 'Reactions and hands', description: 'React in the moment or raise your hand.', icon: 'hand', live: raised.length > 0,
+      status: raised.length ? `${raised.length} ${raised.length === 1 ? 'hand' : 'hands'} raised` : undefined },
+  ];
+
+  const handsList = raised.length ? <ol className="hands-list" data-focus-scope="hands">{raised.map(([userId, raisedAt]) => <li key={userId} data-focus-group={`hand:${userId}`}>
+    <span className="hand-mark" aria-hidden="true">✋</span>
+    <span className="hand-person"><strong>{nameOf(userId)}</strong><small>Raised at {new Date(raisedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</small></span>
+    {userId === state.currentUserId ? <button type="button" onClick={() => void command('lower_hand')}>Lower</button>
+      : leads ? <button type="button" aria-label={`Acknowledge ${nameOf(userId)}`} onClick={() => void command('lower_hand', { userId })}>Acknowledge</button> : null}
+  </li>)}</ol> : null;
 
   return (
-    <aside className="collaboration-panel" aria-label="Collaboration tools">
-      <header className="panel-heading"><div><h2>{panelCopy.title}</h2><p>{panelCopy.description}</p></div><button className="panel-close" type="button" aria-label="Close panel" onClick={onClose}><UiIcon name="close" /></button></header>
+    <aside ref={panelRef} className="collaboration-panel" aria-label="Collaboration tools" aria-busy={pending} onKeyDown={keepUnsentText}>
+      <header className="panel-heading"><div><h2 ref={headingRef} tabIndex={-1}>{panelCopy.title}</h2><p>{panelCopy.description}</p></div><button className="panel-close" type="button" aria-label="Close panel" onClick={onClose}><UiIcon name="close" /></button></header>
       {error ? <p className="panel-error" role="alert">{error}</p> : null}
+      <p className="sr-only" role="status" aria-live="polite">{announcement}</p>
 
-      <fieldset className="panel-controls" disabled={pending}>
-      {tab === 'comments' ? <div className="panel-scroll">
-        <div className="comment-filters" aria-label="Filter comments">{(['open', 'resolved', 'all'] as const).map(filter => <button type="button" key={filter} aria-pressed={commentFilter === filter} onClick={() => setCommentFilter(filter)}>{filter === 'open' ? 'Open' : filter === 'resolved' ? 'Resolved' : 'All'} <span>{state.comments.filter(thread => filter === 'all' || Boolean(thread.resolvedAt) === (filter === 'resolved')).length}</span></button>)}</div>
-        {state.capabilities.comment ? <form className="comment-composer" onSubmit={event => void addComment(event)}><textarea value={comment} onChange={event => setComment(event.target.value)} aria-label="Comment" placeholder="Add a comment… Use @Name to mention someone." /><div className="button-row"><button type="button" className={placingComment ? 'active' : ''} onClick={() => { setPlacingComment(true); window.dispatchEvent(new Event('whiteboard-place-comment')); }}>{placingComment ? 'Click the canvas…' : commentAnchor ? 'Change anchor' : 'Place on canvas'}</button><button type="submit" disabled={!comment.trim()}>Comment</button></div>{commentAnchor ? <small>Anchored at {Math.round(commentAnchor.x)}, {Math.round(commentAnchor.y)}{commentAnchor.objectId ? ' on selected object' : ''}</small> : null}</form> : <p className="panel-empty">Your role can read comments.</p>}
-        <div className="comment-list">{state.comments.filter(thread => commentFilter === 'all' || Boolean(thread.resolvedAt) === (commentFilter === 'resolved')).map(thread => <article id={thread.id} className={`comment-thread ${thread.resolvedAt ? 'resolved' : ''}`} key={thread.id}>
-          <button className="comment-pin" type="button" onClick={() => { history.replaceState(null, '', `${location.pathname}?thread=${encodeURIComponent(thread.id)}`); window.dispatchEvent(new CustomEvent('whiteboard-focus-anchor', { detail: thread.anchor })); }}>{thread.anchor.objectId ? 'Object' : 'Canvas'} · {thread.resolvedAt ? 'Resolved' : 'Open'} · Show</button>
-          {thread.replies.map(item => <div className="comment-reply" key={item.id}><span style={{ background: item.author.color, color: avatarInk(item.author.color) }}>{item.author.name.slice(0, 1)}</span><div><strong>{item.author.name}{item.author.id.startsWith('guest:') ? ' · guest' : ''}</strong>{editingReply?.replyId === item.id ? <form className="inline-reply" onSubmit={event => { event.preventDefault(); void command('edit_reply', { threadId: thread.id, replyId: item.id, body: editingReply.body }).then(result => { if (result) setEditingReply(null); }); }}><input autoFocus value={editingReply.body} onChange={event => setEditingReply({ ...editingReply, body: event.target.value })} /><button type="submit">Save</button><button type="button" onClick={() => setEditingReply(null)}>Cancel</button></form> : <p>{item.deletedAt ? 'Reply deleted' : item.body}</p>}<small>{new Date(item.createdAt).toLocaleString()}</small>{!item.deletedAt && item.author.id === state.currentUserId ? <div className="reply-actions"><button type="button" onClick={() => setEditingReply({ threadId: thread.id, replyId: item.id, body: item.body })}>Edit</button><button type="button" onClick={() => void command('delete_reply', { threadId: thread.id, replyId: item.id })}>Delete</button></div> : null}</div></div>)}
-          {state.capabilities.comment && !thread.resolvedAt ? <form className="inline-reply" onSubmit={event => { event.preventDefault(); const reply = replies[thread.id] ?? ''; if (!reply.trim()) return; void command('reply_comment', { threadId: thread.id, body: reply, mentions: mentionsFor(reply) }).then(result => { if (result) setReplies(values => ({ ...values, [thread.id]: '' })); }); }}><input value={replies[thread.id] ?? ''} onChange={event => setReplies(values => ({ ...values, [thread.id]: event.target.value }))} aria-label="Reply" placeholder="Reply or @mention" /><button type="submit" disabled={!replies[thread.id]?.trim()}>Send</button></form> : null}
-          <div className="thread-actions">{state.capabilities.comment ? <button className="text-action" type="button" onClick={() => void command(thread.resolvedAt ? 'reopen_comment' : 'resolve_comment', { threadId: thread.id })}>{thread.resolvedAt ? 'Reopen' : 'Resolve'}</button> : null}<button className="text-action" type="button" onClick={() => { const muted = mutedThreads.includes(thread.id); void command(muted ? 'unmute_thread' : 'mute_thread', { threadId: thread.id }).then(result => { if (result) setMutedThreads(items => muted ? items.filter(id => id !== thread.id) : [...items, thread.id]); }); }}>{mutedThreads.includes(thread.id) ? 'Unmute replies' : 'Mute replies'}</button></div>
-        </article>)}</div>
-        {!state.comments.some(thread => commentFilter === 'all' || Boolean(thread.resolvedAt) === (commentFilter === 'resolved')) ? <div className="panel-empty-state"><span><UiIcon name="comment" /></span><strong>{commentFilter === 'resolved' ? 'No resolved comments' : 'No open comments'}</strong><p>{commentFilter === 'resolved' ? 'Resolved conversations will appear here.' : 'Pin feedback to the canvas or start a conversation.'}</p></div> : null}
+      <div className="panel-controls">
+      {tab === 'comments' ? <div className="panel-scroll" data-focus-scope="comments">
+        <div className="comment-filters" role="group" aria-label="Filter comments">{(['open', 'resolved', 'all'] as const).map(filter => <button type="button" key={filter} aria-pressed={commentFilter === filter} onClick={() => setCommentFilter(filter)}>{filter === 'open' ? 'Open' : filter === 'resolved' ? 'Resolved' : 'All'} <span>{state.comments.filter(thread => filter === 'all' || Boolean(thread.resolvedAt) === (filter === 'resolved')).length}</span></button>)}</div>
+        {state.capabilities.comment ? <form className="comment-composer" onSubmit={event => void addComment(event)}>
+          <div className="mention-field">
+            <textarea ref={composerRef} data-landing data-draft value={comment} {...composerMentions.fieldProps} onChange={composerMentions.onChange} onKeyDown={event => { if (!composerMentions.onKeyDown(event)) submitOnModifierEnter(() => void addComment())(event); }} aria-label="Comment" aria-describedby="comment-anchor-label" placeholder="Add a comment… Type @ to mention someone." />
+            {composerMentions.list}
+          </div>
+          <p className={`comment-anchor ${commentAnchor || placingComment ? 'pinned' : ''}`} id="comment-anchor-label"><UiIcon name="comment" />{placingComment ? 'Click anything on the canvas to pin this comment' : commentAnchor ? describeAnchor(commentAnchor, semantic) : 'Not pinned · it will be a board comment where you are looking'}</p>
+          <div className="button-row">
+            <button type="button" className={placingComment ? 'active' : ''} aria-pressed={placingComment} onClick={() => { setPlacingComment(true); window.dispatchEvent(new Event('whiteboard-place-comment')); }}>{placingComment ? 'Click the canvas…' : commentAnchor ? 'Move pin' : 'Pin to canvas'}</button>
+            <button type="submit" disabled={!comment.trim()} title="Comment (⌘ or Ctrl + Enter)">Comment</button>
+          </div>
+        </form> : <p className="panel-empty">Your role can read comments.</p>}
+        <div className="comment-list">{visibleThreads.map(thread => <CommentThreadCard key={thread.id} thread={thread} state={state} semantic={semantic}
+          expanded={activeThread === thread.id} mentioned={Boolean(mentionThreads?.includes(thread.id))} muted={mutedThreads.includes(thread.id)} isGuest={isGuest}
+          reply={replies[thread.id] ?? ''} onReply={value => setReplies(values => ({ ...values, [thread.id]: value }))} onSent={() => setAnnouncement('Reply sent.')}
+          onSelect={() => highlight(thread.id)}
+          onToggle={() => { if (activeThread === thread.id) { setActiveThread(null); highlight(null); } else { selectThread(thread.id, { pan: true }); onMentionSeen?.(thread.id); } }}
+          onShow={() => selectThread(thread.id, { pan: true })}
+          onCopyLink={() => { selectThread(thread.id); void navigator.clipboard?.writeText(threadLink(location.href, thread.id)).then(() => setAnnouncement('Link to thread copied. It works for people with access to this board.'), () => setError('Could not copy the link.')); }}
+          onMute={() => { const muted = mutedThreads.includes(thread.id); void command(muted ? 'unmute_thread' : 'mute_thread', { threadId: thread.id }).then(result => { if (result) { setMutedThreads(items => muted ? items.filter(id => id !== thread.id) : [...items, thread.id]); setAnnouncement(muted ? 'Replies unmuted.' : 'Replies muted.'); } }); }}
+          onResolve={() => void toggleThread(thread.id, Boolean(thread.resolvedAt))}
+          command={command}
+          mentionPeople={mentionPeople}
+          editing={editingReply?.threadId === thread.id ? editingReply : null}
+          onEdit={value => setEditingReply(value ? { threadId: thread.id, ...value } : null)}
+        />)}</div>
+        {!visibleThreads.length ? <div className="panel-empty-state"><span><UiIcon name="comment" /></span><strong>{commentFilter === 'resolved' ? 'No resolved comments' : commentFilter === 'all' ? 'No comments yet' : 'No open comments'}</strong><p>{commentFilter === 'resolved' ? 'Resolved conversations will appear here.' : 'Pin feedback to the canvas or start a conversation.'}</p></div> : null}
       </div> : null}
 
       {tab === 'workshop' ? <div className="panel-scroll workshop-panel" data-view={workshopView}>
-        {workshopView === 'overview' ? <div className="facilitation-cards">
+        {workshopView === 'overview' ? <>
+          <div className="workshop-summary" aria-label="Session status">
+            <span><span className="online-dot" aria-hidden="true" />{people.length} {people.length === 1 ? 'person' : 'people'} here</span>
+            {raised.length ? <span className="hands-chip">✋ {raised.length} {raised.length === 1 ? 'hand' : 'hands'} raised</span> : null}
+          </div>
+          {raised.length ? <section className="workshop-hands" aria-labelledby="workshop-hands-heading"><h3 id="workshop-hands-heading">Raised hands</h3>{handsList}</section> : null}
+          <div className="facilitation-cards">{workshopCards.map(tool => <button type="button" key={tool.id} className="facilitation-card" onClick={() => setWorkshopView(tool.id)}>
+            <span className="facilitation-icon" aria-hidden="true"><UiIcon name={tool.icon} /></span>
+            <span className="facilitation-copy"><strong>{tool.title}</strong><small>{tool.description}</small>{tool.status ? <em className={tool.live ? (tool.id === 'signals' ? 'live hands' : 'live') : ''}>{tool.status}</em> : null}</span>
+            <UiIcon name="chevron" className="facilitation-chevron" />
+          </button>)}</div>
+        </> : <button className="facilitation-back" type="button" onClick={() => setWorkshopView('overview')}><UiIcon name="back" />All tools</button>}
 
-          {[
-            { id: 'timer' as const, title: 'Timer', description: 'Set a pace and keep a session on track.', icon: 'clock' as const, status: state.timer && state.timer.status !== 'ended' ? `${String(Math.floor(timerSeconds / 60)).padStart(2, '0')}:${String(timerSeconds % 60).padStart(2, '0')} · ${state.timer.status}` : undefined },
-            { id: 'brainstorm' as const, title: 'Private brainstorming', description: 'Collect individual ideas, then reveal together.', icon: 'notes' as const, status: brainstorm && ['running', 'closed'].includes(brainstorm.status) ? `${brainstorm.submittedCount} ideas submitted` : undefined },
-            { id: 'voting' as const, title: 'Voting', description: 'Find the ideas your group wants to explore.', icon: 'vote' as const, status: runningVote ? 'Voting is open' : undefined },
-            { id: 'signals' as const, title: 'Reactions', description: 'React in the moment or raise your hand.', icon: 'hand' as const },
-          ].map(tool => <button type="button" key={tool.id} className="facilitation-card" onClick={() => setWorkshopView(tool.id)}><span className="facilitation-icon"><FacilitationIcon name={tool.icon} /></span><span><strong>{tool.title}</strong><small>{tool.description}</small>{tool.status ? <em>{tool.status}</em> : null}</span><UiIcon name="chevron" className="facilitation-chevron" /></button>)}
-        </div> : <button className="facilitation-back" type="button" onClick={() => setWorkshopView('overview')}><UiIcon name="back" />All tools</button>}
+        <section className="facilitation-detail timer-detail" data-focus-scope="timer" data-landing-heading={state.timer && state.timer.status !== 'ended' && timerSeconds > 0 ? undefined : ''}><h3>Timer</h3>
+          {state.timer && state.timer.status !== 'ended' && timerSeconds > 0 ? <>
+            <div className="big-timer" role="timer" aria-live="off">{timerText}</div>
+            <p className="timer-caption">{state.timer.status === 'paused' ? 'Paused' : 'Running'} · {state.timer.label}</p>
+            {leads ? <div className="button-row timer-actions">
+              <button type="button" className="primary-panel-action" data-landing onClick={() => void command(state.timer?.status === 'paused' ? 'resume_timer' : 'pause_timer')}>{state.timer.status === 'paused' ? 'Resume' : 'Pause'}</button>
+              <button type="button" onClick={() => void command('extend_timer', { durationSeconds: 60 })}>+1 min</button>
+              <button type="button" onClick={() => void command('stop_timer')}>Stop</button>
+            </div> : <><p className="panel-hint">{facilitatorName} controls this timer.</p>{takeOver}</>}
+          </> : leads ? <form className="workshop-settings" onSubmit={event => { event.preventDefault(); void command('start_timer', { label: timerLabel.trim() || 'Session timer', durationSeconds: timerMinutes * 60 }); }}>
+            <label><span>Name (optional)</span><input value={timerLabel} maxLength={80} placeholder="Session timer" onChange={event => setTimerLabel(event.target.value)} /></label>
+            <div className="timer-preview" aria-hidden="true">{String(Math.floor(timerMinutes)).padStart(2, '0')}:00</div>
+            <div className="timer-presets" role="group" aria-label="Quick timer duration">{[3, 5, 10, 15].map(minutes => <button type="button" key={minutes} aria-pressed={timerMinutes === minutes} onClick={() => setTimerMinutes(minutes)}>{minutes} min</button>)}</div>
+            <label><span>Duration in minutes</span><input type="number" min={1} max={240} value={timerMinutes} onChange={event => setTimerMinutes(Number(event.target.value))} /></label>
+            <button type="submit">Start timer</button>
+          </form> : <><p className="panel-hint" tabIndex={-1} data-landing>No timer is running.</p>{takeOver}</>}
+          <label className="privacy-toggle"><input type="checkbox" checked={timerSound} onChange={event => { setTimerSound(event.target.checked); try { localStorage.setItem('whiteboard-timer-sound', event.target.checked ? 'on' : 'off'); } catch { /* Storage is optional. */ } }} /><span>Play a sound when time ends</span></label>
+        </section>
 
-        <section className="facilitation-detail timer-detail"><h3>Timer</h3>{state.timer && state.timer.status !== 'ended' ? <><div className="big-timer">{String(Math.floor(timerSeconds / 60)).padStart(2, '0')}:{String(timerSeconds % 60).padStart(2, '0')}</div><p>{state.timer.label} · {state.timer.status}</p>{state.capabilities.facilitate ? <div className="button-row"><button type="button" onClick={() => void command(state.timer?.status === 'paused' ? 'resume_timer' : 'pause_timer')}>{state.timer.status === 'paused' ? 'Resume' : 'Pause'}</button><button type="button" onClick={() => void command('extend_timer', { durationSeconds: 60 })}>+1 min</button><button type="button" onClick={() => void command('stop_timer')}>Stop</button></div> : null}</> : state.capabilities.facilitate ? <form className="workshop-settings" onSubmit={event => { event.preventDefault(); void command('start_timer', { label: 'Session timer', durationSeconds: timerMinutes * 60 }); }}><div className="timer-preview" aria-label="Timer duration">{String(Math.floor(timerMinutes)).padStart(2, '0')}:00</div><div className="timer-presets" aria-label="Quick timer duration">{[3, 5, 10, 15].map(minutes => <button type="button" key={minutes} aria-pressed={timerMinutes === minutes} onClick={() => setTimerMinutes(minutes)}>{minutes} min</button>)}</div><label><span>Duration in minutes</span><input type="number" min={1} max={240} value={timerMinutes} onChange={event => setTimerMinutes(Number(event.target.value))} /></label><button type="submit">Start timer</button></form> : <p>No timer is running.</p>}<label className="privacy-toggle"><input type="checkbox" checked={timerSound} onChange={event => { setTimerSound(event.target.checked); try { localStorage.setItem('whiteboard-timer-sound', event.target.checked ? 'on' : 'off'); } catch { /* Storage is optional. */ } }} /><span>Play a sound when time ends</span></label></section>
+        <WorkshopBrainstorm boardId={boardId} state={state} command={command} announce={setAnnouncement} leads={leads} takeOver={takeOver} showArea={showArea} />
 
-        <section className="facilitation-detail brainstorm-detail"><h3>Private brainstorming</h3>{brainstorm && ['running', 'closed'].includes(brainstorm.status) ? <><p><strong>{brainstorm.title}</strong><br />{brainstorm.instructions}</p><p>{brainstorm.submittedCount} submitted · {brainstorm.participantCount} participating</p>{brainstorm.status === 'running' ? <form className="comment-composer" onSubmit={event => void saveDraft(event)}><textarea value={draft} onChange={event => setDraft(event.target.value)} placeholder="Only you can see this idea until reveal" /><label><span>Sticky color</span><select value={draftColor} onChange={event => setDraftColor(event.target.value as typeof draftColor)}><option value="yellow">Yellow</option><option value="orange">Orange</option><option value="green">Green</option><option value="blue">Blue</option><option value="purple">Purple</option></select></label><button type="submit">Save private note</button></form> : null}<div className="draft-list">{brainstorm.myDrafts.map(item => <article key={item.id} className={`draft-${item.color}`}><p>{item.text}</p><button type="button" onClick={() => void command(item.submittedAt ? 'withdraw_draft' : 'submit_draft', { draftId: item.id })}>{item.submittedAt ? 'Withdraw' : 'Submit'}</button><button type="button" onClick={() => void command('delete_draft', { draftId: item.id })}>Delete</button></article>)}</div>{state.capabilities.facilitate ? <div className="button-row"><button type="button" onClick={() => void command('close_brainstorm')}>Close collection</button><button type="button" onClick={() => void command('reveal_brainstorm', { x: 100, y: 100 })}>Reveal submitted ideas</button><button type="button" onClick={() => void command('cancel_brainstorm')}>Cancel</button></div> : null}</> : state.capabilities.facilitate ? <form className="workshop-settings" onSubmit={event => { event.preventDefault(); void command('start_brainstorm', { title: brainstormTitle, instructions: brainstormInstructions, durationSeconds: brainstormMinutes * 60 }); }}><label><span>Title</span><input value={brainstormTitle} onChange={event => setBrainstormTitle(event.target.value)} /></label><label><span>Instructions</span><textarea value={brainstormInstructions} onChange={event => setBrainstormInstructions(event.target.value)} /></label><label><span>Minutes</span><input type="number" min={0} max={120} value={brainstormMinutes} onChange={event => setBrainstormMinutes(Number(event.target.value))} /></label><button type="submit">Start private brainstorm</button></form> : <p>No private brainstorm is active.</p>}</section>
+        <WorkshopVoting state={state} semantic={semantic} command={command} leads={leads} takeOver={takeOver} peopleCount={eligibleVoterIds(state.participants).size} />
 
-        <section className="facilitation-detail voting-detail"><h3>Voting</h3>{runningVote ? <><p>{runningVote.title} · choose up to {runningVote.votesPerUser}</p><div className="vote-targets">{runningVote.targets.map(target => { const note = semantic.notes.find(item => item.id === target); const count = runningVote.myVotes.filter(item => item === target).length; return <div className="vote-choice" key={target}><span>{note?.text ?? target}</span><button type="button" disabled={count === 0} onClick={() => { const index = runningVote.myVotes.indexOf(target); const next = [...runningVote.myVotes]; next.splice(index, 1); void command('cast_vote', { roundId: runningVote.id, targets: next }); }}>−</button><b>{count}</b><button type="button" disabled={runningVote.myVotes.length >= runningVote.votesPerUser || count >= runningVote.maxPerTarget} onClick={() => void command('cast_vote', { roundId: runningVote.id, targets: [...runningVote.myVotes, target] })}>+</button></div>})}</div><button type="button" onClick={() => void command('cast_vote', { roundId: runningVote.id, targets: [] })}>Abstain / clear my votes</button>{state.capabilities.facilitate ? <button type="button" onClick={() => void command('end_vote', { roundId: runningVote.id })}>End and reveal</button> : null}</> : <>{latestVote?.status === 'ended' ? <div className="vote-history"><p>Results: {latestVote.title}</p>{latestVote.targets.map(target => <div className="vote-result" key={target}><span>{semantic.notes.find(note => note.id === target)?.text ?? target}</span><b>{latestVote.results?.[target] ?? 0}</b></div>)}</div> : null}{state.capabilities.facilitate && semantic.notes.length ? <form className="workshop-settings" onSubmit={event => { event.preventDefault(); void command('start_vote', { title: 'Vote on ideas', targets: voteTargets, votesPerUser: voteLimit, maxPerTarget: voteCap, anonymous: voteAnonymous, durationSeconds: voteMinutes * 60 }); }}><div className="eligible-notes">{semantic.notes.slice(0, 30).map(note => <label key={note.id}><input type="checkbox" checked={voteTargets.includes(note.id)} onChange={event => setVoteTargets(items => event.target.checked ? [...items, note.id] : items.filter(id => id !== note.id))} /><span>{note.text}</span></label>)}</div><div className="workshop-grid"><label><span>Votes/person</span><input type="number" min={1} max={20} value={voteLimit} onChange={event => setVoteLimit(Number(event.target.value))} /></label><label><span>Per item</span><input type="number" min={1} max={20} value={voteCap} onChange={event => setVoteCap(Number(event.target.value))} /></label><label><span>Minutes</span><input type="number" min={0} max={60} value={voteMinutes} onChange={event => setVoteMinutes(Number(event.target.value))} /></label></div><label className="privacy-toggle"><input type="checkbox" checked={voteAnonymous} onChange={event => setVoteAnonymous(event.target.checked)} /><span>Anonymous results</span></label><button type="submit" disabled={!voteTargets.length}>Start new vote</button></form> : <p>Add notes before starting a vote.</p>}</>}</section>
-
-        <section className="facilitation-detail signals-detail"><h3>Reactions</h3><div className="reaction-row">{['👍', '❤️', '🎉', '👏', '💡', '❓'].map(emoji => <button type="button" key={emoji} aria-label={`React ${emoji}`} onClick={() => void command('reaction', { emoji })}>{emoji}</button>)}</div><button type="button" onClick={() => void command(state.raisedHands[state.currentUserId] ? 'lower_hand' : 'raise_hand')}>{state.raisedHands[state.currentUserId] ? 'Lower my hand' : 'Raise my hand'}</button>{raised.length ? <ol className="hands-list">{raised.map(([userId]) => { const person = state.participants.find(item => item.id === userId); return <li key={userId}>{person?.name ?? 'Participant'}{state.capabilities.facilitate ? <button type="button" onClick={() => void command('lower_hand', { userId })}>Acknowledge</button> : null}</li>; })}</ol> : null}</section>
+        <section className="facilitation-detail signals-detail" data-focus-scope="signals"><h3>Reactions and hands</h3>
+          <div className="reaction-row" role="group" aria-label="Send a reaction">{REACTIONS.map(reaction => <button type="button" key={reaction.emoji} aria-label={`React with ${reaction.label}`} title={reaction.label} onClick={() => void command('reaction', { emoji: reaction.emoji }).then(result => { if (result) setAnnouncement(`Sent ${reaction.label}.`); })}>{reaction.emoji}</button>)}</div>
+          <button type="button" className={`hand-toggle ${state.raisedHands[state.currentUserId] ? 'raised' : ''}`} aria-pressed={Boolean(state.raisedHands[state.currentUserId])} data-landing onClick={() => void command(state.raisedHands[state.currentUserId] ? 'lower_hand' : 'raise_hand')}><span aria-hidden="true">✋</span>{state.raisedHands[state.currentUserId] ? 'Lower my hand' : 'Raise my hand'}</button>
+          {raised.length ? <><h4 className="hands-heading">Raised hands · {raised.length}</h4>{handsList}</> : <p className="panel-hint">No hands raised.</p>}
+        </section>
       </div> : null}
 
-      {tab === 'present' ? <div className="panel-scroll presentation-panel"><section><h3>Presentation order</h3><ol className="presentation-frame-list">{semantic.frames.map((frame, index) => <li key={frame.id} className={state.presentation?.status === 'running' && state.presentation.frameIds[state.presentation.frameIndex] === frame.id ? 'current' : ''}><span className="presentation-frame-number">{index + 1}</span><span>{frame.title || `Frame ${index + 1}`}</span></li>)}</ol>{state.presentation?.status === 'running' ? <><p>Frame {state.presentation.frameIndex + 1} of {state.presentation.frameIds.length}</p>{isPresenter ? <div className="button-row"><button type="button" onClick={() => void command('presentation_frame', { frameIndex: Math.max(0, state.presentation!.frameIndex - 1) })}>Previous</button><button className="primary-panel-action" type="button" onClick={() => void command('presentation_frame', { frameIndex: Math.min(state.presentation!.frameIds.length - 1, state.presentation!.frameIndex + 1) })}>Next</button><button type="button" onClick={() => void command('end_presentation')}>End</button></div> : <p>You are following the presenter. Move the canvas to stop following.</p>}{state.capabilities.facilitate && state.participants.length > 1 ? <label><span>Hand off to</span><select defaultValue="" onChange={event => { if (event.target.value) void command('handoff_presentation', { userId: event.target.value }); }}><option value="" disabled>Choose participant</option>{state.participants.filter(person => person.id !== state.currentUserId).map(person => <option value={person.id} key={person.connectionId}>{person.name}</option>)}</select></label> : null}</> : state.capabilities.facilitate && semantic.frames.length ? <button className="primary-panel-action" type="button" onClick={() => void command('start_presentation', { frameIds: semantic.frames.map(frame => frame.id) })}>Present {semantic.frames.length} {semantic.frames.length === 1 ? 'frame' : 'frames'}</button> : <p>Add frames to your board to create a guided presentation.</p>}<div className="button-row"><button type="button" onClick={() => void document.documentElement.requestFullscreen?.()}>Enter full screen</button>{state.capabilities.facilitate ? <button type="button" onClick={() => window.dispatchEvent(new CustomEvent('whiteboard-bring-everyone'))}>Bring everyone to me</button> : null}</div></section><section className="shortcut-card"><span className="keycap">⇧ L</span><div><h3>Laser pointer</h3><p>Hold Shift + L while pointing to highlight details for everyone.</p></div></section></div> : null}
+      {tab === 'present' ? <div className="panel-scroll presentation-panel" data-focus-scope="present">
+        <section>
+          <h3>Presentation order</h3>
+          <ol className="presentation-frame-list">{semantic.frames.map((frame, index) => {
+            const current = presentation?.status === 'running' && presentation.frameIds[presentation.frameIndex] === frame.id;
+            const position = presentation?.status === 'running' ? presentation.frameIds.indexOf(frame.id) : -1;
+            return <li key={frame.id} className={current ? 'current' : ''} aria-current={current ? 'step' : undefined}>
+              <span className="presentation-frame-number">{index + 1}</span>
+              {isPresenter && position >= 0 && !current ? <button type="button" className="frame-jump" onClick={() => void command('presentation_frame', { frameIndex: position })}>{frame.title || `Frame ${index + 1}`}</button> : <span>{frame.title || `Frame ${index + 1}`}</span>}
+            </li>;
+          })}</ol>
+          {presentation?.status === 'running' ? <>
+            <p className="presentation-status">Frame {presentation.frameIndex + 1} of {presentation.frameIds.length}{isPresenter ? ' · use ← and → to move' : ''}</p>
+            {isPresenter ? <div className="presenter-controls">
+              <button type="button" disabled={presentation.frameIndex === 0} onClick={() => void command('presentation_frame', { frameIndex: Math.max(0, presentation.frameIndex - 1) })}>Previous</button>
+              <button className="primary-panel-action" type="button" disabled={presentation.frameIndex >= presentation.frameIds.length - 1} onClick={() => void command('presentation_frame', { frameIndex: Math.min(presentation.frameIds.length - 1, presentation.frameIndex + 1) })}>Next</button>
+              <button type="button" onClick={() => void command('end_presentation')}>End</button>
+            </div> : <p className="panel-hint">{followingUserId === presentation.presenterId ? 'You are following the presenter. Move the canvas to look around on your own.' : 'You are looking around on your own.'}</p>}
+            {!isPresenter && followingUserId !== presentation.presenterId ? <button type="button" className="primary-panel-action" onClick={() => window.dispatchEvent(new CustomEvent('whiteboard-join-presentation'))}>Join presentation</button> : null}
+            {isPresenter && people.length > 1 ? <label className="handoff-field"><span>Hand off to</span><select defaultValue="" onChange={event => { if (event.target.value) void command('handoff_presentation', { userId: event.target.value }); }}><option value="" disabled>Choose a person</option>{people.filter(person => person.id !== state.currentUserId).map(person => <option value={person.id} key={person.id}>{person.name}</option>)}</select></label> : null}
+          </> : leads && semantic.frames.length ? <button className="primary-panel-action" type="button" data-landing onClick={() => void command('start_presentation', { frameIds: semantic.frames.map(frame => frame.id) })}>Present {semantic.frames.length} {semantic.frames.length === 1 ? 'frame' : 'frames'}</button>
+            : semantic.frames.length ? <><p className="panel-hint">No presentation is running.</p>{takeOver}</> : <p className="panel-hint">Add frames to your board to create a guided presentation.</p>}
+          <div className="button-row"><button type="button" onClick={() => void document.documentElement.requestFullscreen?.()}>Enter full screen</button>{leads ? <button type="button" onClick={() => { window.dispatchEvent(new CustomEvent('whiteboard-bring-everyone')); setAnnouncement('Everyone was brought to your view.'); }}>Bring everyone to me</button> : null}</div>
+        </section>
+        <section className="shortcut-card"><span className="keycap">⇧ L</span><div><h3>Laser pointer</h3><p>Hold Shift + L while pointing to highlight details for everyone.</p></div></section>
+      </div> : null}
 
-      {tab === 'activity' ? <div className="panel-scroll"><div className="checkpoint-composer">{state.capabilities.edit ? <form className="inline-reply" onSubmit={event => { event.preventDefault(); if (!checkpointLabel.trim()) return; void command('create_checkpoint', { label: checkpointLabel }).then(result => { if (result) setCheckpointLabel(''); }); }}><input value={checkpointLabel} onChange={event => setCheckpointLabel(event.target.value)} aria-label="Checkpoint name" placeholder="Checkpoint name" /><button type="submit">Save checkpoint</button></form> : null}</div>{state.checkpoints.map(item => <article className="activity-row" key={item.id}><b>{item.label}</b><span>Revision {item.revision} · {new Date(item.createdAt).toLocaleString()}</span></article>)}{state.activity.map(item => <article className="activity-row" key={item.id}><b>{item.summary}</b><span>{new Date(item.createdAt).toLocaleString()}</span></article>)}{!state.activity.length && !state.checkpoints.length ? <p className="panel-empty">Activity will appear as people collaborate.</p> : null}</div> : null}
+      {tab === 'activity' ? <div className="panel-scroll" data-focus-scope="activity"><div className="checkpoint-composer">{state.capabilities.edit ? <form className="inline-reply" onSubmit={event => { event.preventDefault(); if (!checkpointLabel.trim()) return; void command('create_checkpoint', { label: checkpointLabel }).then(result => { if (result) { setCheckpointLabel(''); setAnnouncement('Checkpoint saved.'); } }); }}><input data-draft value={checkpointLabel} onChange={event => setCheckpointLabel(event.target.value)} aria-label="Checkpoint name" placeholder="Checkpoint name" /><button type="submit" disabled={!checkpointLabel.trim()}>Save checkpoint</button></form> : null}</div>{state.checkpoints.map(item => <article className="activity-row" key={item.id}><b>{item.label}</b><span>Revision {item.revision} · {new Date(item.createdAt).toLocaleString()}</span></article>)}{state.activity.map(item => <article className="activity-row" key={item.id}><b>{item.summary}</b><span>{new Date(item.createdAt).toLocaleString()}</span></article>)}{!state.activity.length && !state.checkpoints.length ? <p className="panel-empty">Activity will appear as people collaborate.</p> : null}</div> : null}
 
-      {tab === 'people' ? <div className="panel-scroll"><div className="panel-section-label"><span className="online-dot" />{state.participants.length} online now</div>{state.participants.map(person => <article className="participant-row" key={person.connectionId}><span style={{ background: person.color, color: avatarInk(person.color) }}>{person.name.slice(0, 1)}</span><div><strong>{person.name}</strong><small>{person.guest ? 'Guest · ' : ''}{person.role}{person.id === state.presentation?.presenterId ? ' · presenting' : ''}</small></div>{person.id !== state.currentUserId ? <button type="button" onClick={() => window.dispatchEvent(new CustomEvent('whiteboard-follow', { detail: { userId: person.id } }))}>Follow</button> : <small className="you-label">You</small>}</article>)}{!state.participants.length ? <p className="panel-empty">No one else is here right now.</p> : null}</div> : null}
-      </fieldset>
-      {pending ? <div className="panel-action-status" role="status">Updating…</div> : null}
+      {tab === 'people' ? <div className="panel-scroll" data-focus-scope="people">
+        <div className="panel-section-label"><span className="online-dot" />{people.length} online now{raised.length ? <span className="hands-chip">✋ {raised.length} raised</span> : null}</div>
+        {leads && people.length > 1 ? <button type="button" className="bring-everyone" onClick={() => { window.dispatchEvent(new CustomEvent('whiteboard-bring-everyone')); setAnnouncement('Everyone was brought to your view.'); }}>Bring everyone to my view</button> : null}
+        {people.map(person => {
+          const following = followingUserId === person.id;
+          return <article className={`participant-row ${following ? 'following' : ''}`} key={person.id} data-focus-group={`person:${person.id}`}>
+            <span style={{ background: person.color, color: avatarInk(person.color) }} aria-hidden="true">{person.name.slice(0, 1).toUpperCase()}</span>
+            <div><strong>{person.name}{state.raisedHands[person.id] ? <span className="hand-mark" title="Hand raised"> ✋<span className="sr-only">hand raised</span></span> : null}</strong><small>{person.guest ? 'Guest · ' : ''}{person.role}{person.id === state.presentation?.presenterId ? ' · presenting' : ''}{person.connections > 1 ? ` · ${person.connections} tabs` : ''}{person.idle ? ' · away' : ''}</small></div>
+            {person.id === state.currentUserId ? <small className="you-label">You</small>
+              : following ? <button type="button" className="follow-button following" aria-pressed="true" aria-label={`Following ${person.name}. Stop following`} onClick={() => window.dispatchEvent(new Event('whiteboard-stop-following'))}><span>Following</span><span aria-hidden="true">·</span><span>Stop</span></button>
+              : <button type="button" className="follow-button" aria-pressed="false" aria-label={`Follow ${person.name}`} onClick={() => window.dispatchEvent(new CustomEvent('whiteboard-follow', { detail: { userId: person.id } }))}>Follow</button>}
+          </article>;
+        })}
+        {people.length <= 1 ? <p className="panel-empty">No one else is here right now. Share the board to invite people.</p> : null}
+      </div> : null}
+      </div>
+      {pending ? <div className="panel-action-status" aria-hidden="true">Updating…</div> : null}
     </aside>
   );
 }
 
-export type { PanelTab };
-
-function FacilitationIcon({ name }: { name: UiIconName }) {
-  return <UiIcon name={name} />;
-}
+export type { PanelTab, WorkshopView };

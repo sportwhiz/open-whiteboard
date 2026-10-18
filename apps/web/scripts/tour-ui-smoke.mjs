@@ -365,14 +365,21 @@ try {
       console.log("Loading", path, theme, width);
       await page.goto(origin + path);
       await page.getByRole("heading", { level: 1 }).waitFor();
-      if (
-        process.env.TOUR_ONLY ||
-        path === "/settings/connections" ||
-        path === "/settings/account" ||
-        path === "/settings/people"
-      )
+      if (process.env.TOUR_ONLY) await page.locator(".onboarding-card").waitFor();
+      else if (path === "/settings/connections") {
+        // The Studio guide already opened by itself in this visit, so the
+        // next page offers its guide on demand instead of chaining another.
+        await page.waitForTimeout(1300);
+        assert.equal(
+          await page.locator(".onboarding-card").count(),
+          0,
+          "A second guide must not open by itself in the same visit",
+        );
+        await page
+          .getByRole("button", { name: "Quick tour", exact: true })
+          .click();
         await page.locator(".onboarding-card").waitFor();
-      else {
+      } else {
         await page.waitForTimeout(1000);
         console.log(
           "Replay state",
@@ -402,6 +409,16 @@ try {
         return snapshot;
       });
     await page.goto(origin + "/boards/board%3Atour");
+    await page.locator(".creation-rail").waitFor({ timeout: 120000 });
+    await page.waitForTimeout(1300);
+    assert.equal(
+      await page.locator(".onboarding-card").count(),
+      0,
+      "The board guide must not chain after other guides in one visit",
+    );
+    // On a later visit (a fresh tab session) the unseen board guide opens.
+    await page.evaluate(() => sessionStorage.clear());
+    await page.reload();
     await page.locator(".creation-rail").waitFor({ timeout: 120000 });
     await page.locator(".onboarding-card").waitFor();
     await walk("board");

@@ -6,7 +6,7 @@ Reviewed against Open Whiteboard 0.4.0 (`0a49cb0`, latest `origin/main` when thi
 
 The core workflow is: capture an idea, continue writing, organize related ideas, find something later, discuss it, and return to work. Judge improvements by interruptions removed from that sequence. A feature count alone misses problems such as two competing text editors or a camera that changes zoom every time someone adds a note.
 
-This review combined code inspection, browser interaction, saved-data checks, and official interaction guidance from [FigJam quick create](https://help.figma.com/hc/en-us/articles/1500004291601-Build-faster-with-quick-create-in-FigJam), [FigJam sticky notes](https://help.figma.com/hc/en-us/articles/1500004414322-Sticky-notes-in-FigJam), and [Miro shortcuts](https://help.miro.com/hc/en-us/articles/360017731033-Shortcuts-and-hotkeys). Those products provide useful references for familiar gestures; their behavior is not evidence that a feature is missing here.
+This review combined code inspection, browser interaction, and saved-data checks to identify interruptions in everyday board workflows.
 
 ## What the app already has
 
