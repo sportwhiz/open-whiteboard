@@ -26,6 +26,17 @@ async function canvasChrome(page, request, mod) {
   const texts = () => page.evaluate(() => document.querySelector('whiteboard-editor').doc.getModelsByFlavour('affine:note').map(n => n.children.map(c => c.text.toString()).join('')));
   const focused = () => page.evaluate(() => document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.tagName);
   const notes = page.locator('[data-testid="edgeless-note-container"]');
+  // Wait until the camera has stopped moving (fit and zoom animate).
+  const settleCamera = () => page.evaluate(() => new Promise(resolve => {
+    let last = '', still = 0;
+    const tick = () => {
+      const { x, y, zoom } = window.auditController.camera();
+      const now = `${x.toFixed(2)},${y.toFixed(2)},${zoom.toFixed(4)}`;
+      still = now === last ? still + 1 : 0; last = now;
+      if (still >= 5) resolve(); else requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }));
   try {
     // An empty board's call to action creates a note and starts writing, so
     // typing goes into the note rather than tool shortcuts.
@@ -175,10 +186,26 @@ async function canvasChrome(page, request, mod) {
 
     // A line dragged between the middles of two notes joins their facing sides.
     await page.keyboard.press('Escape'); await page.keyboard.press('Escape');
-    await page.getByRole('button', { name: 'Fit board', exact: true }).click(); await page.waitForTimeout(800);
+    await page.getByRole('button', { name: 'Fit board', exact: true }).click();
+    await settleCamera();
     await page.locator('editor-host').focus();
+    // Aim at the notes' model centres (not their DOM boxes, which can lag a
+    // moving camera), and expect the facing sides of their actual bounds.
+    const ends = await page.evaluate(() => {
+      const [a, b] = document.querySelector('whiteboard-editor').doc.getModelsByFlavour('affine:note');
+      const view = id => window.auditController.viewBounds(id);
+      const host = document.querySelector('editor-host').getBoundingClientRect();
+      const centre = box => [host.left + box.x + box.w / 2, host.top + box.y + box.h / 2];
+      const [sa, sb] = [a.elementBound, b.elementBound];
+      const dx = sb.x + sb.w / 2 - (sa.x + sa.w / 2), dy = sb.y + sb.h / 2 - (sa.y + sa.h / 2);
+      const horizontal = Math.abs(dx) / ((sa.w + sb.w) / 2) >= Math.abs(dy) / ((sa.h + sb.h) / 2);
+      const expected = horizontal
+        ? (dx >= 0 ? { source: [1, 0.5], target: [0, 0.5] } : { source: [0, 0.5], target: [1, 0.5] })
+        : (dy >= 0 ? { source: [0.5, 1], target: [0.5, 0] } : { source: [0.5, 0], target: [0.5, 1] });
+      return { from: centre(view(a.id)), to: centre(view(b.id)), expected };
+    });
     const centre = async index => { const box = await notes.nth(index).boundingBox(); return [box.x + box.width / 2, box.y + box.height / 2]; };
-    const [from, to] = [await centre(0), await centre(1)];
+    const [from, to] = [ends.from, ends.to];
     await page.keyboard.press('l');
     await page.waitForFunction(() => window.auditController.state().tool === 'connector');
     await page.mouse.move(...from); await page.mouse.down(); await page.mouse.move(...to, { steps: 12 }); await page.mouse.up();
@@ -186,10 +213,10 @@ async function canvasChrome(page, request, mod) {
       const connector = document.querySelector('whiteboard-editor').doc.getModelsByFlavour('affine:surface')[0].elementModels.filter(e => e.type === 'connector').at(-1);
       return { source: connector?.source.position, target: connector?.target.position };
     });
-    assert.deepEqual(line, { source: [1, 0.5], target: [0, 0.5] }, 'Connector did not join the facing sides');
+    assert.deepEqual(line, ends.expected, 'Connector did not join the facing sides');
     await page.keyboard.press('Escape'); await page.keyboard.press('Escape');
     // Right-drag pans even when it starts on a note, and opens no menu.
-    await page.getByRole('button', { name: 'Fit board', exact: true }).click(); await page.waitForTimeout(800);
+    await page.getByRole('button', { name: 'Fit board', exact: true }).click(); await settleCamera();
     const startX = (await notes.nth(2).boundingBox()).x;
     const modelBefore = await page.evaluate(() => document.querySelector('whiteboard-editor').doc.getModelsByFlavour('affine:note')[2].props.xywh);
     const [px, py] = await centre(2);

@@ -190,6 +190,40 @@ export function facingPorts(source: Omit<LayoutBox, "id">, target: Omit<LayoutBo
   return dy >= 0 ? { source: [0.5, 1], target: [0.5, 0] } : { source: [0.5, 0], target: [0.5, 1] };
 }
 
+type Port = [number, number];
+type Bounds = Omit<LayoutBox, "id">;
+/**
+ * The ports a dragged connector keeps. An end counts as aimed only when the
+ * pointer was released on (within a few screen pixels of) the anchor the
+ * engine bound it to, and nearer that anchor than the object's middle - so
+ * a release inside an object, even a small zoomed-out one, never pins an
+ * edge point. Unaimed ends join the facing sides.
+ */
+export function connectorEndPorts({ start, end, source, target, sourcePort, targetPort, zoom, reach = 14 }: {
+  /** Pointer at press and release, in model coordinates. */
+  start: [number, number];
+  end: [number, number];
+  source: Bounds;
+  target: Bounds;
+  /** Anchors the engine bound each end to, if any. */
+  sourcePort?: Port;
+  targetPort?: Port;
+  zoom: number;
+  reach?: number;
+}): { source: Port; target: Port } {
+  const aimed = (point: [number, number], box: Bounds, port?: Port): port is Port => {
+    if (!port) return false;
+    const toAnchor = Math.hypot(box.x + box.w * port[0] - point[0], box.y + box.h * port[1] - point[1]);
+    const toMiddle = Math.hypot(box.x + box.w / 2 - point[0], box.y + box.h / 2 - point[1]);
+    return toAnchor * zoom <= reach && toAnchor < toMiddle;
+  };
+  const facing = facingPorts(source, target);
+  return {
+    source: aimed(start, source, sourcePort) ? sourcePort : facing.source,
+    target: aimed(end, target, targetPort) ? targetPort : facing.target,
+  };
+}
+
 /**
  * Where the next note goes (Tab / Cmd+Enter): to the right of the source,
  * clear of other objects. Inside a frame it stays in that frame - wrapping

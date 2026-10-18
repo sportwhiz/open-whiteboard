@@ -57,7 +57,7 @@ import {
   connectedPosition,
   canArrange,
   readingOrder,
-  facingPorts,
+  connectorEndPorts,
   nextNotePlacement,
   duplicatePlacement,
   CONNECTION_PORTS,
@@ -212,21 +212,12 @@ export class CanvasConnectorTool extends ConnectorTool {
     const sourceModel = this.gfx.getElementById<GfxModel>(connector.source.id);
     const targetModel = this.gfx.getElementById<GfxModel>(connector.target.id);
     if (!sourceModel || !targetModel) return;
-    const zoom = this.gfx.viewport.zoom;
-    // Aimed: the pointer was within a few pixels of the bound point, and
-    // nearer it than the middle (on a small, zoomed-out object every edge
-    // point is within a few pixels of the middle).
-    const aimed = (point: [number, number], model: GfxModel, position?: [number, number]) => {
-      if (!position) return false;
-      const bound = model.elementBound;
-      const anchor = [bound.x + bound.w * position[0], bound.y + bound.h * position[1]];
-      const toAnchor = Math.hypot(anchor[0] - point[0], anchor[1] - point[1]);
-      const toMiddle = Math.hypot(bound.x + bound.w / 2 - point[0], bound.y + bound.h / 2 - point[1]);
-      return toAnchor * zoom <= 14 && toAnchor < toMiddle;
-    };
-    const ports = facingPorts(sourceModel.elementBound, targetModel.elementBound);
-    const source = aimed(start, sourceModel, connector.source.position) ? connector.source.position : ports.source;
-    const target = aimed(end, targetModel, connector.target.position) ? connector.target.position : ports.target;
+    const { source, target } = connectorEndPorts({
+      start, end,
+      source: sourceModel.elementBound, target: targetModel.elementBound,
+      sourcePort: connector.source.position, targetPort: connector.target.position,
+      zoom: this.gfx.viewport.zoom,
+    });
     this.gfx.updateElement(connector, {
       source: { id: connector.source.id, position: source },
       target: { id: connector.target.id, position: target },

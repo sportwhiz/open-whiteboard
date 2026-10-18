@@ -5,6 +5,7 @@ import {
   connectedPosition,
   canArrange,
   readingOrder,
+  connectorEndPorts,
   facingPorts,
   nextNotePlacement,
   duplicatePlacement,
@@ -201,5 +202,30 @@ describe("next note in a narrow frame", () => {
     const { box } = nextNotePlacement(source, [source], [frame], frame);
     expect(box.y).toBe(source.y);
     expect(box.x).toBe(source.x + source.w + 32);
+  });
+});
+
+describe("dragged connector ends", () => {
+  const box = (x: number, y: number, size = 208) => ({ x, y, w: size, h: size });
+  const a = box(0, 0), b = box(300, 0);
+  it("joins facing sides when both ends are released inside the objects", () => {
+    expect(connectorEndPorts({ start: [104, 104], end: [404, 104], source: a, target: b, sourcePort: [0.5, 0], targetPort: [0.5, 0], zoom: 0.66 }))
+      .toEqual({ source: [1, 0.5], target: [0, 0.5] });
+  });
+  it("faces vertically for stacked objects", () => {
+    expect(connectorEndPorts({ start: [104, 104], end: [104, 404], source: a, target: box(0, 300), zoom: 1 }))
+      .toEqual({ source: [0.5, 1], target: [0.5, 0] });
+  });
+  it("keeps an anchor the pointer was released on", () => {
+    expect(connectorEndPorts({ start: [104, 104], end: [404, 2], source: a, target: b, targetPort: [0.5, 0], zoom: 1 }))
+      .toEqual({ source: [1, 0.5], target: [0.5, 0] });
+  });
+  it("ignores an anchor the pointer only passed, released well inside", () => {
+    expect(connectorEndPorts({ start: [104, 104], end: [404, 60], source: a, target: b, targetPort: [0.5, 0], zoom: 1 }))
+      .toEqual({ source: [1, 0.5], target: [0, 0.5] });
+  });
+  it("never pins an edge from the middle of a tiny, zoomed-out object", () => {
+    expect(connectorEndPorts({ start: [104, 104], end: [404, 104], source: a, target: b, sourcePort: [1, 0.5], targetPort: [0.5, 0], zoom: 0.1 }))
+      .toEqual({ source: [1, 0.5], target: [0, 0.5] });
   });
 });
