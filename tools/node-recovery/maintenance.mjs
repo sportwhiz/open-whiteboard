@@ -19,6 +19,12 @@ const tokenHash = createHash('sha256').update('Bearer ' + token).digest();
 const port = Number(process.env.PORT || 3000);
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid port.');
 let busy = false, complete = false, archive;
+function rejectRequest(request, response, status) {
+  // Flush the HTTP status, then close even if the sender never finishes its
+  // body. Draining rejected uploads would retain the 30-minute body deadline.
+  response.once('finish', () => request.destroy());
+  response.writeHead(status, { Connection: 'close' }).end();
+}
 const server = createServer(async (request, response) => {
   response.setHeader('Cache-Control', 'no-store');
   response.setHeader('X-Content-Type-Options', 'nosniff');
@@ -33,14 +39,14 @@ const server = createServer(async (request, response) => {
     response.end(request.method === 'HEAD' ? undefined : JSON.stringify({ ready: configured, maintenance: true })); return;
   }
   const supplied = createHash('sha256').update(request.headers.authorization || '').digest();
-  if (!configured || !validHost || !timingSafeEqual(supplied, tokenHash) || (request.headers.origin && request.headers.origin !== origin.origin)) { response.writeHead(401).end(); request.resume(); return; }
+  if (!configured || !validHost || !timingSafeEqual(supplied, tokenHash) || (request.headers.origin && request.headers.origin !== origin.origin)) { rejectRequest(request, response, 401); return; }
   if (request.method === 'GET' && request.url === '/recovery/status') {
     response.setHeader('Content-Type', 'application/json'); response.end(JSON.stringify({ mode, busy, complete })); return;
   }
-  if (request.method !== 'POST' || request.url !== '/recovery/' + mode) { response.writeHead(404).end(); request.resume(); return; }
-  if (busy) { response.writeHead(409).end(); request.resume(); return; }
+  if (request.method !== 'POST' || request.url !== '/recovery/' + mode) { rejectRequest(request, response, 404); return; }
+  if (busy) { rejectRequest(request, response, 409); return; }
   if (Number(request.headers['content-length'] || 0) > MAX_ARCHIVE) {
-    response.writeHead(413, { Connection: 'close' }).end(); return;
+    rejectRequest(request, response, 413); return;
   }
   busy = true;
   let recovery;

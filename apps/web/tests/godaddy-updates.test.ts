@@ -552,7 +552,7 @@ describe("GoDaddy durable updates", () => {
     requests.length = 0;
     await maintainGoDaddyUpdates(env);
     expect(db.prepare("SELECT status FROM software_updates WHERE id=?").get(queued.id)?.status).toBe("failed");
-    expect(requests.some(r => r.url.startsWith('https://api.godaddy.com'))).toBe(false);
+    expect(requests.some(r => new URL(r.url).origin === 'https://api.godaddy.com')).toBe(false);
   });
 
 });

@@ -55,6 +55,21 @@ describe("selection arrangement", () => {
 
 describe("connected branch placement", () => {
   const source = { id: "s", x: 500, y: 500, w: 160, h: 240 };
+  it("centers a square branch on a tall source with the same edge gap in every direction", () => {
+    const size = { w: 160, h: 160 };
+    expect(connectedPosition(source, "right", [], size)).toEqual({ id: "new", x: 756, y: 540, ...size });
+    expect(connectedPosition(source, "left", [], size)).toEqual({ id: "new", x: 244, y: 540, ...size });
+    expect(connectedPosition(source, "up", [], size)).toEqual({ id: "new", x: 500, y: 244, ...size });
+    expect(connectedPosition(source, "down", [], size)).toEqual({ id: "new", x: 500, y: 836, ...size });
+  });
+  it("checks collisions against the new square rather than the shorter source", () => {
+    const short = { ...source, w: 420, h: 140 };
+    const obstacle = { id: "o", x: 1016, y: 700, w: 200, h: 100 };
+    const next = connectedPosition(short, "right", [obstacle], { w: 420, h: 420 });
+    expect(next).toEqual({ id: "new", x: 1016, y: 832, w: 420, h: 420 });
+    const adjacent = findOpenPosition({ ...short, x: 952, h: short.w }, [obstacle]);
+    expect(adjacent.y).toBe(832);
+  });
   it("keeps dimensions and points outward in all four directions", () => {
     expect(connectedPosition(source, "left", []).x).toBe(244);
     expect(connectedPosition(source, "right", []).x).toBe(756);
