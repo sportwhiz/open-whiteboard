@@ -93,7 +93,7 @@ async function connection(env: NativeEnv): Promise<Connection | null> {
     typeof value.token !== "string" ||
     !value.token
   )
-    throw new Error("Update connection belongs to another installation");
+    throw new HttpError(409, "The site address changed. Reconnect GoDaddy updates for this address.", "UPDATER_RECONNECT_REQUIRED");
   return value;
 }
 function incompatibility(release: Release) {
@@ -133,6 +133,8 @@ async function packageMetadata(release: Release): Promise<Package> {
     !Number.isSafeInteger(asset.size) ||
     asset.size < 1 ||
     asset.size > MAX_PACKAGE ||
+    !release.nodeSha256 ||
+    asset.digest !== `sha256:${release.nodeSha256}` ||
     !/^sha256:[a-f0-9]{64}$/.test(asset.digest)
   )
     throw new PackageError("Release package is not qualified");
@@ -387,6 +389,13 @@ export async function godaddyUpdateRoutes(
       );
     }
     return Response.json(await queue(env, release, actor), { status: 202 });
+  } else if (path.endsWith("/cancel")) {
+    const result = await env.CATALOG.prepare(
+      "UPDATE software_updates SET status='failed',message='Cancelled before deployment started.',updated_at=? WHERE id=? AND status='queued'",
+    ).bind(Date.now(), String(input.id)).run();
+    if (!result.meta.changes)
+      throw new HttpError(409, "This update already started. Refresh its status.", "UPDATE_CHANGED");
+    await auditStatement(env.CATALOG, actor, "updates.cancelled", String(input.id)).run();
   } else if (path.endsWith("/continue")) {
     const job = await env.CATALOG.prepare(
       "SELECT * FROM software_updates WHERE id=? AND status='uncertain'",
@@ -503,6 +512,14 @@ export async function maintainGoDaddyUpdates(env: NativeEnv) {
       return;
     await queue(env, candidate, null);
     return;
+  }
+  if (job.status === "queued") {
+    // Claim before any network work, atomically competing with cancellation.
+    const claimed = await env.CATALOG.prepare(
+      "UPDATE software_updates SET status='building',updated_at=? WHERE id=? AND status='queued'",
+    ).bind(Date.now(), job.id).run();
+    if (!claimed.meta.changes) return;
+    job.status = "building";
   }
   const checkpoint = JSON.parse(job.checkpoint) as Checkpoint;
   const target = parseRelease(JSON.parse(job.release));

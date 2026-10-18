@@ -66,6 +66,9 @@ try {
       await page.waitForFunction(() => document.querySelector('whiteboard-editor').doc.getModelsByFlavour('affine:note').length === 2);
       assert.deepEqual(await texts(), ['Formatted idea', 'Formatted idea']);
       assert(await page.evaluate(() => document.querySelector('whiteboard-editor').doc.getModelsByFlavour('affine:paragraph').every(p => p.text.toDelta().every(d => d.attributes?.bold))), 'Duplicate lost formatting');
+      // Clipboard cloning finishes selection and viewport work asynchronously.
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      await focusCanvas();
       await page.keyboard.press(`${mod}+z`);
       await page.waitForFunction(() => document.querySelector('whiteboard-editor').doc.getModelsByFlavour('affine:note').length === 1);
       await page.keyboard.press(mod === 'Meta' ? 'Meta+Shift+z' : 'Control+y');
@@ -115,6 +118,8 @@ try {
       await page.waitForFunction(() => document.querySelector('whiteboard-editor').doc.getModelsByFlavour('affine:note').length === 3);
       await input.waitFor();
       assert.deepEqual(await page.evaluate(() => document.querySelector('whiteboard-editor').doc.getModelsByFlavour('affine:note')[2].props.edgeless.whiteboardText), {}, 'Copied style was not normalized');
+      const newSize = await page.evaluate(() => JSON.parse(document.querySelector('whiteboard-editor').doc.getModelsByFlavour('affine:note')[2].props.xywh));
+      assert.equal(newSize[2], newSize[3], 'A new note must start square instead of inheriting a grown height');
       await page.keyboard.type('Next idea');
       assert((await texts()).includes('Next idea'), 'Tab did not focus the new note');
       assert.equal(await page.getByLabel('Text size', { exact: true }).inputValue(), 'm', 'Next notes should preserve their source text size');
@@ -125,6 +130,10 @@ try {
       // native Select All shortcut's focus scope.
       const notes = page.locator('[data-testid="edgeless-note-container"]');
       await notes.nth(0).click();
+      await notes.nth(1).click({ modifiers: ['Shift'] });
+      await notes.nth(2).click({ modifiers: ['Shift'] });
+      await notes.nth(0).click();
+      assert.equal(await input.count(), 0, 'Clicking a multi-selected note should narrow selection, not open its editor');
       await notes.nth(1).click({ modifiers: ['Shift'] });
       await notes.nth(2).click({ modifiers: ['Shift'] });
       await focusCanvas();

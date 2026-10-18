@@ -12,7 +12,7 @@ export default {
       return Response.json({ ready }, { status: ready ? 200 : 503, headers });
     }
     if (path === '/api') {
-      if (!await allowRequest(request, env)) return Response.json({ error: 'The installer is busy. Please try again in a minute.', retryAfter: 60 }, { status: 429, headers });
+      if (!await allowRequest(request, env, monitor)) return Response.json({ error: 'The installer is busy. Please try again in a minute.', retryAfter: 60 }, { status: 429, headers });
       if (!api || boundEnv !== env) { api = createApi({ release, monitor }); boundEnv = env; }
       return api(request);
     }

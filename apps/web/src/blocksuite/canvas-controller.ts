@@ -341,6 +341,7 @@ export function createCanvasController(editor: WhiteboardEditorElement) {
     frame: "frame",
   };
   const fit = (ids?: string[]) => {
+    editor.dispatchEvent(new Event("whiteboard-manual-navigation"));
     const models = ids
       ?.map((id) => gfx.getElementById<GfxModel>(id))
       .filter((model): model is GfxModel => Boolean(model));
@@ -561,14 +562,15 @@ export function createCanvasController(editor: WhiteboardEditorElement) {
           ...old,
           id: "new",
           x: x - old.w / 2,
-          y: y - old.h / 2,
+          y: y - old.w / 2,
+          h: old.w,
           text: "",
         },
         existing: false,
         direction,
       };
     }
-    const position = connectedPosition(old, direction, connectionObstacles());
+    const position = connectedPosition(old, direction, connectionObstacles(), { w: old.w, h: old.w });
     return {
       source: old,
       target: { ...old, ...position, text: "" },
@@ -594,7 +596,7 @@ export function createCanvasController(editor: WhiteboardEditorElement) {
         const appearance = "props" in sourceModel
           ? sourceModel.props as { background?: unknown; edgeless?: Record<string, unknown> }
           : undefined;
-        nextId = createSticky(editor, target.x, target.y, source.color, "", source, appearance).id;
+        nextId = createSticky(editor, target.x, target.y, source.color, "", { w: target.w, h: target.h }, appearance).id;
       }
       crud.addElement("connector", {
         mode: ConnectorMode.Orthogonal,
@@ -695,7 +697,7 @@ export function createCanvasController(editor: WhiteboardEditorElement) {
         gfx.selection.selectedElements.length === 1 ? gfx.selection.selectedElements[0] : null;
       if (!source || !item(source).simpleSticky || source.isLocked()) return false;
       const old = item(source);
-      const position = findOpenPosition({ ...old, x: old.x + old.w + 32 }, connectionObstacles());
+      const position = findOpenPosition({ ...old, x: old.x + old.w + 32, h: old.w }, connectionObstacles());
       store.captureSync();
       const appearance = "props" in source
         ? source.props as { background?: unknown; edgeless?: Record<string, unknown> }
@@ -704,7 +706,7 @@ export function createCanvasController(editor: WhiteboardEditorElement) {
       // necessarily registered in the canvas until this transaction finishes.
       let next!: ReturnType<typeof createSticky>;
       store.transact(() => {
-        next = createSticky(editor, position.x, position.y, old.color, "", old, appearance);
+        next = createSticky(editor, position.x, position.y, old.color, "", { w: position.w, h: position.h }, appearance);
       });
       store.captureSync();
       startEditing(next.id);
@@ -845,6 +847,7 @@ export function createCanvasController(editor: WhiteboardEditorElement) {
     connectNext,
     fit,
     zoom(value: number) {
+      editor.dispatchEvent(new Event("whiteboard-manual-navigation"));
       // Manual zoom wins over any fit-to-content animation still in flight.
       gfx.viewport.smoothZoom(value, undefined, 1);
       gfx.viewport.setZoom(value);

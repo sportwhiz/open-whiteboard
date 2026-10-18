@@ -226,3 +226,15 @@ it("serves only readiness to local supervisor probes without weakening applicati
     expect((await probe(`127.0.0.1:${port}`, "/healthz")).status).toBe(503);
   } finally { await runtime.close(); }
 });
+
+it("serves the app when its canonical host is the local listener", async () => {
+  const listener = (await import("node:net")).createServer();
+  await new Promise<void>(resolve => listener.listen(0, "127.0.0.1", resolve));
+  const port = (listener.address() as { port: number }).port;
+  await new Promise<void>(resolve => listener.close(() => resolve()));
+  const origin = `http://127.0.0.1:${port}`;
+  const runtime = createNodeHttpServer({ fetch: async () => new Response("<html>App</html>") }, origin, { isReady: () => true });
+  await new Promise<void>(resolve => runtime.server.listen(port, "127.0.0.1", resolve));
+  try { expect(await fetch(origin).then(r => r.text())).toBe("<html>App</html>"); }
+  finally { await runtime.close(); }
+});

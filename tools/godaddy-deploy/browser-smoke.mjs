@@ -20,7 +20,17 @@ try {
   const page = await context.newPage(); page.on('pageerror', error => errors.push(error.message));
   page.on('console', message => { if (message.type() === 'error' && !message.text().includes('Failed to load resource')) errors.push(message.text()); });
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  let failInitialStatus = true;
+  await page.route('**/api', async route => {
+    if (failInitialStatus && route.request().postDataJSON()?.action === 'release-status') {
+      failInitialStatus = false;
+      return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'Temporary availability check failure.' }) });
+    }
+    return route.continue();
+  });
   await page.goto(origin);
+  await page.getByRole('button', { name: 'Check availability again' }).click();
+  await page.waitForFunction(() => !document.querySelector('#token').disabled);
   await page.getByText('Prefer to use Claude or Codex?', { exact: true }).click();
   await page.getByRole('button', { name: 'Copy setup instructions' }).click();
   await page.getByRole('status').filter({ hasText: 'Copied.' }).waitFor();

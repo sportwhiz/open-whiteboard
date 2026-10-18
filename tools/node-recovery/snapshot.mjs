@@ -1,7 +1,7 @@
 import { createPool } from 'mysql2/promise';
 import { DatabaseSync } from 'node:sqlite';
 import { createHash, randomUUID } from 'node:crypto';
-import { readFile, writeFile, realpath, stat, lstat, rename, unlink, open } from 'node:fs/promises';
+import { readFile, writeFile, realpath, stat, lstat, rename, unlink, open, readdir } from 'node:fs/promises';
 import { resolve, isAbsolute } from 'node:path';
 import { constants } from 'node:fs';
 import { buildMysqlPoolOptions } from '../../apps/web/src/node/database.ts';
@@ -43,6 +43,12 @@ export async function openRecovery(config, { afterMysqlCommit, beforeRestoreMark
     const [owned] = await connection.execute('SELECT GET_LOCK(?,0) AS acquired', [lock]);
     if (Number(owned[0]?.acquired) !== 1) throw new Error('The application is still running. Recovery requires exclusive ownership.');
     locked = true;
+    // No live app or recovery process can own these files while we hold the
+    // database lock. Never remove a marker or follow a directory/symlink.
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      if (entry.isFile() && /^\.(?:snapshot|restore-catalog|restore-marker|restore-completed)-[a-f0-9-]{36}$/.test(entry.name))
+        await unlink(resolve(directory, entry.name));
+    }
     const [inventory] = await connection.query('SELECT TABLE_NAME AS name FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE()');
     const logical = logicalDatabaseTable(namespace);
     const names = inventory.map(row => logical(row.name)).filter(Boolean);
@@ -136,7 +142,7 @@ export async function openRecovery(config, { afterMysqlCommit, beforeRestoreMark
         try { completed = JSON.parse(await readFile(completedPath, 'utf8')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
         if (completed?.digest === archiveDigest) {
           if (marker) await unlink(markerPath);
-          return { restored: true, resumed: true, tables: decoded.length };
+          return { restored: true, alreadyCompleted: true, resumed: true, tables: decoded.length };
         }
         if (!marker) {
           const sqlite = new DatabaseSync(catalogPath, { readOnly: true, allowExtension: false });

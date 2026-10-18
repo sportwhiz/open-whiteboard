@@ -56,8 +56,8 @@ try {
       await page.evaluate(() => {
         const doc = document.querySelector('whiteboard-editor').doc;
         const note = doc.getModelsByFlavour('affine:note')[0];
-        doc.updateBlock(note, { xywh: '[0,0,280,240]', background: { light: '#ded6ff', dark: '#ded6ff' },
-          edgeless: { ...note.props.edgeless, collapsedHeight: 240, whiteboardText: { size: 's', font: 'serif', align: 'center' } } });
+        doc.updateBlock(note, { xywh: '[0,0,280,560]', background: { light: '#ded6ff', dark: '#ded6ff' },
+          edgeless: { ...note.props.edgeless, collapsedHeight: 560, whiteboardText: { size: 's', font: 'serif', align: 'center' } } });
         window.auditController.select(note.id);
         window.auditController.zoom(1.2);
       });
@@ -69,7 +69,7 @@ try {
       assert.equal(await page.locator('.zoom-value').innerText(), '120%', 'Quick create changed zoom');
       const style = await page.evaluate(() => { const n = document.querySelector('whiteboard-editor').doc.getModelsByFlavour('affine:note').at(-1); return { style: n.props.edgeless.whiteboardText, box: JSON.parse(n.props.xywh), color: n.props.background.light }; });
       assert.deepEqual(style.style, { size: 's', font: 'serif', align: 'center' });
-      assert.deepEqual(style.box.slice(2), [280, 240]); assert.equal(style.color, '#ded6ff');
+      assert.deepEqual(style.box.slice(2), [280, 280]); assert.equal(style.color, '#ded6ff');
       await page.keyboard.press(`${mod}+Enter`); await input.waitFor(); await page.keyboard.type('Idea four');
       assert.equal(await count(), 4);
       await page.keyboard.press('Escape'); await saved();
@@ -133,6 +133,24 @@ try {
       await search.fill('Idea four');
       assert.equal(await results.count(), 1, 'Changing the query did not reset the result page');
       await search.press('Escape');
+      // A branch from a tall sticky must preview the new square and place it
+      // at the pointer, not offset by the source's old height.
+      const geometry = await page.evaluate(() => {
+        const doc = document.querySelector('whiteboard-editor').doc;
+        const source = doc.getModelsByFlavour('affine:note')[0];
+        doc.updateBlock(source, { xywh: '[0,0,280,560]', edgeless: { ...source.props.edgeless, collapsedHeight: 560 } });
+        const controller = window.auditController;
+        const point = controller.toViewBox({ x: 6000, y: 6000, w: 0, h: 0 });
+        const preview = controller.connectionPreview(source.id, 'right', point);
+        const directional = controller.connectionPreview(source.id, 'left');
+        controller.connectNext('right', source.id, point);
+        const created = doc.getModelsByFlavour('affine:note').at(-1);
+        return { preview: preview.target, directional: directional.target, actual: JSON.parse(created.props.xywh) };
+      });
+      assert.deepEqual([geometry.preview.x, geometry.preview.y, geometry.preview.w, geometry.preview.h], [5860, 5860, 280, 280]);
+      assert.deepEqual(geometry.actual, [5860, 5860, 280, 280], 'Created branch disagrees with its pointer preview');
+      assert.deepEqual([geometry.directional.x, geometry.directional.y, geometry.directional.w, geometry.directional.h], [-376, 140, 280, 280]);
+      await saved();
       assert.deepEqual(errors, []);
       console.log(`${platform}: palette permissions/focus, selection, tidy/group/ungroup, quick-create style and zoom, bounded search pages and keyboard traversal, viewport reload and immediate-leave persistence passed.`);
     } catch (error) {

@@ -22,14 +22,15 @@ vi.mock("../src/updates/build", () => ({
   },
 }));
 const original = { ...currentRelease };
+const zip = new TextEncoder().encode("verified test release bytes");
+const digest = createHash("sha256").update(zip).digest("hex");
 const release = {
   ...original,
   version: "1.2.1",
   commit: "c".repeat(40),
   security: true,
+  nodeSha256: digest,
 };
-const zip = new TextEncoder().encode("verified test release bytes");
-const digest = createHash("sha256").update(zip).digest("hex");
 const token = "gd_pat_disposable_test_token";
 function adapter(db: DatabaseSync): D1Database {
   function prepare(sql: string, args: SQLInputValue[] = []): any {
@@ -521,6 +522,37 @@ describe("GoDaddy durable updates", () => {
     await steps(1);
     expect(db.prepare("SELECT check_error FROM software_update_settings").get()?.check_error).toBeNull();
     expect(requests.length).toBeGreaterThan(0);
+  });
+
+  it("cancels only an unclaimed queued update and makes no provider writes", async () => {
+    await route("connection", { token });
+    const queued = await route("install", { version: release.version }).then(r => r.json());
+    await route("cancel", { id: queued.id });
+    requests.length = 0;
+    await maintainGoDaddyUpdates(env);
+    expect(requests.filter(r => r.init.method === "POST")).toHaveLength(0);
+    expect(db.prepare("SELECT status FROM software_updates WHERE id=?").get(queued.id)?.status).toBe("failed");
+  });
+  it("cannot cancel a job after the runner claims it", async () => {
+    await route("connection", { token });
+    const queued = await route("install", { version: release.version }).then(r => r.json());
+    await maintainGoDaddyUpdates(env);
+    await expect(route("cancel", { id: queued.id })).rejects.toMatchObject({ status: 409 });
+  });
+  it("returns a reconnect conflict after the canonical origin changes", async () => {
+    await route("connection", { token });
+    env.AUTH_ORIGIN = "https://moved.example";
+    for (const [action, data] of [["policy", { automaticSecurity: true }], ["install", { version: release.version }]] as const)
+      await expect(route(action, data)).rejects.toMatchObject({ status: 409, code: "UPDATER_RECONNECT_REQUIRED" });
+  });
+  it("rejects a ZIP digest that does not match the release manifest", async () => {
+    await route("connection", { token });
+    const queued = await route("install", { version: release.version }).then(r => r.json());
+    db.prepare("UPDATE software_updates SET release=? WHERE id=?").run(JSON.stringify({ ...release, nodeSha256: 'f'.repeat(64) }), queued.id);
+    requests.length = 0;
+    await maintainGoDaddyUpdates(env);
+    expect(db.prepare("SELECT status FROM software_updates WHERE id=?").get(queued.id)?.status).toBe("failed");
+    expect(requests.some(r => new URL(r.url).origin === 'https://api.godaddy.com')).toBe(false);
   });
 
 });

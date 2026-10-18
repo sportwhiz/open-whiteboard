@@ -82,7 +82,9 @@ export function createApi({ release, fetchImpl = fetch, monitor }) {
       if (request.method !== 'POST') return json({ error: 'Use POST.' }, 405);
       if (request.headers.get('origin') !== new URL(request.url).origin || request.headers.get('sec-fetch-site') === 'cross-site') return json({ error: 'Open the installer directly to continue.' }, 403);
       if (!request.headers.get('content-type')?.startsWith('application/json')) return json({ error: 'JSON is required.' }, 415);
-      const raw = await limitedBytes(new Response(request.body), 12_000);
+      let raw;
+      try { raw = await limitedBytes(new Response(request.body), 12_000); }
+      catch { fail('Enter a valid installer request under 12 KB.', 400); }
       let input; try { input = JSON.parse(new TextDecoder().decode(raw)); } catch { fail('Invalid installer request.'); }
       if (!input || typeof input !== 'object') fail('Invalid installer request.');
       ({ action, attempt } = input);

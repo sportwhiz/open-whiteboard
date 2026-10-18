@@ -31,12 +31,21 @@ export function connectedPosition(
   source: LayoutBox,
   direction: Direction,
   obstacles: LayoutBox[],
+  size: Pick<LayoutBox, "w" | "h"> = source,
 ): LayoutBox {
   const horizontal = direction === "right" || direction === "left";
-  const sign = direction === "right" || direction === "down" ? 1 : -1;
-  let next = { ...source, id: "new", x: source.x, y: source.y };
-  if (horizontal) next.x += sign * (source.w + 96);
-  else next.y += sign * (source.h + 96);
+  const next = {
+    ...source,
+    w: size.w,
+    h: size.h,
+    id: "new",
+    x: source.x + (source.w - size.w) / 2,
+    y: source.y + (source.h - size.h) / 2,
+  };
+  if (direction === "right") next.x = source.x + source.w + 96;
+  if (direction === "left") next.x = source.x - size.w - 96;
+  if (direction === "down") next.y = source.y + source.h + 96;
+  if (direction === "up") next.y = source.y - size.h - 96;
   for (let attempt = 0; attempt <= obstacles.length; attempt++) {
     const collisions = obstacles.filter(
       (b) =>

@@ -268,3 +268,24 @@ test('monitor remains unavailable until the registration-budget migration is app
   sql.exec('DROP INDEX installer_attempts_credential_key; ALTER TABLE installer_attempts DROP COLUMN credential_key');
   assert.equal(await monitor.ready(), false);
 });
+
+test('verified rate-limit sessions require the recorded credential, including across midnight', async t => {
+  const { monitor, incident, advance } = setup(t);
+  incident.attempt = crypto.randomUUID();
+  const key = await reportingCredentialKey(token);
+  await monitor.authorize(incident.attempt, key);
+  assert.equal(await monitor.credentialForAttempt(incident.attempt, token), key);
+  assert.equal(await monitor.credentialForAttempt(incident.attempt, 'wrong-token'), null);
+  assert.equal(await monitor.credentialForAttempt(crypto.randomUUID(), token), null);
+  advance(minutes(23 * 60));
+  assert.equal(await monitor.credentialForAttempt(incident.attempt, token), key);
+  advance(minutes(61));
+  assert.equal(await monitor.credentialForAttempt(incident.attempt, token), null);
+});
+test('resolved incidents do not consume the unresolved incident capacity', async t => {
+  const { monitor, incident, sql } = setup(t);
+  const insert = sql.prepare("INSERT INTO installer_incidents(attempt,action,category,version,occurred,updated,resolved) VALUES (?,'publish','request_failed','1.0.0',1,1,1)");
+  for (let i = 0; i < 5000; i++) insert.run(crypto.randomUUID());
+  assert.equal(await monitor.record(incident), true);
+  assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM installer_incidents').get().n, 1);
+});

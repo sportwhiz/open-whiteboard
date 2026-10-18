@@ -191,6 +191,9 @@ export function GoDaddyUpdatesPanel({
           Install compatible security patches automatically
         </label>
         <p>People on open boards may briefly reconnect during an update.</p>
+        <p>If an update cannot start, this page will also be unavailable. Recovery
+          currently requires republishing the previous package from GoDaddy.
+          Keep a working package and a current backup before enabling unattended updates.</p>
         {owner && data.connected && (
           <button
             disabled={action.busy || !!active}
@@ -256,6 +259,12 @@ export function GoDaddyUpdatesPanel({
                 </strong>
                 <p>{new Date(row.created_at).toLocaleString()}</p>
                 {row.message && <p>{row.message}</p>}
+                {owner && row.status === "queued" && (
+                  <button disabled={action.busy} onClick={() => void action.run(
+                    () => api("/api/v1/admin/updates/cancel", { id: row.id }),
+                    "Update cancelled. No deployment was started.",
+                  )}>Cancel update</button>
+                )}
                 {owner && row.status === "uncertain" && (
                   <>
                     <button

@@ -1,10 +1,10 @@
 name: GoDaddy installer
 on:
   pull_request:
-    paths: ['tools/godaddy-deploy/**', '.github/workflows/godaddy-installer.yml']
+    paths: ['tools/godaddy-deploy/**', '.github/workflows/godaddy-installer.yml', 'package.json', 'pnpm-lock.yaml', 'apps/web/package.json']
   push:
     branches: [main]
-    paths: ['tools/godaddy-deploy/**', '.github/workflows/godaddy-installer.yml']
+    paths: ['tools/godaddy-deploy/**', '.github/workflows/godaddy-installer.yml', 'package.json', 'pnpm-lock.yaml', 'apps/web/package.json']
   workflow_dispatch:
 permissions:
   contents: read

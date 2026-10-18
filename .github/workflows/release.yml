@@ -71,6 +71,15 @@ jobs:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: huddle-loom-node
+      - name: Bind the qualified Node package to its release manifest
+        run: |
+          node --input-type=module <<'JS'
+          import { readFileSync, writeFileSync } from 'node:fs';
+          import { createHash } from 'node:crypto';
+          const manifest = JSON.parse(readFileSync('huddle-loom-release.json', 'utf8'));
+          manifest.nodeSha256 = createHash('sha256').update(readFileSync('open-whiteboard-node.zip')).digest('hex');
+          writeFileSync('huddle-loom-release.json', JSON.stringify(manifest, null, 2) + '\n');
+          JS
       - name: Publish immutable source reference
         env:
           GH_TOKEN: ${{ github.token }}

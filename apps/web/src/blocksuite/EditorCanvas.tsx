@@ -154,7 +154,8 @@ export function EditorCanvas({ boardId, bootstrap, onCollaboration, onConnection
         };
         // Scope the view to this account, board and restored-document epoch.
         const viewportKey = `whiteboard-viewport-v1:${boardScope}:${board.documentEpoch}`;
-        const cancelInitialFit = fitEditorToContent(editor, readBoardViewport(viewportKey));
+        let viewportInitialized = false;
+        const cancelInitialFit = fitEditorToContent(editor, readBoardViewport(viewportKey), () => { viewportInitialized = true; });
         abortController.signal.addEventListener('abort', cancelInitialFit, { once: true });
         setStatus(`${store.getModelsByFlavour('affine:note').length} notes · ${stalePending ? 'Restored board · local copy needs review' : pending ? 'Recovered local edits' : 'Synced'}`);
 
@@ -175,6 +176,7 @@ export function EditorCanvas({ boardId, bootstrap, onCollaboration, onConnection
         const viewportRecord = () => ({ x: gfx.viewport.centerX, y: gfx.viewport.centerY, zoom: gfx.viewport.zoom });
         let viewportTimer: ReturnType<typeof setTimeout> | undefined;
         const saveViewport = () => {
+          if (!viewportInitialized) return;
           clearTimeout(viewportTimer);
           // A presenter or collaborator's camera must not replace your place.
           writeBoardViewport(viewportKey, previousViewport ?? viewportRecord());
@@ -191,13 +193,13 @@ export function EditorCanvas({ boardId, bootstrap, onCollaboration, onConnection
           followedViewport = { ...viewport };
           moveViewport(viewport);
         };
-        const stopFollowing = () => {
+        const stopFollowing = (restore = true) => {
           if (followedPresentationId) ignoredPresentationId = followedPresentationId;
           followingUserId = null;
           followedPresentationId = null;
           followedViewport = null;
           setFollowing('');
-          if (previousViewport) moveViewport(previousViewport);
+          if (restore && previousViewport) moveViewport(previousViewport);
           previousViewport = null;
         };
         const followUser = (userId: string, presentationId?: string) => {
@@ -552,7 +554,7 @@ export function EditorCanvas({ boardId, bootstrap, onCollaboration, onConnection
           window.dispatchEvent(new CustomEvent('whiteboard-comment-position', { detail: { x, y, objectId: gfx.selection.selectedIds[0] ?? null } }));
           setStatus('Comment anchor placed');
         };
-        const stopOnManualNavigation = () => { if (followingUserId) stopFollowing(); };
+        const stopOnManualNavigation = () => { if (followingUserId) stopFollowing(false); };
         const focusAnchor = (event: Event) => {
           const anchor = (event as CustomEvent<{ x: number; y: number; objectId: string | null }>).detail;
           const model = anchor.objectId ? store.getModelById(anchor.objectId) : null;
@@ -562,7 +564,14 @@ export function EditorCanvas({ boardId, bootstrap, onCollaboration, onConnection
         const bringEveryone = () => {
           if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'attention', viewport: viewportRecord() }));
         };
-        const keyDown = (event: KeyboardEvent) => { if (event.key.toLocaleLowerCase() === 'l' && event.shiftKey && !event.repeat && !(event.target as HTMLElement)?.closest('input, textarea, [contenteditable="true"]')) laserActive = true; };
+        const keyDown = (event: KeyboardEvent) => {
+          if ((event.target as HTMLElement)?.closest('input, textarea, select, [contenteditable="true"]')) return;
+          if (event.key.toLocaleLowerCase() === 'l' && event.shiftKey && !event.repeat) laserActive = true;
+          // Native engine zoom shortcuts bypass the product toolbar controller.
+          if (host.contains(event.target as Node) &&
+              (((event.metaKey || event.ctrlKey) && ['-', '=', '+'].includes(event.key)) ||
+               (event.altKey && ['0', '1', '2'].includes(event.key)))) stopOnManualNavigation();
+        };
         const keyUp = (event: KeyboardEvent) => { if (event.key.toLocaleLowerCase() === 'l') laserActive = false; };
         const viewportSubscription = gfx.viewport.viewportUpdated.subscribe(() => {
           setViewportRevision(value => value + 1);
@@ -576,12 +585,13 @@ export function EditorCanvas({ boardId, bootstrap, onCollaboration, onConnection
         host.addEventListener('pointerdown', positionComment, true);
         host.addEventListener('pointerdown', stopOnManualNavigation, true);
         host.addEventListener('wheel', stopOnManualNavigation, { passive: true });
+        editor.addEventListener('whiteboard-manual-navigation', stopOnManualNavigation);
         window.addEventListener('whiteboard-follow', followEvent);
         window.addEventListener('whiteboard-stop-following', stopFollowEvent);
         window.addEventListener('whiteboard-bring-everyone', bringEveryone);
         window.addEventListener('whiteboard-place-comment', placeComment);
         window.addEventListener('whiteboard-focus-anchor', focusAnchor);
-        window.addEventListener('keydown', keyDown);
+        window.addEventListener('keydown', keyDown, true);
         window.addEventListener('keyup', keyUp);
 
         abortController.signal.addEventListener(
@@ -603,12 +613,13 @@ export function EditorCanvas({ boardId, bootstrap, onCollaboration, onConnection
             host.removeEventListener('pointerdown', positionComment, true);
             host.removeEventListener('pointerdown', stopOnManualNavigation, true);
             host.removeEventListener('wheel', stopOnManualNavigation);
+            editor.removeEventListener('whiteboard-manual-navigation', stopOnManualNavigation);
             window.removeEventListener('whiteboard-follow', followEvent);
             window.removeEventListener('whiteboard-stop-following', stopFollowEvent);
             window.removeEventListener('whiteboard-bring-everyone', bringEveryone);
             window.removeEventListener('whiteboard-place-comment', placeComment);
             window.removeEventListener('whiteboard-focus-anchor', focusAnchor);
-            window.removeEventListener('keydown', keyDown);
+            window.removeEventListener('keydown', keyDown, true);
             window.removeEventListener('keyup', keyUp);
             if (reconnectTimer) clearTimeout(reconnectTimer);
             socket?.close();

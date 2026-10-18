@@ -63,6 +63,13 @@ try {
     await page.keyboard.press(`${mod}+a`); await page.keyboard.press(`${mod}+b`);
     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     assert.deepEqual(await page.evaluate(() => [...window.measuredNotes]), [id], 'Formatting did not invalidate the changed note measurement');
+    await page.evaluate(async () => {
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      window.measuredNotes.clear();
+      document.fonts.dispatchEvent(new FontFaceSetLoadEvent('loadingdone', { fontfaces: [new FontFace('Unrelated fixture font', 'local(Arial)')] }));
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    });
+    assert.deepEqual(await page.evaluate(() => [...window.measuredNotes]), [], 'An unrelated font must not remeasure the board');
     await page.keyboard.press('Escape');
     await page.waitForFunction(() => document.querySelector('.save-status')?.textContent === 'Saved');
     await page.reload(); await page.locator('.creation-rail').waitFor();
