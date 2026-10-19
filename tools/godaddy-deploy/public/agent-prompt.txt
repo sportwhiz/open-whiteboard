@@ -8,9 +8,9 @@ https://developer.godaddy.com/en/docs/api-users/troubleshoot/hosting
 Use gddy auth login with only these hosting permissions: hosting.application:create, hosting.application:read, hosting.source:read, hosting.source:write, hosting.subscription:read, hosting.subscription:write, hosting.deployment:execute, hosting.secret:write, hosting.log:read. Open the browser for me to sign in and approve. If browser sign-in is unavailable, guide me to create a short-lived Personal Access Token and enter it through a secure local prompt or credential store. Never ask me to paste it into chat. Do not put tokens or passwords in command arguments, command history, source code, logs, screenshots, or the final response.
 
 Deploy the qualified Open Whiteboard Node release, not the source workspace:
-Version: 0.5.0
-ZIP: https://github.com/sportwhiz/open-whiteboard/releases/download/v0.5.0/open-whiteboard-node.zip
-SHA-256: 27df8c3037188c718dcc79d052e59e6a224b49c63f6427ff4747e085219188e1
+Version: 0.5.1
+ZIP: https://github.com/sportwhiz/open-whiteboard/releases/download/v0.5.1/open-whiteboard-node.zip
+SHA-256: 2687b60d758a8c09e8ec090c3b4306e35611b002f84cb5d73e097fe79916ad6b
 Project: https://github.com/sportwhiz/open-whiteboard
 Verify the ZIP checksum before upload. If it does not match, stop. Do not substitute an unverified build.
 
@@ -26,4 +26,4 @@ Upload the verified release ZIP, wait for its source import, and publish it. GoD
 
 Poll operations with backoff, handle rate limits, and report useful progress. Wait for the publish deployment job to report COMPLETED, then verify GET /healthz on the published address returns 200 with ready=true. A briefly healthy endpoint cannot bypass a pending or failed deployment: GoDaddy may roll it back. Runtime status may list only PREVIEW during publication; the completed publish job and live health check are required. If status explicitly reports the published app as stopped, suspended, or failed, wait for it to recover before reporting success. Do not send my GoDaddy token to the app URL. If anything fails, inspect only this new app and use the official troubleshooting guide; use the included hosting.log:read permission to inspect recent logs for only this app and the failed variant when needed. Logs may contain credentials or personal information. Inspect them locally and report a sanitized explanation; do not paste raw logs into chat, email, or issue reports. Do not request secret-read, application-update, domain, shopping, or deletion permissions for this setup.
 
-Open the live whiteboard for me and let me create my administrator account and enroll my authenticator using the private setup passphrase. Do not create an account using guessed personal details. Tell me how to revoke a temporary token once setup is complete. Explain that Administration → Updates can connect a separate update token and enable compatible security patches. Never save the temporary installer token for unattended updates. End with the live URL, the app identifier, and a brief description of what you verified.
+Open the live whiteboard for me and let me create my administrator account using the private setup passphrase. Recommend an authenticator app for two-factor protection and explain that I can skip it unless my Studio requires it. Do not create an account using guessed personal details. Tell me how to revoke a temporary token once setup is complete. Explain that Administration → Updates can connect a separate update token and enable compatible security patches. Never save the temporary installer token for unattended updates. End with the live URL, the app identifier, and a brief description of what you verified.

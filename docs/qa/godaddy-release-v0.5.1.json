@@ -1,0 +1,153 @@
+{
+  "verifiedAt": "2026-10-19T01:34:34.969180+00:00",
+  "release": {
+    "version": "0.5.1",
+    "commit": "aff365bbd01f918fe5aab682bb279dae8a1eb940",
+    "schema": "604cb244a226305fc9eb32d115228d71db3184d7671e93abbf580f4f143920c0",
+    "dataFormat": 1,
+    "protocol": 1,
+    "security": false,
+    "important": true,
+    "nodeSha256": "2687b60d758a8c09e8ec090c3b4306e35611b002f84cb5d73e097fe79916ad6b"
+  },
+  "releaseWorkflow": "https://github.com/sportwhiz/open-whiteboard/actions/runs/39184613026",
+  "publishedZipMatchesQualifiedArtifact": true,
+  "freshInstallation": {
+    "method": "Real installer handler against GoDaddy using the release workflow artifact; published ZIP subsequently verified byte-for-byte identical.",
+    "providerPublication": "COMPLETED",
+    "lostPublicationResponseRecoveredWithSameOperation": true,
+    "healthReady": true,
+    "optionalSetupWithoutMfa": true,
+    "subsequentAuthenticatorEnrollment": true,
+    "guestPermissions": true,
+    "websocket": true,
+    "oauthMcp": true,
+    "providerConfirmedRestart": {
+      "startupAt": "2026-10-19T01:23:54.666Z",
+      "providerState": "running",
+      "healthReady": true
+    },
+    "imageBytesSurvivedRestart": true,
+    "updateConnection": true,
+    "runningVersion": "0.5.1",
+    "runningCommit": "aff365bbd01f918fe5aab682bb279dae8a1eb940"
+  },
+  "browser": {
+    "verifiedAt": "2026-10-19T01:25:07.583Z",
+    "editing": true,
+    "duplicate": true,
+    "drag": true,
+    "zoom": true,
+    "crossTabSynchronization": true,
+    "reloadPersistence": true,
+    "browserErrors": []
+  },
+  "studioAndAdministration": {
+    "verifiedAt": "2026-10-19T01:25:38.477Z",
+    "results": [
+      {
+        "theme": "light",
+        "width": 1440,
+        "workbookRenameAndFolderPersistence": true,
+        "timerStartPauseStop": true,
+        "commentAndResolve": true,
+        "updatesVersion": true,
+        "settingsSearchNavigation": true,
+        "browserErrors": []
+      },
+      {
+        "theme": "dark",
+        "width": 390,
+        "workbookRenameAndFolderPersistence": true,
+        "timerStartPauseStop": true,
+        "commentAndResolve": true,
+        "updatesVersion": true,
+        "settingsSearchNavigation": true,
+        "browserErrors": []
+      }
+    ]
+  },
+  "godaddyUpgrade": {
+    "completedAt": "2026-10-19T01:32:11.255Z",
+    "source": {
+      "version": "0.5.0",
+      "commit": "0efb02748945447ba0f07749ff6837f5ae5d876b",
+      "schema": "f093fc7ab85b56f3a3dfe3638c45b3596bd58579631183e67df08add5bd4b117",
+      "dataFormat": 1,
+      "protocol": 1,
+      "security": false,
+      "notes": ""
+    },
+    "target": {
+      "version": "0.5.1",
+      "commit": "aff365bbd01f918fe5aab682bb279dae8a1eb940",
+      "schema": "604cb244a226305fc9eb32d115228d71db3184d7671e93abbf580f4f143920c0",
+      "dataFormat": 1,
+      "protocol": 1,
+      "security": false,
+      "notes": ""
+    },
+    "method": "Guided schema upgrade: encrypted full backup while stopped, original package returned to service, temporary recovery secrets removed, new official ZIP imported and published to the same app.",
+    "providerPublication": "COMPLETED",
+    "encryptedCatalogAndMysqlBackup": true,
+    "temporaryRecoverySecretsRemoved": true,
+    "freshOwnerSignInAndMfa": true,
+    "boardUnchanged": true,
+    "documentEpochUnchanged": true,
+    "imageBytesUnchanged": true,
+    "settingsUnchanged": true,
+    "updateConnectionRetained": true,
+    "automaticSecurityPolicyUnchanged": true
+  },
+  "cloudflareUpgrade": {
+    "verifiedAt": "2026-10-19T01:32:30.510Z",
+    "source": "0.5.0",
+    "target": "0.5.1",
+    "environment": "Isolated local Cloudflare Worker runtime with real D1, Durable Object and R2 state; no production deployment",
+    "migration": "0029_optional_second_factor.sql",
+    "boardUnchanged": true,
+    "documentEpochUnchanged": true,
+    "imageBytesUnchanged": true,
+    "settingsUnchanged": true,
+    "existingSessionRetained": true,
+    "existingMfaStillRequired": true,
+    "freshOwnerSignIn": true
+  },
+  "existingInstallationReleaseDiscovery": {
+    "verifiedAt": "2026-10-19T01:33:11.225Z",
+    "installed": "0.5.0",
+    "available": "0.5.1",
+    "important": true,
+    "security": false,
+    "guidedUpgradeRequired": true,
+    "noticeVisible": true
+  },
+  "hostedInstaller": {
+    "url": "https://setup.openwhiteboard.app/",
+    "workerVersion": "cb08ba93-163b-40ab-95b1-0ace74c45d49",
+    "verifiedAt": "2026-10-19T01:34:04.449Z",
+    "version": "0.5.1",
+    "qualified": true,
+    "monitoringReady": true,
+    "liveConnection": true,
+    "capacityMessageVerified": true,
+    "noCredentialInBrowserStorage": true,
+    "agentPromptMatches": true,
+    "noAppCreated": true,
+    "browserErrors": []
+  },
+  "validation": {
+    "installerTests": 93,
+    "installerBrowserSuite": "passed",
+    "cloudflareReleaseWorkflow": "passed",
+    "nodeReleaseWorkflow": "passed",
+    "workerDryRun": "passed"
+  },
+  "limitations": [
+    "The Cloudflare upgrade used an isolated local Worker runtime with real D1, Durable Object and R2 state; no live Cloudflare installation was upgraded.",
+    "GoDaddy database changes still require a backup and guided package upload. Automatic rollback after failed startup is not provided.",
+    "Live hosting used a broad Hosting token; an exactly minimal-scope token was not exercised.",
+    "Fresh deployment exercised the real installer handler locally. The hosted browser check verified release readiness, connection, the full-plan message and matching instructions without creating another app.",
+    "GoDaddy Preview and custom domains were not exercised."
+  ]
+}

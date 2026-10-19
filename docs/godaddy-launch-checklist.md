@@ -1,6 +1,17 @@
 # GoDaddy launch record
 
-The active GoDaddy release is **v0.5.0**. The package, owner-initiated upgrade and hosted installer checks passed. Merging source alone does not update a published ZIP or the hosted installer.
+The active GoDaddy release is **v0.5.1**. Fresh installation, a backed-up v0.5.0 upgrade and the hosted installer checks passed. Merging source alone does not update a published ZIP or the hosted installer.
+
+## v0.5.1 qualification
+
+- The [release workflow](https://github.com/sportwhiz/open-whiteboard/actions/runs/39184613026) passed for source `aff365bbd01f918fe5aab682bb279dae8a1eb940`. The published ZIP matches the exact package tested on GoDaddy, with SHA-256 `2687b60d758a8c09e8ec090c3b4306e35611b002f84cb5d73e097fe79916ad6b`.
+- Fresh setup completed without mandatory MFA, followed by authenticator enrollment. Guest permissions, WebSockets, assistant connections, editing, duplication, dragging, zoom, cross-tab synchronization and reload persistence passed. A provider-confirmed restart retained accounts, sessions, board data, settings and image bytes. Desktop and mobile checks covered workbook organization, workshop controls and administration.
+- The existing v0.5.0 test installation received a full encrypted backup of its private catalog and MySQL data before the same app was upgraded. Fresh sign-in and MFA, board contents, document epoch, images, settings and the update connection passed afterward. Temporary recovery secrets were removed. This database migration requires the [guided GoDaddy upgrade](godaddy-nodejs-installation.md#update-an-existing-app).
+- A separate v0.5.0 installation detected the important-update notice and the guided-upgrade requirement. The release has `important: true` and `security: false`; it does not trigger automatic security updates.
+- Cloudflare's v0.5.0 → v0.5.1 migration passed in an isolated local Worker runtime with populated D1, Durable Object and R2 storage. Saved data, settings, existing sessions and enrolled MFA survived. No live Cloudflare installation was upgraded in this check.
+- The hosted installer pins v0.5.1 with matching coding-agent instructions. Worker version `cb08ba93-163b-40ab-95b1-0ace74c45d49` passed readiness, live token connection, full-plan handling and browser-storage checks. Monitoring remained ready. The local installer suite passed 93 tests, its desktop/mobile browser checks and a Worker deployment dry run.
+
+[Qualification evidence and test boundaries](qa/godaddy-release-v0.5.1.json).
 
 ## v0.5.0 qualification
 
