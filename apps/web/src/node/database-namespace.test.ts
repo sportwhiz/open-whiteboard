@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createPool, type Pool } from "mysql2/promise";
+import { createPool, type Pool, type PoolConnection } from "mysql2/promise";
 import { randomUUID } from "node:crypto";
 import {
   logicalDatabaseTable,
@@ -7,7 +7,7 @@ import {
   namespaceSql,
   validateDatabaseNamespace,
 } from "./database-namespace";
-import { migrateCatalogSchema } from "./catalog-schema";
+import { CATALOG_MIGRATIONS, migrateCatalogSchema } from "./catalog-schema";
 import { migrateNodeDatabase } from "./migrations";
 import { acquireNodeOwnership, type NodeOwnership } from "./rooms";
 import { MysqlCoordinationStore } from "./database";
@@ -16,6 +16,25 @@ import { MysqlCatalog } from "./mysql-catalog";
 import { createMysqlBlobBucket } from "./blobs";
 
 describe("deployment database namespaces", () => {
+  it("scopes migration triggers and verifies their exact physical definitions", () => {
+    const migration = CATALOG_MIGRATIONS.find(item => item.id === "0005_optional_second_factor")!;
+    for (const namespace of ["preview", "live"]) {
+      const scope = namespaceSql(namespace);
+      for (const step of migration.steps.filter(step => step.sql.startsWith("CREATE TRIGGER"))) {
+        const ddl = scope(step.sql).sql;
+        const name = ddl.match(/^CREATE TRIGGER `([^`]+)`/)![1];
+        const body = ddl.slice(ddl.indexOf("\nBEGIN") + 1);
+        expect(name).toMatch(new RegExp(`^hn_${namespace}_`));
+        expect(scope(step.applied).sql).toContain(`TRIGGER_NAME='${name}'`);
+        expect(scope(step.applied).sql).toContain(`ACTION_STATEMENT='${body.replaceAll("'", "''")}'`);
+        expect(body).toContain(`FROM hn_${namespace}_account_security`);
+        expect(body).toContain("MESSAGE_TEXT='LAST_FACTOR'");
+        // The same text in application data is never rewritten.
+        const literal = `'${body.replaceAll("'", "''")}'`;
+        expect(scope(`SELECT ${literal}`).sql).toBe(`SELECT ${literal}`);
+      }
+    }
+  });
   it("preserves the legacy schema and rejects unsafe namespace settings", () => {
     expect(validateDatabaseNamespace(undefined)).toBe("");
     expect(namespaceSql("")("SELECT * FROM users", ["users"])).toEqual({
@@ -83,6 +102,38 @@ describe.skipIf(!process.env.HUDDLE_NAMESPACE_MYSQL_TEST_URL)(
       await liveOwner?.close();
       await preview?.end();
       await live?.end();
+    });
+    it("resumes an optional-factor migration after trigger DDL committed without its receipt", async () => {
+      const pool = namespaceMysqlPool(createPool(process.env.HUDDLE_NAMESPACE_MYSQL_TEST_URL!), "mfa_resume");
+      let interrupted = false;
+      const interruptedPool = {
+        getConnection: async () => {
+          const connection = await pool.getConnection();
+          return new Proxy(connection, {
+            get(target, key) {
+              if (key === "execute") return async (sql: string, values?: unknown[]) => {
+                if (!interrupted && sql.startsWith("INSERT INTO hl_catalog_migration_steps") &&
+                    values?.[0] === "0005_optional_second_factor" && values[1] === "0003_create_keep_last_passkey") {
+                  interrupted = true;
+                  throw new Error("Simulated exit after trigger commit");
+                }
+                return target.execute(sql, values);
+              };
+              const value = Reflect.get(target, key);
+              return typeof value === "function" ? value.bind(target) : value;
+            },
+          }) as PoolConnection;
+        },
+      } as Pool;
+      try {
+        await expect(migrateCatalogSchema(interruptedPool)).rejects.toThrow("Simulated exit after trigger commit");
+        await expect(migrateCatalogSchema(pool, CATALOG_MIGRATIONS.slice(0, -1))).rejects.toThrow("pending catalog migration");
+        await migrateCatalogSchema(pool);
+        await migrateCatalogSchema(pool);
+        for (const step of CATALOG_MIGRATIONS.at(-1)!.steps) {
+          expect((await pool.query(step.applied))[0]).toEqual([{ applied: 1 }]);
+        }
+      } finally { await pool.end(); }
     });
     it("allows one owner in each namespace while rejecting duplicate owners", async () => {
       expect(previewOwner?.healthy).toBe(true);

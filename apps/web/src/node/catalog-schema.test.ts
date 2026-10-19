@@ -426,7 +426,7 @@ describe.skipIf(!process.env.HUDDLE_SCHEMA_TEST_MYSQL_URL)(
         const [migrations] = await connection.query(
           "SELECT name,applied_at FROM d1_migrations ORDER BY id",
         );
-        expect(migrations as unknown[]).toHaveLength(28);
+        expect(migrations as unknown[]).toHaveLength(29);
       }));
     it("evaluates JSON resource ownership when the recipient is valid", () =>
       transaction(async (connection) => {
