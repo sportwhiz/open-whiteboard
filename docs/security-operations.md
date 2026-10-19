@@ -101,3 +101,9 @@ In **Administration → Sign-in settings → Registration and security**, the St
 The window starts with the last successful identity check in that browser session. Password confirmation alone cannot satisfy a required second factor. New sign-ins still require MFA when the account or Studio policy requires it. Viewing linked login methods does not require a fresh check. Sign-out, account suspension, session expiry and credential revocation still invalidate access. A policy change applies to existing sessions on their next protected request.
 
 This setting is separate from the inactivity and maximum session lifetime settings. Longer verification windows mean someone with access to an unlocked, signed-in browser has more time to make protected changes.
+
+## Optional two-factor authentication
+
+New installations recommend a passkey or authenticator during setup and let the owner choose **Skip for now**. Owners and administrators can use a verified account without enrolling a second factor. Add one later in **Account and security**.
+
+An enrolled authenticator still applies at sign-in. **Administration → Sign-in settings → Require a second factor for everyone** enforces it for all roles. Protected changes still require a recent identity check; accounts without a required second factor can confirm with their password or sign-in provider. Recovery restrictions and the protection against removing the last usable sign-in method remain in place.

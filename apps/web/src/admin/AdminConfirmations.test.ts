@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import { mfaRequirementMessage, roleChangeConsequences } from "./AdminConfirmations";
 
 describe("administrative confirmation copy", () => {
-  it("mentions setting up a second factor only for a new administrator without one", () => {
+  it("recommends a second factor for a new administrator without one", () => {
     const without = roleChangeConsequences({ name: "Mia", from: "member", to: "admin", hasSecondFactor: false });
     expect(without[0]).toBe("Mia will be signed out on all devices.");
-    expect(without).toContain("Administrators must use a passkey or authenticator app, so Mia will be asked to set one up at the next sign-in.");
+    expect(without).toContain("A passkey or authenticator app is recommended for Mia’s account.");
     const withFactor = roleChangeConsequences({ name: "Mia", from: "member", to: "admin", hasSecondFactor: true });
     expect(withFactor.join(" ")).not.toContain("passkey");
   });

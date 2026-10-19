@@ -1,4 +1,5 @@
 // A software authenticator for cryptographic HTTP conformance. No browser or device credentials are used.
+import assert from "node:assert/strict";
 import {
   createHash,
   generateKeyPairSync,
@@ -51,6 +52,7 @@ export function softwarePasskey(origin: string) {
       const options = await client.call(
         "/api/auth/passkey/generate-register-options",
       );
+      assert.equal(options.authenticatorSelection.userVerification, "required");
       userId = options.user.id;
       const authData = Buffer.concat([
         rpHash,
@@ -110,6 +112,7 @@ export function softwarePasskey(origin: string) {
       const options = await client.call(
         "/api/auth/passkey/generate-authenticate-options",
       );
+      assert.equal(options.userVerification, "required");
       const count = Buffer.alloc(4);
       count.writeUInt32BE(++counter);
       const authData = Buffer.concat([

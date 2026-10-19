@@ -24,7 +24,7 @@ export function roleChangeConsequences(input: {
     );
     if (!input.hasSecondFactor)
       lines.push(
-        `Administrators must use a passkey or authenticator app, so ${name} will be asked to set one up at the next sign-in.`,
+        `A passkey or authenticator app is recommended for ${name}’s account.`,
       );
   } else if (from === "admin")
     lines.push(`${name} will lose access to Studio administration.`);

@@ -44,10 +44,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
       - run: pnpm exec wrangler deploy --dry-run
-      - name: Native authentication, revocation, rotation and restore
-        run: pnpm --filter @whiteboard/web exec node scripts/run-auth-tests.mjs
-      - name: Install Chromium for native OAuth browser regression
+      - name: Install Chromium for authentication browser regressions
         run: pnpm --filter @whiteboard/web exec playwright install --with-deps chromium
+      - name: Native authentication, passkeys, optional setup, revocation, rotation and restore
+        run: pnpm --filter @whiteboard/web exec node scripts/run-auth-tests.mjs --browser
       - name: Canvas and Studio interactions
         run: |
           pnpm --filter @whiteboard/web exec wrangler d1 migrations apply canvas-regression-tests-catalog --local --config tests/regression/wrangler.jsonc

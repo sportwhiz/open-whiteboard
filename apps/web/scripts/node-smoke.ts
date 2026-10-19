@@ -324,12 +324,13 @@ try {
   });
   assert.ok(owner.recoveryCode);
   await call("/api/v1/auth/bootstrap");
-  await call("/api/v1/setup/complete", { title: "Node test" }, 403);
+  await call("/api/v1/setup/complete", { title: "Node test" });
+  assert.equal((await call("/api/v1/auth/bootstrap")).account.needsMfa, false);
+  await call("/api/v1/admin/settings", { title: "Node test" }, 200, "PATCH");
   const factor = await call("/api/auth/two-factor/enable", { password });
   const seed = new URL(factor.totpURI).searchParams.get("secret")!;
   await call("/api/auth/two-factor/verify-totp", { code: totp(seed) });
   await call("/api/v1/auth/bootstrap");
-  await call("/api/v1/setup/complete", { title: "Node test" });
   assert.equal((await call("/api/v1/admin/settings")).settings.reauthentication_seconds, 1800);
   await call("/api/v1/admin/settings", { reauthentication_seconds: 3600 }, 200, "PATCH");
   assert.equal((await call("/api/v1/admin/settings")).settings.reauthentication_seconds, 3600);

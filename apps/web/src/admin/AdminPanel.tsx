@@ -1274,8 +1274,7 @@ function PolicyForm({
           ))}
         </div>
         <p>
-          Owners and administrators always need a second factor. Requiring MFA
-          pauses existing app grants until their users confirm them.
+          Two-factor authentication is recommended for everyone, including owners and administrators. Requiring it pauses existing app grants until their users confirm them.
         </p>
         <FormSaveBar dirty={["title", "registration", "approval_required", "mfa_required", "magic_link", "dynamic_registration", "reauthentication_seconds", "session_idle_seconds", "session_absolute_seconds"].some(key => String(form[key] ?? '') !== String(settings[key] ?? (key === 'reauthentication_seconds' ? 1800 : '')))} busy={action.busy} label="Save policy" onDiscard={() => setForm({ reauthentication_seconds: 1800, ...settings })} {...action.resultFor("policy")} onClearFeedback={action.clear} />
       </form>
@@ -1635,7 +1634,7 @@ function RecipientPicker({
       {!people.length && !error && (
         <p className="identity-hint">
           {ownership
-            ? "No matching members with MFA enrolled. The recipient must add a passkey or authenticator first."
+            ? "No matching verified members. Try a different name or email."
             : "No matching active members. Try a different name or email."}
         </p>
       )}

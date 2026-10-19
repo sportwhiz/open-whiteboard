@@ -186,9 +186,15 @@ export function requireFresh(
 export async function requireFreshForInstallation(
   env: Pick<NativeEnv, "CATALOG">,
   principal: Principal,
-  strong = true,
+  strong?: boolean,
 ) {
   const settings = await installation(env);
+  if (strong === undefined) {
+    const user = await env.CATALOG.prepare(
+      "SELECT twoFactorEnabled FROM auth_users WHERE id = ?",
+    ).bind(principal.id).first<{ twoFactorEnabled: number }>();
+    strong = !user || Boolean(settings.mfa_required || user.twoFactorEnabled);
+  }
   requireFresh(principal, strong, settings.reauthentication_seconds);
 }
 export async function requireAdministrator(
@@ -252,7 +258,7 @@ export async function validateLivePrincipal(
         JOIN instance_memberships m ON m.user_id = a.userId
         WHERE a.id = ? AND a.userId = ? AND a.expiresAt > ? AND a.absoluteExpiresAt > ? AND a.authVersion = ?
         AND i.state = 'ready' AND (u.emailVerified = 1 OR EXISTS(SELECT 1 FROM local_accounts l WHERE l.user_id=u.id)) AND a.assurance <> 'recovery'
-        AND (a.assurance = 'strong' OR (m.role NOT IN ('owner','admin') AND i.mfa_required = 0 AND COALESCE(u.twoFactorEnabled,0) = 0))`,
+        AND (a.assurance = 'strong' OR (i.mfa_required = 0 AND COALESCE(u.twoFactorEnabled,0) = 0))`,
       )
       .bind(
         principal.sessionId,

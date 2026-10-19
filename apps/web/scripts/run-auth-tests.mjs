@@ -75,7 +75,7 @@ try {
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
   if (!ready) throw new Error("The isolated auth fixture did not start.");
-  run(["exec", "tsx", "scripts/auth-smoke.ts", "--reset", "--ui-fixture"]);
+  run(["exec", "tsx", "scripts/auth-smoke.ts", "--reset", "--ui-fixture", ...(process.argv.includes("--browser") ? ["--browser"] : [])]);
   await stop();
   run(["exec", "tsx", "scripts/auth-restore-rehearsal.ts"]);
 } catch (error) {

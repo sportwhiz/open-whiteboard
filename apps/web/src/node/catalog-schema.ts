@@ -1528,6 +1528,35 @@ export const CATALOG_MIGRATIONS: readonly CatalogMigration[] = [{
     sql: "INSERT INTO d1_migrations(id,name,applied_at) VALUES (28,'0028_reauthentication_policy.sql',DATE_FORMAT(UTC_TIMESTAMP(3),'%Y-%m-%dT%H:%i:%s.000Z'))",
     applied: "SELECT EXISTS(SELECT 1 FROM d1_migrations WHERE id=28 AND name='0028_reauthentication_policy.sql') AS applied"
   }]
+}, {
+  id: "0005_optional_second_factor",
+  steps: [
+    {
+      id: "0001_drop_keep_last_passkey",
+      sql: "DROP TRIGGER IF EXISTS `keep_last_passkey`",
+      applied: "SELECT NOT EXISTS(SELECT 1 FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE() AND TRIGGER_NAME='keep_last_passkey') AS applied"
+    },
+    {
+      id: "0002_drop_keep_last_totp",
+      sql: "DROP TRIGGER IF EXISTS `keep_last_totp`",
+      applied: "SELECT NOT EXISTS(SELECT 1 FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE() AND TRIGGER_NAME='keep_last_totp') AS applied"
+    },
+    {
+      id: "0003_create_keep_last_passkey",
+      sql: "CREATE TRIGGER `keep_last_passkey_optional_mfa` BEFORE DELETE ON `auth_passkeys` FOR EACH ROW\nBEGIN\n IF EXISTS(SELECT 1 FROM account_security WHERE user_id = OLD.userId AND status = 'active' AND recovery_required = 0)\n AND NOT EXISTS(SELECT 1 FROM auth_passkeys WHERE userId = OLD.userId AND id <> OLD.id)\n AND (NOT EXISTS(SELECT 1 FROM auth_accounts WHERE userId = OLD.userId)\n OR (SELECT mfa_required FROM installation) = 1\n AND NOT EXISTS(SELECT 1 FROM auth_two_factors WHERE userId = OLD.userId AND verified = 1)) THEN\n SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='LAST_FACTOR'; \n END IF;\nEND",
+      applied: "SELECT EXISTS(SELECT 1 FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE() AND TRIGGER_NAME='keep_last_passkey_optional_mfa' AND EVENT_OBJECT_TABLE='auth_passkeys' AND EVENT_MANIPULATION='DELETE' AND ACTION_TIMING='BEFORE' AND ACTION_STATEMENT='BEGIN\n IF EXISTS(SELECT 1 FROM account_security WHERE user_id = OLD.userId AND status = ''active'' AND recovery_required = 0)\n AND NOT EXISTS(SELECT 1 FROM auth_passkeys WHERE userId = OLD.userId AND id <> OLD.id)\n AND (NOT EXISTS(SELECT 1 FROM auth_accounts WHERE userId = OLD.userId)\n OR (SELECT mfa_required FROM installation) = 1\n AND NOT EXISTS(SELECT 1 FROM auth_two_factors WHERE userId = OLD.userId AND verified = 1)) THEN\n SIGNAL SQLSTATE ''45000'' SET MESSAGE_TEXT=''LAST_FACTOR''; \n END IF;\nEND') AS applied"
+    },
+    {
+      id: "0004_create_keep_last_totp",
+      sql: "CREATE TRIGGER `keep_last_totp_optional_mfa` BEFORE DELETE ON `auth_two_factors` FOR EACH ROW\nBEGIN\n IF EXISTS(SELECT 1 FROM account_security WHERE user_id = OLD.userId AND status = 'active' AND recovery_required = 0)\n AND (SELECT mfa_required FROM installation) = 1\n AND NOT EXISTS(SELECT 1 FROM auth_passkeys WHERE userId = OLD.userId) THEN\n SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='LAST_FACTOR'; \n END IF;\nEND",
+      applied: "SELECT EXISTS(SELECT 1 FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE() AND TRIGGER_NAME='keep_last_totp_optional_mfa' AND EVENT_OBJECT_TABLE='auth_two_factors' AND EVENT_MANIPULATION='DELETE' AND ACTION_TIMING='BEFORE' AND ACTION_STATEMENT='BEGIN\n IF EXISTS(SELECT 1 FROM account_security WHERE user_id = OLD.userId AND status = ''active'' AND recovery_required = 0)\n AND (SELECT mfa_required FROM installation) = 1\n AND NOT EXISTS(SELECT 1 FROM auth_passkeys WHERE userId = OLD.userId) THEN\n SIGNAL SQLSTATE ''45000'' SET MESSAGE_TEXT=''LAST_FACTOR''; \n END IF;\nEND') AS applied"
+    },
+    {
+      id: "0005_migration_marker",
+      sql: "INSERT INTO d1_migrations(id,name,applied_at) VALUES (29,'0029_optional_second_factor.sql',DATE_FORMAT(UTC_TIMESTAMP(3),'%Y-%m-%dT%H:%i:%s.000Z'))",
+      applied: "SELECT EXISTS(SELECT 1 FROM d1_migrations WHERE id=29 AND name='0029_optional_second_factor.sql') AS applied"
+    }
+  ]
 }];
 export const catalogMigrationChecksum = (migration: CatalogMigration) =>
   createHash("sha256").update(JSON.stringify(migration)).digest("hex");

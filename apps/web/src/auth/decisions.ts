@@ -3,15 +3,10 @@ import type { Installation, SecurityState } from "./types";
 
 export function requiresStrongAuthentication(
   settings: Pick<Installation, "mfa_required">,
-  account: Pick<SecurityState, "role">,
+  _account: Pick<SecurityState, "role">,
   twoFactorEnabled: boolean,
 ) {
-  return (
-    account.role === "owner" ||
-    account.role === "admin" ||
-    Boolean(settings.mfa_required) ||
-    twoFactorEnabled
-  );
+  return Boolean(settings.mfa_required) || twoFactorEnabled;
 }
 
 export type SessionPolicy = {

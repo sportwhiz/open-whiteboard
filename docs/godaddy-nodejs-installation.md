@@ -6,7 +6,7 @@ The same page has instructions you can copy into Claude, Codex or another coding
 
 You need an active GoDaddy Node.js Hosting plan with a free app slot. Setup uses the published address supplied by GoDaddy. Preview remains on its configuration guide until you give it its own app origin; it does not need to be configured to use the published whiteboard. Custom domains are an optional, separate setup.
 
-After installation, open your whiteboard, create the owner account and enroll an authenticator. Revoke the temporary setup key. In **Administration → Updates**, connect a separate update token if you want to install updates from the app or opt into compatible security patches.
+After installation, open your whiteboard, create the owner account. Add a passkey or authenticator for extra protection, or choose **Skip for now**. Revoke the temporary setup key. In **Administration → Updates**, connect a separate update token if you want to install updates from the app or opt into compatible security patches.
 
 The [launch evidence](godaddy-launch-checklist.md) records the exact release and live tests. The [installer operations guide](../tools/godaddy-deploy/README.md) covers deployment, failure alerts and recovery.
 
@@ -18,7 +18,7 @@ The steps below are for people who prefer configuring the app themselves.
 2. In **GoDaddy Node.js Hosting**, create an app and upload the ZIP. Use GoDaddy's managed MySQL database and Node 22.16 or newer within Node 22.
 3. On **Add secrets**, add `SETUP_PASSWORD` with a private passphrase of at least 16 characters. If GoDaddy has not shown you an app address yet, leave `AUTH_ORIGIN` out for now. You can add it after GoDaddy creates the app.
 4. Open the app's **Preview** link. Open Whiteboard shows a setup guide with that app's address. Copy the displayed address, then add it as `AUTH_ORIGIN` in the app's **Preview** secrets/settings.
-5. Save the settings and restart or redeploy the Preview. Open its link again, enter your setup passphrase, and create your administrator account. Save your recovery code and enroll an authenticator to finish setting up your Studio.
+5. Save the settings and restart or redeploy the Preview. Open its link again, enter your setup passphrase, and create your administrator account. Save your recovery code. You can add a passkey or authenticator now, or choose **Skip for now**.
 
 These are the two settings you enter:
 
@@ -128,7 +128,7 @@ Verify on the actual hosting product:
 - Managed email delivery, custom domains, OAuth/MCP and passkeys.
 - Database backups, recovery and an upgrade with real existing data.
 
-The guided installer obtains the published HTTPS address from the authenticated GoDaddy API and writes the setup passphrase to that app’s secrets. The owner still creates their account and enrolls an authenticator on the published whiteboard. Manual uploads require the same settings in the hosting dashboard.
+The guided installer obtains the published HTTPS address from the authenticated GoDaddy API and writes the setup passphrase to that app’s secrets. The owner still creates their account on the published whiteboard and chooses whether to add a passkey or authenticator. Manual uploads require the same settings in the hosting dashboard.
 
 ## Maintainer verification
 

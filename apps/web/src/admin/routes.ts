@@ -385,7 +385,7 @@ export async function adminRoutes(
     const people = await env.CATALOG.prepare(
       `SELECT u.id, u.name, COALESCE((SELECT username FROM local_accounts WHERE user_id=u.id),u.email) AS email FROM auth_users u JOIN account_security s ON s.user_id = u.id JOIN instance_memberships m ON m.user_id = u.id
       WHERE (u.emailVerified = 1 OR EXISTS(SELECT 1 FROM local_accounts WHERE user_id=u.id)) AND s.status = 'active' AND s.recovery_required = 0 AND m.role IN ('member','admin','owner') AND u.id <> ?
-      AND (u.name LIKE ? OR COALESCE((SELECT username FROM local_accounts WHERE user_id=u.id),u.email) LIKE ?) ${ownership ? "AND m.role IN ('member','admin') AND (u.twoFactorEnabled = 1 OR EXISTS(SELECT 1 FROM auth_passkeys WHERE userId = u.id))" : ""} ORDER BY u.name,u.id LIMIT 25`,
+      AND (u.name LIKE ? OR COALESCE((SELECT username FROM local_accounts WHERE user_id=u.id),u.email) LIKE ?) ${ownership ? "AND m.role IN ('member','admin')" : ""} ORDER BY u.name,u.id LIMIT 25`,
     )
       .bind(
         url.searchParams.get("exclude") ?? principal.id,
@@ -1047,14 +1047,14 @@ export async function adminRoutes(
     const body = await json(request);
     const targetId = text(body.targetId, "New owner", 100);
     const target = await env.CATALOG.prepare(
-      "SELECT u.id, u.email, u.emailVerified FROM auth_users u JOIN account_security s ON s.user_id = u.id JOIN instance_memberships m ON m.user_id = u.id WHERE u.id = ? AND (u.emailVerified = 1 OR EXISTS(SELECT 1 FROM local_accounts WHERE user_id=u.id)) AND s.status = 'active' AND s.recovery_required = 0 AND m.role IN ('member','admin') AND (u.twoFactorEnabled = 1 OR EXISTS(SELECT 1 FROM auth_passkeys WHERE userId = u.id))",
+      "SELECT u.id, u.email, u.emailVerified FROM auth_users u JOIN account_security s ON s.user_id = u.id JOIN instance_memberships m ON m.user_id = u.id WHERE u.id = ? AND (u.emailVerified = 1 OR EXISTS(SELECT 1 FROM local_accounts WHERE user_id=u.id)) AND s.status = 'active' AND s.recovery_required = 0 AND m.role IN ('member','admin')",
     )
       .bind(targetId)
       .first<{ id: string; email: string; emailVerified: number }>();
     if (!target)
       throw new HttpError(
         409,
-        "Choose a verified active member with MFA enrolled.",
+        "Choose a verified active member.",
         "OWNER_RECIPIENT_REQUIRED",
       );
     const settings = await installation(env);
@@ -1101,7 +1101,7 @@ export async function acceptOwnerTransfer(request: Request, env: NativeEnv) {
     request,
     env,
   );
-  await requireFreshForInstallation(env, principal, true);
+  await requireFreshForInstallation(env, principal);
   if (!identityVerified)
     throw new HttpError(
       403,
@@ -1129,7 +1129,7 @@ export async function acceptOwnerTransfer(request: Request, env: NativeEnv) {
     );
   const result = await env.CATALOG.batch([
     env.CATALOG.prepare(
-      "UPDATE installation SET owner_id = ?, ownership_commit = ?, version = version + 1 WHERE id = 'instance' AND owner_id = ? AND version = ? AND EXISTS(SELECT 1 FROM owner_transfers WHERE id = ? AND target_id = ? AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > ?) AND EXISTS(SELECT 1 FROM auth_users u JOIN account_security s ON s.user_id = u.id JOIN instance_memberships m ON m.user_id = u.id WHERE u.id = ? AND (u.emailVerified = 1 OR EXISTS(SELECT 1 FROM local_accounts WHERE user_id=u.id)) AND s.status = 'active' AND s.recovery_required = 0 AND m.role IN ('member','admin') AND (u.twoFactorEnabled = 1 OR EXISTS(SELECT 1 FROM auth_passkeys WHERE userId = u.id)))",
+      "UPDATE installation SET owner_id = ?, ownership_commit = ?, version = version + 1 WHERE id = 'instance' AND owner_id = ? AND version = ? AND EXISTS(SELECT 1 FROM owner_transfers WHERE id = ? AND target_id = ? AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > ?) AND EXISTS(SELECT 1 FROM auth_users u JOIN account_security s ON s.user_id = u.id JOIN instance_memberships m ON m.user_id = u.id WHERE u.id = ? AND (u.emailVerified = 1 OR EXISTS(SELECT 1 FROM local_accounts WHERE user_id=u.id)) AND s.status = 'active' AND s.recovery_required = 0 AND m.role IN ('member','admin'))",
     ).bind(
       transfer.target_id,
       acceptance,

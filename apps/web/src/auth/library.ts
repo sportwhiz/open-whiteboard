@@ -90,6 +90,21 @@ export function libraryOptions(
           throw error;
         }
       }),
+      after: createAuthMiddleware(async (context) => {
+        // The passkey plugin's authenticatorSelection applies only to creation;
+        // its authentication options still default to "preferred". Request the
+        // same verification that our server requires for a strong session.
+        const options = context.context.returned;
+        if (
+          context.path === "/passkey/generate-authenticate-options" &&
+          options &&
+          typeof options === "object" &&
+          "challenge" in options &&
+          typeof options.challenge === "string"
+        ) {
+          return context.json({ ...options, userVerification: "required" });
+        }
+      }),
     },
     ...(env.AUTH_SECRETS
       ? {
@@ -286,7 +301,8 @@ export function libraryOptions(
           afterVerification: async ({ verification }) => {
             if (!verification.authenticationInfo.userVerified)
               throw new APIError("UNAUTHORIZED", {
-                message: "User verification is required.",
+                message:
+                  "Verify this passkey with your device PIN, password, or biometrics. Try again and complete the verification prompt.",
               });
           },
         },
