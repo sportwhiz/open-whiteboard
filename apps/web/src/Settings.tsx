@@ -573,8 +573,8 @@ function AccountPanel() {
             data.twoFactorEnabled ? (
               <>
                 <p>
-                  Keep a working passkey before disabling an authenticator
-                  required by your role or the installation policy.
+                  If your Studio requires two-factor authentication, add a working
+                  passkey before removing your authenticator.
                 </p>
                 <Field
                   label="Current password"

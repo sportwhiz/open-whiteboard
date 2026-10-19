@@ -5,7 +5,7 @@ import { createWorkbookInvitation } from "../src/collaboration.server";
 import { authenticateOAuth } from "../src/oauth.server";
 import { sha256 } from "../src/security/primitives";
 import { accountRoutes } from "../src/auth/account-routes";
-import { adminRoutes } from "../src/admin/routes";
+import { adminRoutes, acceptOwnerTransfer } from "../src/admin/routes";
 import { mailSetupRoutes, mailEnvironment } from "../src/mail/setup";
 import {
   InstallationKeys,
@@ -584,6 +584,32 @@ describe("fresh native owner setup with GitHub", () => {
       backupCode: enrollment.backupCodes[0],
     };
   }
+  it("transfers ownership to a member without MFA while requiring a recent identity check", async () => {
+    await localOwner();
+    const invitation = await (await call("/api/v1/admin/local-invitations", { label: "New owner", role: "member" })).json();
+    const ownerCookies = new Map(cookies);
+    cookies = new Map();
+    await call("/api/v1/auth/bootstrap");
+    const member = { name: "New owner", username: "next-owner", password: "a distinct transfer phrase 472!" };
+    await call("/api/auth/setup/local", { ...member, invitation: invitation.token });
+    const identity = await nativePrincipal(request("/api/v1/catalog"), env);
+    expect(identity.principal.assurance).toBe("weak");
+    const memberCookies = new Map(cookies);
+    cookies = ownerCookies;
+    await call("/api/v1/auth/bootstrap");
+    const transfer = await (await call("/api/v1/admin/owner-transfer", { targetId: identity.user.id })).json();
+    const token = new URLSearchParams(new URL(transfer.link).hash.slice(1)).get("token");
+    cookies = memberCookies;
+    await call("/api/v1/auth/bootstrap");
+    db.prepare("UPDATE auth_sessions SET authenticatedAt=? WHERE userId=?").run(new Date(Date.now() - 3600000).toISOString(), identity.user.id);
+    await expect(acceptOwnerTransfer(request("/api/v1/account/owner-transfer/accept", { token }), env)).rejects.toThrow("Confirm your identity");
+    await call("/api/v1/account/step-up", { password: member.password });
+    expect((await acceptOwnerTransfer(request("/api/v1/account/owner-transfer/accept", { token }), env)).status).toBe(200);
+    await call("/api/auth/sign-in/local", member);
+    expect(await (await call("/api/v1/auth/bootstrap")).json()).toMatchObject({ account: { role: "owner", needsMfa: false } });
+    await expect(acceptOwnerTransfer(request("/api/v1/account/owner-transfer/accept", { token }), env)).rejects.toThrow("no longer available");
+  });
+
   it("lets an owner remove optional TOTP but protects the last factor under Studio policy", async () => {
     const { password } = await localOwner();
     db.exec("UPDATE installation SET mfa_required = 1");
