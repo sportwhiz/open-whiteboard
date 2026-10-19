@@ -1,4 +1,4 @@
-import { createPortal } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
 import { focusOrFallback, usePopover } from "../usePopover";
 import { DEMO_PATTERNS } from "./demo-patterns";
 import { PatternPreview } from "./PatternPreview";
@@ -1527,13 +1527,12 @@ export function CanvasChrome({
   ];
   const runQuickAction = (action: QuickAction) => {
     if (action.disabled) return;
-    setModal(null);
-    // Let the dialog restore focus before a tool or editor claims it.
-    requestAnimationFrame(() => {
-      if (!host.isConnected) return;
-      focusCanvas(host);
-      Promise.resolve().then(() => action.run()).catch(() => setNotice("That action could not be completed. Try again."));
-    });
+    // Finish dialog cleanup before the action claims focus. A deferred frame
+    // can otherwise steal focus from a palette opened for the next command.
+    flushSync(() => setModal(null));
+    if (!host.isConnected) return;
+    focusCanvas(host);
+    Promise.resolve().then(() => action.run()).catch(() => setNotice("That action could not be completed. Try again."));
   };
   const runContextAction = (action: ContextMenuAction, selection: CanvasState["selection"]) => {
     const point = contextPoint.current ?? { x: host.clientWidth / 2, y: host.clientHeight / 2 };

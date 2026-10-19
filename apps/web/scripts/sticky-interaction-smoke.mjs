@@ -38,6 +38,25 @@ try {
       await request(`${path}/commands`, 'POST', { operationId: 'seed', operations: [{ type: 'create_note', text: 'Keep this idea', x: 0, y: 0 }] });
       await page.goto(new URL(`/boards/${board.id}`, origin).href);
       await page.locator('.creation-rail').waitFor();
+      // A freshly inserted empty line must not preserve template indentation
+      // as extra lines or create either scrollbar before the first keystroke.
+      await page.getByRole('button', { name: 'Sticky note', exact: true }).click();
+      await page.mouse.click(400, 450);
+      await input.waitFor();
+      const emptyLayout = await page.locator('.sticky-text-editor').evaluate(paper => {
+        const text = paper.querySelector('.sticky-text-input');
+        return { width: paper.clientWidth, scrollWidth: paper.scrollWidth,
+          height: paper.clientHeight, scrollHeight: paper.scrollHeight,
+          textHeight: text.getBoundingClientRect().height,
+          lineHeight: parseFloat(getComputedStyle(text).lineHeight) };
+      });
+      assert.equal(emptyLayout.scrollWidth, emptyLayout.width, 'An empty note has horizontal overflow');
+      assert.equal(emptyLayout.scrollHeight, emptyLayout.height, 'An empty note has vertical overflow');
+      assert(emptyLayout.textHeight <= emptyLayout.lineHeight + 1, 'Empty markup creates extra lines');
+      await page.keyboard.press('Escape');
+      await focusCanvas();
+      await page.keyboard.press(`${mod}+z`);
+      await page.waitForFunction(() => document.querySelector('whiteboard-editor').doc.getModelsByFlavour('affine:note').length === 1);
       const note = page.locator('[data-testid="edgeless-note-container"]').first();
       await note.click();
       await note.click({ position: { x: 100, y: 180 } });

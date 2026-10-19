@@ -422,6 +422,7 @@ export function AuthPage({
   >(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [setupWithEmail, setSetupWithEmail] = useState(false);
+  const [skippedProtection, setSkippedProtection] = useState(false);
   const [enrollmentMethod, setEnrollmentMethod] = useState<
     "authenticator" | null
   >(null);
@@ -461,15 +462,13 @@ export function AuthPage({
     Boolean(
       account?.verified &&
         !proofPage &&
-        (account.needsMfa || (ownership && account.assurance !== "strong")) &&
+        account.needsMfa &&
         account.twoFactorEnabled,
     );
   const enroll = Boolean(
     account?.verified &&
       !proofPage &&
-      (setup ||
-        account.needsMfa ||
-        (ownership && account.assurance !== "strong")) &&
+      ((setup && !skippedProtection) || account.needsMfa) &&
       !account.twoFactorEnabled &&
       account.assurance !== "strong",
   );
@@ -480,7 +479,7 @@ export function AuthPage({
           ? 0
           : !account?.verified
             ? 1
-            : account.assurance !== "strong"
+            : account.assurance !== "strong" && !skippedProtection
               ? 2
               : 3,
         steps: setupSteps,
@@ -1123,7 +1122,7 @@ export function AuthPage({
         )}
       </AuthFrame>
     );
-  if (ownership && account?.verified && account.assurance === "strong")
+  if (ownership && account?.verified && !account.needsMfa)
     return (
       <AuthFrame
         title="Accept installation ownership"
@@ -1280,7 +1279,10 @@ export function AuthPage({
         </button>
       </AuthFrame>
     );
-  if (setup && account?.assurance === "strong" && account.setupUser)
+  if (
+    setup && account?.setupUser && !account.needsMfa &&
+    (account.assurance === "strong" || skippedProtection)
+  )
     return (
       <AuthFrame
         title="Your studio is ready"
@@ -1308,8 +1310,14 @@ export function AuthPage({
           <li>
             <UiIcon name="lock" />
             <div>
-              <strong>Your account is protected</strong>
-              <small>Your identity and security method are verified.</small>
+              <strong>
+                {account.twoFactorEnabled || account.secondFactorReason === "studio" ? "Your account is protected" : "Add an authenticator app for two-factor protection"}
+              </strong>
+              <small>
+                {account.twoFactorEnabled || account.secondFactorReason === "studio"
+                  ? "Your identity and security method are verified."
+                  : "You can set this up later in Account and security. A passkey offers faster sign-in, while your password stays available."}
+              </small>
             </div>
           </li>
           <li>
@@ -1360,15 +1368,12 @@ export function AuthPage({
       </AuthFrame>
     );
   if (enroll) {
-    const reason = ownership
-      ? "Installation ownership requires a passkey or authenticator app."
-      : setup
-        ? "As the Studio owner, you’ll use a passkey or authenticator app in addition to your password."
-        : account?.secondFactorReason === "role"
-          ? `Your role in ${studio} is ${account.role === "owner" ? "Owner" : "Administrator"}, and administrators use a passkey or authenticator app in addition to their password.`
-          : account?.secondFactorReason === "studio"
-            ? `${studioTitle(bootstrap) ?? "Your Studio"} now asks everyone to use a passkey or authenticator app in addition to their password.`
-            : "Add a passkey or authenticator app to keep your account safe.";
+    const optional = setup && !account?.needsMfa;
+    const reason = optional
+      ? "We recommend an authenticator app for two-factor protection. You can set it up now or later in Account and security."
+      : account?.secondFactorReason === "studio"
+        ? `${studio} requires a passkey or authenticator app in addition to your password.`
+        : "Add a passkey or authenticator app to keep your account safe.";
     const addPasskey = () =>
       work(async () => {
         await passkeyAction("add", "My passkey");
@@ -1380,7 +1385,7 @@ export function AuthPage({
         title="Protect your account"
         illustration="security"
         progress={progress ?? inviteProgress(2)}
-        description={`${reason} It takes about a minute.`}
+        description={reason}
       >
         {reminder}
         {enrollmentMethod === "authenticator" ? (
@@ -1405,12 +1410,13 @@ export function AuthPage({
             >
               <UiIcon name="key" />
               <span>
-                <strong>Set up a passkey</strong>
+                <strong>{optional ? "Sign in faster with a passkey" : "Set up a passkey"}</strong>
                 <small>
-                  Use your device’s fingerprint, face recognition, screen lock,
-                  or a security key.
+                  {optional
+                    ? "Use your device’s screen lock. You can still sign in with just your password unless you add an authenticator app or your Studio requires a second factor."
+                    : "Use your device’s fingerprint, face recognition, screen lock, or a security key."}
                 </small>
-                <span className="identity-recommended">Recommended</span>
+                {!optional && <span className="identity-recommended">Recommended</span>}
               </span>
             </button>
             <button
@@ -1425,6 +1431,7 @@ export function AuthPage({
                   Get a six-digit code from your app when you sign in. Includes
                   recovery codes.
                 </small>
+                {optional && <span className="identity-recommended">Recommended</span>}
               </span>
             </button>
             <button
@@ -1440,6 +1447,11 @@ export function AuthPage({
               Use an existing passkey
             </button>
           </div>
+        )}
+        {optional && (
+          <button className="identity-link" disabled={busy} onClick={() => setSkippedProtection(true)}>
+            Skip for now
+          </button>
         )}
         <Feedback error={error} />
         {!setup && !ownership && (

@@ -224,7 +224,12 @@ await client.call("/api/auth/sign-in/email", { email: address, password });
 const current = await client.call("/api/v1/auth/bootstrap");
 assert.equal(current.account.setupUser, true);
 assert.equal(current.account.verified, true);
-await client.call("/api/v1/setup/complete", {}, 403);
+if (process.argv.includes("--browser")) {
+  const { optionalSetupAndPasskey } = await import("./passkey-browser-smoke.mjs");
+  await optionalSetupAndPasskey(origin, client.cookies);
+} else await client.call("/api/v1/setup/complete", {});
+assert.equal((await client.call("/api/v1/auth/bootstrap")).account.needsMfa, false);
+await client.call("/api/v1/admin/settings");
 const factor = await client.call("/api/auth/two-factor/enable", { password });
 assert.equal(factor.backupCodes.length, 10);
 const seed = new URL(factor.totpURI).searchParams.get("secret")!;
@@ -233,7 +238,6 @@ await client.call("/api/auth/two-factor/verify-totp", {
 });
 const ready = await client.call("/api/v1/auth/bootstrap");
 assert.equal(ready.account.assurance, "strong");
-await client.call("/api/v1/setup/complete", {});
 await client.call("/api/v1/me");
 await client.call(
   "/api/v1/setup/unlock",

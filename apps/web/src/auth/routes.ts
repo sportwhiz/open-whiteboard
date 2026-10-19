@@ -663,14 +663,11 @@ export async function identityRoutes(
               // Lets sign-in screens explain why a second factor is asked
               // for and offer only the confirmation methods this account has.
               secondFactorReason:
-                identity.state.role === "owner" ||
-                identity.state.role === "admin"
-                  ? "role"
-                  : settings.mfa_required
-                    ? "studio"
-                    : identity.user.twoFactorEnabled
-                      ? "personal"
-                      : null,
+                settings.mfa_required
+                  ? "studio"
+                  : identity.user.twoFactorEnabled
+                    ? "personal"
+                    : null,
               ...(await signInMethods(env, identity.user.id)),
             }
           : null,

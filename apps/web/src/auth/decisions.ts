@@ -3,15 +3,12 @@ import type { Installation, SecurityState } from "./types";
 
 export function requiresStrongAuthentication(
   settings: Pick<Installation, "mfa_required">,
-  account: Pick<SecurityState, "role">,
+  _account: Pick<SecurityState, "role">,
   twoFactorEnabled: boolean,
 ) {
-  return (
-    account.role === "owner" ||
-    account.role === "admin" ||
-    Boolean(settings.mfa_required) ||
-    twoFactorEnabled
-  );
+  // Passkeys are an alternative sign-in method; adding one alone deliberately
+  // leaves password sign-in available. Personal MFA is enabled by TOTP enrollment.
+  return Boolean(settings.mfa_required) || twoFactorEnabled;
 }
 
 export type SessionPolicy = {

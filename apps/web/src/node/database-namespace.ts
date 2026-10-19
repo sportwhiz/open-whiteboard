@@ -43,10 +43,17 @@ const definitions = [
 ];
 for (const sql of definitions) {
   for (const match of sql.matchAll(
-    /\b(?:CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?|REFERENCES|CONSTRAINT|CREATE\s+(?:UNIQUE\s+)?INDEX|(?:UNIQUE\s+)?KEY|INDEX)\s+`?([a-zA-Z_][a-zA-Z_0-9]*)`?/g,
+    /\b(?:CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?|CREATE\s+TRIGGER|REFERENCES|CONSTRAINT|CREATE\s+(?:UNIQUE\s+)?INDEX|(?:UNIQUE\s+)?KEY|INDEX)\s+`?([a-zA-Z_][a-zA-Z_0-9]*)`?/g,
   ))
     objects.add(match[1]);
 }
+// Migration verification compares these exact bodies with ACTION_STATEMENT.
+// Only known schema definitions are SQL inside a metadata string; ordinary
+// literals (including strings inside a trigger) must remain untouched.
+const triggerBodies = new Map<string, string>(definitions.flatMap(sql => {
+  const body = sql.match(/^CREATE\s+TRIGGER\b[\s\S]*?\bFOR EACH ROW\s*\n([\s\S]*)$/i)?.[1];
+  return body ? [[`'${body.replaceAll("'", "''")}'`, body] as const] : [];
+}));
 
 function databaseNames(namespace: string) {
   validateDatabaseNamespace(namespace);
@@ -77,12 +84,10 @@ export function logicalDatabaseTable(namespace: string) {
 export function namespaceSql(namespace: string) {
   const names = databaseNames(namespace);
   const identifier = (name: string) => names.get(name) ?? name;
-  return (sql: string, values?: unknown[]) => {
-    if (!namespace) return { sql, values };
-    const metadata = /\binformation_schema\s*\./i.test(sql);
+  const rewrite = (sql: string, metadata: boolean): string => {
     // Tokenize quotations/comments before identifiers. Never replace names in
     // application literals, JSON paths, comments, or user-supplied parameters.
-    const scoped = sql.replace(
+    return sql.replace(
       /\/\*[\s\S]*?\*\/|--[^\r\n]*|#[^\r\n]*|'(?:[^'\\]|\\.|'')*'|"(?:[^"\\]|\\.|"")*"|`(?:[^`]|``)*`|\b[a-zA-Z_][a-zA-Z_0-9]*\b/g,
       (token) => {
         if (
@@ -95,6 +100,8 @@ export function namespaceSql(namespace: string) {
           return `\`${identifier(token.slice(1, -1).replaceAll("``", "`"))}\``;
         if (token[0] === "'" || token[0] === '"') {
           if (!metadata) return token;
+          const body = triggerBodies.get(token);
+          if (body) return `'${rewrite(body, false).replaceAll("'", "''")}'`;
           const name = token.slice(1, -1);
           return names.has(name)
             ? `${token[0]}${identifier(name)}${token[0]}`
@@ -103,6 +110,11 @@ export function namespaceSql(namespace: string) {
         return identifier(token);
       },
     );
+  };
+  return (sql: string, values?: unknown[]) => {
+    if (!namespace) return { sql, values };
+    const metadata = /\binformation_schema\s*\./i.test(sql);
+    const scoped = rewrite(sql, metadata);
     const advisory = /\b(?:GET_LOCK|RELEASE_LOCK|IS_USED_LOCK)\s*\(/i.test(sql);
     const parameters = values?.map((value) => {
       if (typeof value !== "string") return value;

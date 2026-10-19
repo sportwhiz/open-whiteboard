@@ -208,7 +208,7 @@ export function localAccounts(env: NativeEnv): BetterAuthPlugin {
             user.id,
           );
           // This session has weak assurance. The normal admission policy still
-          // requires the owner's passkey/TOTP before any board or admin access.
+          // applies any enrolled authenticator and the Studio’s second-factor policy.
           await setSessionCookie(ctx, { session, user });
           return ctx.json({ success: true });
         },

@@ -145,6 +145,24 @@ describe.skipIf(!process.env.HUDDLE_SCHEMA_TEST_MYSQL_URL)(
           expect((await connection.query("SELECT reauthentication_seconds FROM installation"))[0]).toEqual([{ reauthentication_seconds: valid }]);
         }
       }));
+    it("allows optional owner factors to be removed but keeps Studio policy and last-login guards", () =>
+      transaction(async (connection) => {
+        const owner = await user(connection, "owner");
+        await account(connection, owner);
+        const key = randomUUID();
+        await connection.execute("INSERT INTO auth_passkeys(id,publicKey,userId,credentialID,counter,deviceType,backedUp) VALUES (?,'fixture',?,?,0,'singleDevice',0)", [key, owner, key]);
+        await connection.execute("UPDATE installation SET mfa_required=1");
+        await expect(connection.execute("DELETE FROM auth_passkeys WHERE id=?", [key])).rejects.toThrow("LAST_FACTOR");
+        await connection.execute("UPDATE installation SET mfa_required=0");
+        await connection.execute("DELETE FROM auth_passkeys WHERE id=?", [key]);
+        await expect(connection.execute("DELETE FROM auth_accounts WHERE userId=?", [owner])).rejects.toThrow("LAST_METHOD");
+        const totp = randomUUID();
+        await connection.execute("INSERT INTO auth_two_factors(id,secret,backupCodes,userId,verified) VALUES (?,'fixture','[]',?,1)", [totp, owner]);
+        await connection.execute("UPDATE installation SET mfa_required=1");
+        await expect(connection.execute("DELETE FROM auth_two_factors WHERE id=?", [totp])).rejects.toThrow("LAST_FACTOR");
+        await connection.execute("UPDATE installation SET mfa_required=0");
+        await connection.execute("DELETE FROM auth_two_factors WHERE id=?", [totp]);
+      }));
     it("protects the designated owner and enforces only one owner", () =>
       transaction(async (connection) => {
         const owner = await user(connection, "owner");
@@ -408,7 +426,7 @@ describe.skipIf(!process.env.HUDDLE_SCHEMA_TEST_MYSQL_URL)(
         const [migrations] = await connection.query(
           "SELECT name,applied_at FROM d1_migrations ORDER BY id",
         );
-        expect(migrations as unknown[]).toHaveLength(28);
+        expect(migrations as unknown[]).toHaveLength(29);
       }));
     it("evaluates JSON resource ownership when the recipient is valid", () =>
       transaction(async (connection) => {

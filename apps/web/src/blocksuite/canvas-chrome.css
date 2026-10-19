@@ -777,6 +777,12 @@
   min-height: 1.4em;
   outline: none;
 }
+/* Empty inline-editor lines contain indented template whitespace around a
+   block placeholder. Only the text spans should preserve whitespace; doing
+   so on the line wrapper turns a blank note into several scrollable lines. */
+.sticky-text-input v-line {
+  white-space: normal;
+}
 /* Match the editing overlay: document paragraph margins create a jump on
    entering/leaving a single-paragraph sticky. Rich document notes keep theirs. */
 .editor-canvas [data-whiteboard-sticky] {

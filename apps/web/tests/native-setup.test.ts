@@ -5,7 +5,7 @@ import { createWorkbookInvitation } from "../src/collaboration.server";
 import { authenticateOAuth } from "../src/oauth.server";
 import { sha256 } from "../src/security/primitives";
 import { accountRoutes } from "../src/auth/account-routes";
-import { adminRoutes } from "../src/admin/routes";
+import { adminRoutes, acceptOwnerTransfer } from "../src/admin/routes";
 import { mailSetupRoutes, mailEnvironment } from "../src/mail/setup";
 import {
   InstallationKeys,
@@ -17,6 +17,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { identityRoutes } from "../src/auth/routes";
 import { nativePrincipal } from "../src/auth/session";
+import { validateLivePrincipal } from "../src/auth/policy";
 import type { NativeEnv } from "../src/auth/types";
 
 const origin = "https://canvas.example.com";
@@ -456,7 +457,7 @@ describe("fresh native owner setup with GitHub", () => {
     expect(await verify(enrollment.backupCodes[0], backup)).toBe(200);
   });
 
-  it("creates a local owner without email or OAuth, then requires MFA on every login", async () => {
+  it("lets a local owner skip MFA, add it later, and then requires it at sign-in", async () => {
     env = {
       ...env,
       GITHUB_CLIENT_ID: undefined,
@@ -486,7 +487,16 @@ describe("fresh native owner setup with GitHub", () => {
         emailVerified: false,
       },
     });
-    await expect(call("/api/v1/setup/complete", {})).rejects.toThrow();
+    expect((await call("/api/v1/setup/complete", { title: "Our Studio" })).status).toBe(200);
+    expect(await (await call("/api/v1/auth/bootstrap")).json()).toMatchObject({
+      account: { role: "owner", needsMfa: false, secondFactorReason: null },
+    });
+    const initial = await nativePrincipal(request("/api/v1/catalog"), env);
+    expect(initial.state.role).toBe("owner");
+    expect(initial.principal.assurance).toBe("weak");
+    await expect(validateLivePrincipal(env.CATALOG, initial.principal)).resolves.toBeUndefined();
+    expect((await call("/api/v1/admin/settings")).status).toBe(200);
+    expect((await adminRoutes(new Request(request("/api/v1/admin/settings", { title: "Renamed Studio" }), { method: "PATCH" }), env))!.status).toBe(200);
     const enrollment = await (
       await call("/api/auth/two-factor/enable", { password: payload.password })
     ).json();
@@ -497,9 +507,6 @@ describe("fresh native owner setup with GitHub", () => {
           code: totp(enrollment.totpURI),
         })
       ).status,
-    ).toBe(200);
-    expect(
-      (await call("/api/v1/setup/complete", { title: "Our Studio" })).status,
     ).toBe(200);
     expect(
       (await nativePrincipal(request("/api/v1/catalog"), env)).state.role,
@@ -577,6 +584,47 @@ describe("fresh native owner setup with GitHub", () => {
       backupCode: enrollment.backupCodes[0],
     };
   }
+  it("transfers ownership to a member without MFA while requiring a recent identity check", async () => {
+    await localOwner();
+    const invitation = await (await call("/api/v1/admin/local-invitations", { label: "New owner", role: "member" })).json();
+    const ownerCookies = new Map(cookies);
+    cookies = new Map();
+    await call("/api/v1/auth/bootstrap");
+    const member = { name: "New owner", username: "next-owner", password: "a distinct transfer phrase 472!" };
+    await call("/api/auth/setup/local", { ...member, invitation: invitation.token });
+    const identity = await nativePrincipal(request("/api/v1/catalog"), env);
+    expect(identity.principal.assurance).toBe("weak");
+    const memberCookies = new Map(cookies);
+    cookies = ownerCookies;
+    await call("/api/v1/auth/bootstrap");
+    const transfer = await (await call("/api/v1/admin/owner-transfer", { targetId: identity.user.id })).json();
+    const token = new URLSearchParams(new URL(transfer.link).hash.slice(1)).get("token");
+    cookies = memberCookies;
+    await call("/api/v1/auth/bootstrap");
+    db.prepare("UPDATE auth_sessions SET authenticatedAt=? WHERE userId=?").run(new Date(Date.now() - 3600000).toISOString(), identity.user.id);
+    await expect(acceptOwnerTransfer(request("/api/v1/account/owner-transfer/accept", { token }), env)).rejects.toThrow("Confirm your identity");
+    await call("/api/v1/account/step-up", { password: member.password });
+    expect((await acceptOwnerTransfer(request("/api/v1/account/owner-transfer/accept", { token }), env)).status).toBe(200);
+    await call("/api/auth/sign-in/local", member);
+    expect(await (await call("/api/v1/auth/bootstrap")).json()).toMatchObject({ account: { role: "owner", needsMfa: false } });
+    await expect(acceptOwnerTransfer(request("/api/v1/account/owner-transfer/accept", { token }), env)).rejects.toThrow("no longer available");
+  });
+
+  it("lets an owner remove optional TOTP but protects the last factor under Studio policy", async () => {
+    const { password } = await localOwner();
+    db.exec("UPDATE installation SET mfa_required = 1");
+    await expect(call("/api/auth/two-factor/disable", { password })).rejects.toThrow();
+    expect(() => db.exec("DELETE FROM auth_two_factors")).toThrow("LAST_FACTOR");
+    db.exec("UPDATE installation SET mfa_required = 0");
+    expect((await call("/api/auth/two-factor/disable", { password })).status).toBe(200);
+    await call("/api/auth/sign-out", {});
+    expect((await call("/api/auth/sign-in/local", { username: "owner", password })).status).toBe(200);
+    expect(await (await call("/api/v1/auth/bootstrap")).json()).toMatchObject({
+      account: { role: "owner", needsMfa: false, twoFactorEnabled: false },
+    });
+    await expect(nativePrincipal(request("/api/v1/catalog"), env)).resolves.toBeDefined();
+  });
+
   it("protects update controls with owner permission and fresh MFA", async () => {
     await localOwner();
     const hook =
@@ -1063,7 +1111,7 @@ describe("fresh native owner setup with GitHub", () => {
     );
   });
 
-  it("retains setup across the provider redirect and requires MFA before owner admission", async () => {
+  it("retains setup across the provider redirect and honors explicit Studio MFA policy", async () => {
     const state = await begin();
     const response = await callback(state);
     expect(response.status).toBe(302);
@@ -1085,6 +1133,7 @@ describe("fresh native owner setup with GitHub", () => {
     await expect(
       nativePrincipal(request("/api/v1/catalog"), env),
     ).rejects.toThrow();
+    db.exec("UPDATE installation SET mfa_required = 1");
     await expect(call("/api/v1/setup/complete", {})).rejects.toThrow();
     expect(
       db.prepare("SELECT owner_id, state FROM installation").get(),

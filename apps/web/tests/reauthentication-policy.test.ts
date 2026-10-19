@@ -48,9 +48,25 @@ describe("protected action verification window", () => {
     const first = vi.fn(async () => ({ state: "ready", reauthentication_seconds: window }));
     const statement = { bind: () => ({ first }) };
     const env = { CATALOG: { prepare: () => statement } } as unknown as NativeEnv;
-    await expect(requireFreshForInstallation(env, principal(1200))).resolves.toBeUndefined();
+    await expect(requireFreshForInstallation(env, principal(1200), true)).resolves.toBeUndefined();
     window = 300;
-    await expect(requireFreshForInstallation(env, principal(1200))).rejects.toMatchObject({ code: "STEP_UP_REQUIRED" });
+    await expect(requireFreshForInstallation(env, principal(1200), true)).rejects.toMatchObject({ code: "STEP_UP_REQUIRED" });
     expect(first).toHaveBeenCalledTimes(2);
+  });
+  it("accepts a recent password for optional MFA but enforces Studio and personal requirements", async () => {
+    vi.useFakeTimers(); vi.setSystemTime(now);
+    let required = 0;
+    let enrolled = 0;
+    const env = { CATALOG: { prepare: (sql: string) => ({ bind: () => ({ first: async () =>
+      sql.includes("FROM auth_users") ? { twoFactorEnabled: enrolled } :
+        { state: "ready", mfa_required: required, reauthentication_seconds: 1800 },
+    }) }) } } as unknown as NativeEnv;
+    await expect(requireFreshForInstallation(env, principal(1, "weak"))).resolves.toBeUndefined();
+    await expect(requireFreshForInstallation(env, principal(1800, "weak"))).rejects.toMatchObject({ code: "STEP_UP_REQUIRED" });
+    required = 1;
+    await expect(requireFreshForInstallation(env, principal(1, "weak"))).rejects.toMatchObject({ code: "STEP_UP_REQUIRED" });
+    required = 0; enrolled = 1;
+    await expect(requireFreshForInstallation(env, principal(1, "weak"))).rejects.toMatchObject({ code: "STEP_UP_REQUIRED" });
+    await expect(requireFreshForInstallation(env, principal(1))).resolves.toBeUndefined();
   });
 });

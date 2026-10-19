@@ -2,7 +2,7 @@
 
 ## First owner
 
-Native sign-in works without Cloudflare Access. Set a private `SETUP_PASSWORD` in the hosting dashboard, open the canonical application address, and complete owner setup. Save the recovery key and verify a passkey or authenticator before finishing.
+Native sign-in works without Cloudflare Access. Set a private `SETUP_PASSWORD` in the hosting dashboard, open the canonical application address, and complete owner setup. Save the recovery key. An authenticator app is recommended for two-factor protection; you can choose **Skip for now** during setup.
 
 The application creates private authentication and encryption keys automatically. Cloudflare stores them in the `INSTALLATION_KEYS` Durable Object. Node stores them in private MySQL records. The catalog records their fingerprint and refuses a replacement key ring after key loss. Preserve the keys and catalog together. Explicit operator-supplied keys take precedence over generated keys.
 
@@ -101,3 +101,9 @@ In **Administration → Sign-in settings → Registration and security**, the St
 The window starts with the last successful identity check in that browser session. Password confirmation alone cannot satisfy a required second factor. New sign-ins still require MFA when the account or Studio policy requires it. Viewing linked login methods does not require a fresh check. Sign-out, account suspension, session expiry and credential revocation still invalidate access. A policy change applies to existing sessions on their next protected request.
 
 This setting is separate from the inactivity and maximum session lifetime settings. Longer verification windows mean someone with access to an unlocked, signed-in browser has more time to make protected changes.
+
+## Optional two-factor authentication
+
+New installations recommend an authenticator app for two-factor protection and let the owner choose **Skip for now**. Owners and administrators can add one later in **Account and security**. A passkey offers faster sign-in using device verification. Adding a passkey alone leaves password-only sign-in available.
+
+An enrolled authenticator still applies at sign-in. **Administration → Sign-in settings → Require a second factor for everyone** enforces it for all roles; a verified passkey sign-in also satisfies that policy. Protected changes still require a recent identity check; accounts without a required second factor can confirm with their password or sign-in provider. Recovery restrictions and the protection against removing the last usable sign-in method remain in place.
