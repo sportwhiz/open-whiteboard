@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.1
+
+Account setup now recommends an authenticator app and lets people skip it unless their Studio requires a second factor. Existing authenticator protection stays enabled. Passkey setup explains that a passkey adds another way to sign in and leaves password sign-in available. Chrome passkey sign-in now requests the device verification the server requires.
+
+Blank sticky notes no longer show unnecessary scrollbars. Reopening Quick Actions immediately after running a command keeps the search field focused.
+
+The GoDaddy installer shows progress while uploading and publishing, explains that these steps can take several minutes, and offers recovery when a status request fails. Node database migrations now keep trigger names and verification scoped to each installation and can resume after an interrupted trigger migration.
+
+This is an important update, not an automatic security patch. It includes an account-policy database migration. Cloudflare owners can install it from Administration → Updates. Existing GoDaddy installations need a coordinated backup of the private catalog and MySQL data, followed by uploading the new ZIP to the same app. Keep the app address, secrets, database and namespace settings. See [the GoDaddy upgrade guide](docs/godaddy-nodejs-installation.md#update-an-existing-app). The board format is unchanged.
+
 ## 0.4.0
 
 Sticky notes now hold formatted text. Select words while editing to make them bold, italic, underlined, struck through, or colored, from the note toolbar or with ⌘B, ⌘I, ⌘U, and ⌘⇧X (Ctrl on Windows and Linux). Each note also has a font (sans, serif, mono, or handwriting), a text size, and an alignment. Pasted text arrives as plain text.
