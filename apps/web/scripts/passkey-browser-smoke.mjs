@@ -26,6 +26,9 @@ export async function optionalSetupAndPasskey(origin, cookies) {
     const completion = page.waitForResponse(r => new URL(r.url()).pathname === '/api/v1/setup/complete');
     await page.getByRole('button', { name: 'Open my studio', exact: true }).click();
     assert.equal((await completion).status(), 200);
+    // The response arrives before setup's location.replace finishes. Wait for
+    // the destination UI so the test does not race it with a second navigation.
+    await page.locator('#studio-main').waitFor();
     await page.goto(origin + '/settings/account');
     const creationOptions = page.waitForResponse(r => new URL(r.url()).pathname === '/api/auth/passkey/generate-register-options');
     const creation = page.waitForResponse(r => new URL(r.url()).pathname === '/api/auth/passkey/verify-registration');
