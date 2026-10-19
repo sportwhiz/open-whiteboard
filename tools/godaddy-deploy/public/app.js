@@ -14,6 +14,45 @@ function journey(stage) {
 }
 let attempt = crypto.randomUUID();
 let token = ''; let deployment; let inProgress = false; let retryAt = 0; let timer;
+const stepGuidance = {
+  release: 'Downloading and checking the release before setup begins.',
+  create: 'GoDaddy is preparing a place for your whiteboard. This can take a few minutes.',
+  attach: 'Connecting your app to the hosting plan you selected.',
+  addresses: 'Waiting for GoDaddy to provide your app’s addresses.',
+  preview: 'Saving the settings for your separate preview.',
+  live: 'Saving the settings for your live whiteboard.',
+  upload: 'Sending Open Whiteboard to GoDaddy and waiting for it to process the files. This can take a few minutes.',
+  publish: 'Waiting for GoDaddy to build and publish your whiteboard. This can take a few minutes.',
+  status: 'Waiting for GoDaddy to confirm your server is running.',
+  health: 'Waiting for Open Whiteboard to finish starting and respond to its readiness check.',
+};
+let stepTimer;
+function stopStepActivity(paused = false) {
+  clearInterval(stepTimer);
+  $('progress-activity').dataset.state = paused ? 'paused' : 'idle';
+  if (paused) {
+    $('progress-detail').textContent = 'Setup is paused. Check the message below for the next step.';
+    $('progress-wait').textContent = 'Keep this page open to preserve your progress.';
+  }
+}
+function startStepActivity(stage) {
+  stopStepActivity();
+  const started = performance.now();
+  $('progress-activity').dataset.state = 'active';
+  $('progress-detail').textContent = stepGuidance[stage];
+  $('progress-wait').textContent = 'Keep this page open. We’ll check automatically; there’s nothing you need to click.';
+  let prolonged = false;
+  const tick = () => {
+    const seconds = Math.floor((performance.now() - started) / 1000);
+    $('step-elapsed').textContent = `Time waiting: ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+    if (seconds >= 60 && !prolonged) {
+      prolonged = true;
+      $('progress-wait').textContent = 'Still waiting for confirmation. The completed steps are kept, and we’ll show any error here. Keep this page open.';
+    }
+  };
+  tick();
+  stepTimer = setInterval(tick, 1000);
+}
 function showError(error) {
   $('error').textContent = error.message || 'Something went wrong. Please try again.';
   if (error.supportReference) $('error').textContent += ` This failure was recorded. Support reference: ${error.supportReference}.`;
@@ -70,7 +109,10 @@ $('deploy-form').addEventListener('submit', async event => {
       const completed = document.querySelectorAll('#steps [data-state=done]').length;
       $('deployment-progress').value = completed;
       $('progress-count').textContent = `${completed} of ${steps.length} steps complete`;
-      if (state === 'active') $('progress-title').textContent = steps.find(([id]) => id === stage)[1];
+      if (state === 'active') {
+        $('progress-title').textContent = steps.find(([id]) => id === stage)[1];
+        startStepActivity(stage);
+      } else stopStepActivity(state === 'failed');
     },
     onApp(appId) { $('app-id').textContent = `GoDaddy app: ${appId}. Keep this identifier if you need to find the app in your dashboard.`; if (!preview && appId.startsWith('NODEJS-')) { $('manage-app').href = 'https://host.godaddy.com/nodejs/projects/' + encodeURIComponent(appId.slice(7)); $('manage-app').hidden = false; } },
   });
@@ -91,6 +133,7 @@ async function run(retryFailed = false) {
     $('success').scrollIntoView({ block: 'start' });
     deployment = undefined;
   } catch (error) {
+    stopStepActivity(true);
     if (!preview && error.browserTimeout && !error.supportReference) {
       try { const report = await call('report-stalled', { stage: error.stage }); error.supportReference = report.supportReference; } catch { /* Preserve the original failure and recovery controls. */ }
     }
@@ -103,7 +146,7 @@ async function run(retryFailed = false) {
     $('retry-failed').textContent = deployment.state.retryStage === 'upload' ? 'Upload again to this app' : 'Publish again to this app';
     if (!needsKey) { retryLabel(); timer = setInterval(retryLabel, 1000); }
   }
-  finally { inProgress = false; }
+  finally { stopStepActivity($('progress-activity').dataset.state === 'paused'); inProgress = false; }
 }
 $('retry').addEventListener('click', () => run());
 $('retry-failed').addEventListener('click', () => run(true));
