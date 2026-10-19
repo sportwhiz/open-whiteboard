@@ -25,10 +25,10 @@ importers:
     dependencies:
       '@better-auth/passkey':
         specifier: 1.7.7
-        version: 1.7.7(@better-auth/core@1.7.7(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.2)(better-call@1.4.0(zod@3.25.76))(jose@6.2.12)(kysely@0.29.6)(nanostores@1.5.4))(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.2)(better-auth@1.7.7(mysql2@3.24.5(@types/node@22.19.11))(pg@8.20.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(vitest@5.0.2(@types/node@22.19.11)(vite@6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0))))(better-call@1.4.0(zod@3.25.76))(nanostores@1.5.4)
+        version: 1.7.7(@better-auth/core@1.7.7(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.2)(better-call@1.4.0(zod@3.25.76))(jose@6.2.12)(kysely@0.29.6)(nanostores@1.5.4))(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.2)(better-auth@1.7.7(mysql2@3.24.5(@types/node@22.19.11))(pg@8.20.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(vitest@5.0.2(@types/node@22.19.11)(vite@8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0))))(better-call@1.4.0(zod@3.25.76))(nanostores@1.5.4)
       '@blocksuite/affine':
         specifier: 0.22.4
-        version: 0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(babel-plugin-macros@3.1.0)(change-case@4.1.2)(react@18.3.1)(vite@6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0))(yjs@13.6.21)
+        version: 0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(babel-plugin-macros@3.1.0)(change-case@4.1.2)(react@18.3.1)(vite@8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0))(yjs@13.6.21)
       '@blocksuite/std':
         specifier: 0.22.4
         version: 0.22.4
@@ -49,7 +49,7 @@ importers:
         version: 1.1.23
       better-auth:
         specifier: 1.7.7
-        version: 1.7.7(mysql2@3.24.5(@types/node@22.19.11))(pg@8.20.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(vitest@5.0.2(@types/node@22.19.11)(vite@6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0)))
+        version: 1.7.7(mysql2@3.24.5(@types/node@22.19.11))(pg@8.20.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(vitest@5.0.2(@types/node@22.19.11)(vite@8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0)))
       bind-event-listener:
         specifier: 3.0.0
         version: 3.0.0
@@ -125,7 +125,7 @@ importers:
     devDependencies:
       '@cloudflare/vite-plugin':
         specifier: 1.61.0
-        version: 1.61.0(@types/node@22.19.11)(vite@6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0))(wrangler@4.142.0(@cloudflare/workers-types@5.20260928.1)(@types/node@22.19.11))
+        version: 1.61.0(@types/node@22.19.11)(vite@8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0))(wrangler@4.142.0(@cloudflare/workers-types@5.20260928.1)(@types/node@22.19.11))
       '@cloudflare/workers-types':
         specifier: 5.20260928.1
         version: 5.20260928.1
@@ -152,10 +152,10 @@ importers:
         version: 8.18.1
       '@vanilla-extract/vite-plugin':
         specifier: 5.2.6
-        version: 5.2.6(@types/node@22.19.11)(babel-plugin-macros@3.1.0)(lightningcss@1.33.0)(tsx@4.21.0)(vite@6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0))
+        version: 5.2.6(@types/node@22.19.11)(babel-plugin-macros@3.1.0)(esbuild@0.28.2)(lightningcss@1.33.0)(tsx@4.21.0)(vite@8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0))
       '@vitejs/plugin-react':
         specifier: 4.7.0
-        version: 4.7.0(vite@6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0))
+        version: 4.7.0(vite@8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0))
       esbuild:
         specifier: 0.28.2
         version: 0.28.2
@@ -178,11 +178,11 @@ importers:
         specifier: 5.7.2
         version: 5.7.2
       vite:
-        specifier: 6.4.3
-        version: 6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0)
+        specifier: 8.3.4
+        version: 8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0)
       vitest:
         specifier: 5.0.2
-        version: 5.0.2(@types/node@22.19.11)(vite@6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0))
+        version: 5.0.2(@types/node@22.19.11)(vite@8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0))
       wrangler:
         specifier: 4.142.0
         version: 4.142.0(@cloudflare/workers-types@5.20260928.1)(@types/node@22.19.11)
@@ -1413,6 +1413,9 @@ packages:
     resolution: {integrity: sha512-eSYWTm620tTk45EKSedaUL8MFYI8hW164hIXsgIHyxu3VobUB3fFCu5t0hQby6OoWRPsG1KkKUG2M5UadiLiVg==}
     engines: {node: '>=14'}
 
+  '@oxc-project/types@0.154.0':
+    resolution: {integrity: sha512-KYOUGQFlLWR+s4QMV2Q9ko38TZm7EdO87Qm7rvZLqk/webse/cDjtyxKhg/47l0byCbs/k46LT8qc4PKjAikzA==}
+
   '@pdf-lib/standard-fonts@1.0.0':
     resolution: {integrity: sha512-hU30BK9IUN/su0Mn9VdlVKsWBS6GyhVfqjwl1FjZN4TxP6cCw0jP2w7V3Hf5uX7M0AZJ16vey9yE0ny7Sa59ZA==}
 
@@ -1482,8 +1485,107 @@ packages:
   '@preact/signals-core@1.8.0':
     resolution: {integrity: sha512-OBvUsRZqNmjzCZXWLxkZfhcgT+Fk8DDcT/8vD6a1xhDemodyy87UJRJfASMuSD8FaAIeGgGm85ydXhm7lr4fyA==}
 
+  '@rolldown/binding-android-arm-eabi@1.2.14':
+    resolution: {integrity: sha512-aWR+XKH9+rW7m5fWq/5360J3mHycrx/o6xZM2DQFdJnTMdyP7/WzxPjhtLbVWdKo2y612/4U1bWqb3HQhiF7vg==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+    cpu: [arm]
+    os: [android]
+
+  '@rolldown/binding-android-arm64@1.2.14':
+    resolution: {integrity: sha512-QiVxHofl6A8lQU7WAtOUY4QMVZXohxwz7WJJoeh8NBEUyKfIkMRKhYyq8az/1RypNiIXzNTtiS6KwHz0erxYRQ==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+    cpu: [arm64]
+    os: [android]
+
+  '@rolldown/binding-darwin-arm64@1.2.14':
+    resolution: {integrity: sha512-lTQOzHuBIooh3jIr5XINQkjPGEuGy+Dsy0meXDr6Sjty0b99kYgGh4uBC/8mJX1T0kC8d6S0aPP1Y+bHkh6aBw==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@rolldown/binding-darwin-x64@1.2.14':
+    resolution: {integrity: sha512-hyMKEGatjmBYCs/Q4sbIcL/GqpFEqsX3wc+HYVQ/85A4rxc1o7rPm4DUI4GV4k/h0ITddwFSGpqQunI14GXjTA==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+    cpu: [x64]
+    os: [darwin]
+
+  '@rolldown/binding-freebsd-x64@1.2.14':
+    resolution: {integrity: sha512-u371GbXoVXrEgP20PwzoGNOdAOqAMhzo19JzzY+V4YmmnC+DTOoqdbMu+O+54emM59Mik/UdrtWgcuEDKWRPKA==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+    cpu: [x64]
+    os: [freebsd]
+
+  '@rolldown/binding-linux-arm-gnueabihf@1.2.14':
+    resolution: {integrity: sha512-BqwKsdZQf6EqVWr8fv2MrDYzAvOZ7+NYFSJESRGs87fkseEhs0TU9TXgRJTkZoRRkxTizyEg1LKUXfU3/78uqg==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+    cpu: [arm]
+    os: [linux]
+
+  '@rolldown/binding-linux-arm64-gnu@1.2.14':
+    resolution: {integrity: sha512-SD9kY8M009x/7s57Z1dgUVlP5+uYBgKQK0Tkr1WIWngrtUJmRCW1RJFMY7QDla2khXhmg2i5Io7MUjcmZNZ/KQ==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+    cpu: [arm64]
+    os: [linux]
+    libc: [glibc]
+
+  '@rolldown/binding-linux-arm64-musl@1.2.14':
+    resolution: {integrity: sha512-BJ2CL19M6uuWesMgnqJzgxoI+N+eV7b0A9O9vLV42y+gitC41fNa8KElau1tHVzuLWX5GzEuxMPhAO0tQXQMkg==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+    cpu: [arm64]
+    os: [linux]
+    libc: [musl]
+
+  '@rolldown/binding-linux-ppc64-gnu@1.2.14':
+    resolution: {integrity: sha512-4+Kl8daPV8NDHaD7mfCcc1pRM+Qg7ab8DyMm5FG5WoZgv4h2i3KFN1CybYBNbQqmuYm7ftJLvmMI1eHYJ22S/Q==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+    cpu: [ppc64]
+    os: [linux]
+    libc: [glibc]
+
+  '@rolldown/binding-linux-s390x-gnu@1.2.14':
+    resolution: {integrity: sha512-V/h8ePq1fKDrmtFMz6xcCN3DKvuvMRrwwD1q0PkBeeo4DpK64biaKvqWGVxqCeYKqeRk7gE7/iKPxLCn08O97A==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+    cpu: [s390x]
+    os: [linux]
+    libc: [glibc]
+
+  '@rolldown/binding-linux-x64-gnu@1.2.14':
+    resolution: {integrity: sha512-WxalXzgrLVpKC93xfpaJ3gCXUWzeCr+FRCbDVD2mUAy4L6Vo3lNVz0epUEUpxPWJkLNYUwM4OSIikv36OJ9mLg==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+    cpu: [x64]
+    os: [linux]
+    libc: [glibc]
+
+  '@rolldown/binding-linux-x64-musl@1.2.14':
+    resolution: {integrity: sha512-3G3tnAmTpdk9jO3GQtyHXqeFD2SlecfTws/Y3M2mmj9nMBwwuLT4kur8sZKeu7ENUHSpVO3cIsm5A52LEWWwlg==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+    cpu: [x64]
+    os: [linux]
+    libc: [musl]
+
+  '@rolldown/binding-openharmony-arm64@1.2.14':
+    resolution: {integrity: sha512-qyr5XiNGxm2ytx17vvtcJ9nXn6v1gENETi503bJx3OGwZ1tSonj7BosxbMa/xeAfSl5iS9X6KjEWYXLu6v1L7Q==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+    cpu: [arm64]
+    os: [openharmony]
+
+  '@rolldown/binding-win32-arm64-msvc@1.2.14':
+    resolution: {integrity: sha512-oA4o5o0S2yB199YyYXDzKUv1Z56Rc+mgOjwm7Z/vJ9Z8igiDPYvoOuDyo6g7AK/ZaF09nPhDKVnGBcYHO11GXA==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+    cpu: [arm64]
+    os: [win32]
+
+  '@rolldown/binding-win32-x64-msvc@1.2.14':
+    resolution: {integrity: sha512-9mE94bf2GZUaR/fUSXCMpBoWkctu421Mi0ORpm4zqfbkjKep7RxzPFa5etcGs5h+2KApoWBOA/hAJa/7saGgEQ==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+    cpu: [x64]
+    os: [win32]
+
   '@rolldown/pluginutils@1.0.0-beta.27':
     resolution: {integrity: sha512-+d0F4MKMCbeVUJwG96uQ4SgAznZNSq93I3V+9NHA4OpvqG8mRCpGdKmK8l/dl02h2CCDHwW2FqilnTyDcAnqjA==}
+
+  '@rolldown/pluginutils@1.0.1':
+    resolution: {integrity: sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw==}
 
   '@rollup/rollup-android-arm-eabi@4.63.5':
     resolution: {integrity: sha512-J25QJU+B78T4FhhBsNpLJyVWOi31mwtpcMwywHmOKH65Q9IWGA81gPj+dnwlhU8wktVriYE+tFAaQgrnJRzAZg==}
@@ -2797,8 +2899,8 @@ packages:
     resolution: {integrity: sha512-Tz09sEL2EEuv5fFowm419c1+a/jSMiBjI9gHxVLrVdbUkkNUUfjsVYs9pVZu5oCon/kmRh9TfLEObFtkVxmY0w==}
     engines: {node: '>=8.0.0'}
 
-  nanoid@3.3.19:
-    resolution: {integrity: sha512-Y2tUNy4ouw6tq5oDSKeQYGOyhkUBhNOcGV/02KC+6kd9eDGqdZd++mjMiIDilrBYvjEnCYvVtsuHCuP+okSfug==}
+  nanoid@3.3.20:
+    resolution: {integrity: sha512-uKdg2G3GNCKQn9byYOpxbGqrT2fGO5KRt5J/8b3pok8rT6qxGWF6hxMyJiEYtAf+FVyYuD9hRaDqX5uPFYJ4ZQ==}
     engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
     hasBin: true
 
@@ -2987,8 +3089,8 @@ packages:
     resolution: {integrity: sha512-40QW5YalBNfQo5yRYmiw7Yz6TKKVr3h6970B2YE+3fQpsWcrbj1PzJgxeJ19DRQjhMbKPIuMY8rFaXc8moolVw==}
     engines: {node: '>=10.13.0'}
 
-  postcss@8.5.28:
-    resolution: {integrity: sha512-RRuzqDtt5Y9h3quz5hWhK+TPnsmVs6WwSU6LkJMeY4HstUEDuYTG8UJSdawMRzmzAtV+KEoG8N3Qg2qLy5vM/A==}
+  postcss@8.5.30:
+    resolution: {integrity: sha512-zkd+e9S1AQHhmaBKye9zlFHWjOwVgqXl1q3ECYy8561K7qxR2cREf/STLskulBFd78k6AOFeA+ff1TtEzk9bAA==}
     engines: {node: ^10 || ^12 || >=14}
 
   postgres-array@2.0.0:
@@ -3109,6 +3211,11 @@ packages:
   resolve@1.22.12:
     resolution: {integrity: sha512-TyeJ1zif53BPfHootBGwPRYT1RUt6oGWsaQr8UyZW/eAm9bKoijtvruSDEmZHm92CwS9nj7/fWttqPCgzep8CA==}
     engines: {node: '>= 0.4'}
+    hasBin: true
+
+  rolldown@1.2.14:
+    resolution: {integrity: sha512-eTBTTqMR6uHKLgcUqpJP8ntzDI6V4LYA8negAMBEI7gkgVvOdrx6VsvS2Ym+83KhOPdLCHWJu0w7UQFJZhHKNw==}
+    engines: {node: ^20.19.0 || >=22.12.0}
     hasBin: true
 
   rollup@4.63.5:
@@ -3411,6 +3518,49 @@ packages:
       less:
         optional: true
       lightningcss:
+        optional: true
+      sass:
+        optional: true
+      sass-embedded:
+        optional: true
+      stylus:
+        optional: true
+      sugarss:
+        optional: true
+      terser:
+        optional: true
+      tsx:
+        optional: true
+      yaml:
+        optional: true
+
+  vite@8.3.4:
+    resolution: {integrity: sha512-IftLE8phJhdNRIGNEV4JCCvfNScoZQVfcXaN8TQropWGJtOHcu+iAB9pHcuGvmEb/kddw0LBe/jS8ztdC6xdiQ==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+    hasBin: true
+    peerDependencies:
+      '@types/node': ^20.19.0 || >=22.12.0
+      '@vitejs/devtools': ^0.7.1
+      esbuild: ^0.27.0 || ^0.28.0
+      jiti: '>=1.21.0'
+      less: ^4.0.0
+      sass: ^1.70.0
+      sass-embedded: ^1.70.0
+      stylus: '>=0.54.8'
+      sugarss: ^5.0.0
+      terser: ^5.16.0
+      tsx: ^4.8.1
+      yaml: ^2.4.2
+    peerDependenciesMeta:
+      '@types/node':
+        optional: true
+      '@vitejs/devtools':
+        optional: true
+      esbuild:
+        optional: true
+      jiti:
+        optional: true
+      less:
         optional: true
       sass:
         optional: true
@@ -3760,14 +3910,14 @@ snapshots:
       '@better-auth/core': 1.7.7(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.2)(better-call@1.4.0(zod@3.25.76))(jose@6.2.12)(kysely@0.29.6)(nanostores@1.5.4)
       '@better-auth/utils': 0.4.2
 
-  '@better-auth/passkey@1.7.7(@better-auth/core@1.7.7(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.2)(better-call@1.4.0(zod@3.25.76))(jose@6.2.12)(kysely@0.29.6)(nanostores@1.5.4))(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.2)(better-auth@1.7.7(mysql2@3.24.5(@types/node@22.19.11))(pg@8.20.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(vitest@5.0.2(@types/node@22.19.11)(vite@6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0))))(better-call@1.4.0(zod@3.25.76))(nanostores@1.5.4)':
+  '@better-auth/passkey@1.7.7(@better-auth/core@1.7.7(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.2)(better-call@1.4.0(zod@3.25.76))(jose@6.2.12)(kysely@0.29.6)(nanostores@1.5.4))(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.2)(better-auth@1.7.7(mysql2@3.24.5(@types/node@22.19.11))(pg@8.20.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(vitest@5.0.2(@types/node@22.19.11)(vite@8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0))))(better-call@1.4.0(zod@3.25.76))(nanostores@1.5.4)':
     dependencies:
       '@better-auth/core': 1.7.7(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.2)(better-call@1.4.0(zod@3.25.76))(jose@6.2.12)(kysely@0.29.6)(nanostores@1.5.4)
       '@better-auth/utils': 0.4.2
       '@better-fetch/fetch': 1.3.2
       '@simplewebauthn/browser': 13.3.0
       '@simplewebauthn/server': 13.3.3
-      better-auth: 1.7.7(mysql2@3.24.5(@types/node@22.19.11))(pg@8.20.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(vitest@5.0.2(@types/node@22.19.11)(vite@6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0)))
+      better-auth: 1.7.7(mysql2@3.24.5(@types/node@22.19.11))(pg@8.20.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(vitest@5.0.2(@types/node@22.19.11)(vite@8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0)))
       better-call: 1.4.0(zod@3.25.76)
       nanostores: 1.5.4
       zod: 4.6.5
@@ -3910,15 +4060,15 @@ snapshots:
       - react
       - supports-color
 
-  '@blocksuite/affine-block-data-view@0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(babel-plugin-macros@3.1.0)(change-case@4.1.2)(react@18.3.1)(vite@6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0))':
+  '@blocksuite/affine-block-data-view@0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(babel-plugin-macros@3.1.0)(change-case@4.1.2)(react@18.3.1)(vite@8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0))':
     dependencies:
-      '@blocksuite/affine-block-database': 0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(babel-plugin-macros@3.1.0)(change-case@4.1.2)(react@18.3.1)(vite@6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0))
+      '@blocksuite/affine-block-database': 0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(babel-plugin-macros@3.1.0)(change-case@4.1.2)(react@18.3.1)(vite@8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0))
       '@blocksuite/affine-components': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
       '@blocksuite/affine-ext-loader': 0.22.4
       '@blocksuite/affine-model': 0.22.4
       '@blocksuite/affine-shared': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
       '@blocksuite/affine-widget-slash-menu': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
-      '@blocksuite/data-view': 0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)(vite@6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0))
+      '@blocksuite/data-view': 0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)(vite@8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0))
       '@blocksuite/global': 0.22.4
       '@blocksuite/icons': 2.2.17(@types/react@18.3.31)(change-case@4.1.2)(lit@3.3.1)(react@18.3.1)
       '@blocksuite/std': 0.22.4
@@ -3952,7 +4102,7 @@ snapshots:
       - supports-color
       - vite
 
-  '@blocksuite/affine-block-database@0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(babel-plugin-macros@3.1.0)(change-case@4.1.2)(react@18.3.1)(vite@6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0))':
+  '@blocksuite/affine-block-database@0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(babel-plugin-macros@3.1.0)(change-case@4.1.2)(react@18.3.1)(vite@8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0))':
     dependencies:
       '@blocksuite/affine-components': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
       '@blocksuite/affine-ext-loader': 0.22.4
@@ -3963,7 +4113,7 @@ snapshots:
       '@blocksuite/affine-shared': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
       '@blocksuite/affine-widget-drag-handle': 0.22.4(@types/react@18.3.31)(babel-plugin-macros@3.1.0)(change-case@4.1.2)(react@18.3.1)
       '@blocksuite/affine-widget-slash-menu': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
-      '@blocksuite/data-view': 0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)(vite@6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0))
+      '@blocksuite/data-view': 0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)(vite@8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0))
       '@blocksuite/global': 0.22.4
       '@blocksuite/icons': 2.2.17(@types/react@18.3.31)(change-case@4.1.2)(lit@3.3.1)(react@18.3.1)
       '@blocksuite/std': 0.22.4
@@ -4301,11 +4451,11 @@ snapshots:
       - react
       - supports-color
 
-  '@blocksuite/affine-block-root@0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(babel-plugin-macros@3.1.0)(change-case@4.1.2)(react@18.3.1)(vite@6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0))':
+  '@blocksuite/affine-block-root@0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(babel-plugin-macros@3.1.0)(change-case@4.1.2)(react@18.3.1)(vite@8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0))':
     dependencies:
       '@blocksuite/affine-block-attachment': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
       '@blocksuite/affine-block-bookmark': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
-      '@blocksuite/affine-block-database': 0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(babel-plugin-macros@3.1.0)(change-case@4.1.2)(react@18.3.1)(vite@6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0))
+      '@blocksuite/affine-block-database': 0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(babel-plugin-macros@3.1.0)(change-case@4.1.2)(react@18.3.1)(vite@8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0))
       '@blocksuite/affine-block-edgeless-text': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
       '@blocksuite/affine-block-embed': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
       '@blocksuite/affine-block-frame': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
@@ -4329,7 +4479,7 @@ snapshots:
       '@blocksuite/affine-shared': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
       '@blocksuite/affine-widget-edgeless-selected-rect': 0.22.4(@types/react@18.3.31)(babel-plugin-macros@3.1.0)(change-case@4.1.2)(react@18.3.1)
       '@blocksuite/affine-widget-edgeless-toolbar': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
-      '@blocksuite/data-view': 0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)(vite@6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0))
+      '@blocksuite/data-view': 0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)(vite@8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0))
       '@blocksuite/global': 0.22.4
       '@blocksuite/icons': 2.2.17(@types/react@18.3.31)(change-case@4.1.2)(lit@3.3.1)(react@18.3.1)
       '@blocksuite/std': 0.22.4
@@ -4427,7 +4577,7 @@ snapshots:
       - react
       - supports-color
 
-  '@blocksuite/affine-block-table@0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)(vite@6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0))':
+  '@blocksuite/affine-block-table@0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)(vite@8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0))':
     dependencies:
       '@atlaskit/pragmatic-drag-and-drop': 1.8.1
       '@blocksuite/affine-components': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
@@ -4437,7 +4587,7 @@ snapshots:
       '@blocksuite/affine-rich-text': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
       '@blocksuite/affine-shared': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
       '@blocksuite/affine-widget-slash-menu': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
-      '@blocksuite/data-view': 0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)(vite@6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0))
+      '@blocksuite/data-view': 0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)(vite@8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0))
       '@blocksuite/global': 0.22.4
       '@blocksuite/icons': 2.2.17(@types/react@18.3.31)(change-case@4.1.2)(lit@3.3.1)(react@18.3.1)
       '@blocksuite/std': 0.22.4
@@ -4511,13 +4661,13 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@blocksuite/affine-foundation@0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)(vite@6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0))':
+  '@blocksuite/affine-foundation@0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)(vite@8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0))':
     dependencies:
       '@blocksuite/affine-components': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
       '@blocksuite/affine-ext-loader': 0.22.4
       '@blocksuite/affine-rich-text': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
       '@blocksuite/affine-shared': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
-      '@blocksuite/data-view': 0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)(vite@6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0))
+      '@blocksuite/data-view': 0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)(vite@8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0))
       '@blocksuite/global': 0.22.4
       '@blocksuite/icons': 2.2.17(@types/react@18.3.31)(change-case@4.1.2)(lit@3.3.1)(react@18.3.1)
       '@blocksuite/std': 0.22.4
@@ -5442,10 +5592,10 @@ snapshots:
       - react
       - supports-color
 
-  '@blocksuite/affine-widget-keyboard-toolbar@0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(babel-plugin-macros@3.1.0)(change-case@4.1.2)(react@18.3.1)(vite@6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0))':
+  '@blocksuite/affine-widget-keyboard-toolbar@0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(babel-plugin-macros@3.1.0)(change-case@4.1.2)(react@18.3.1)(vite@8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0))':
     dependencies:
       '@blocksuite/affine-block-attachment': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
-      '@blocksuite/affine-block-database': 0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(babel-plugin-macros@3.1.0)(change-case@4.1.2)(react@18.3.1)(vite@6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0))
+      '@blocksuite/affine-block-database': 0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(babel-plugin-macros@3.1.0)(change-case@4.1.2)(react@18.3.1)(vite@8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0))
       '@blocksuite/affine-block-embed': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
       '@blocksuite/affine-block-image': 0.22.4(@types/react@18.3.31)(babel-plugin-macros@3.1.0)(change-case@4.1.2)(react@18.3.1)
       '@blocksuite/affine-block-latex': 0.22.4(@types/react@18.3.31)(babel-plugin-macros@3.1.0)(change-case@4.1.2)(react@18.3.1)
@@ -5464,7 +5614,7 @@ snapshots:
       '@blocksuite/affine-model': 0.22.4
       '@blocksuite/affine-rich-text': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
       '@blocksuite/affine-shared': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
-      '@blocksuite/data-view': 0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)(vite@6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0))
+      '@blocksuite/data-view': 0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)(vite@8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0))
       '@blocksuite/global': 0.22.4
       '@blocksuite/icons': 2.2.17(@types/react@18.3.31)(change-case@4.1.2)(lit@3.3.1)(react@18.3.1)
       '@blocksuite/std': 0.22.4
@@ -5637,11 +5787,11 @@ snapshots:
       - react
       - supports-color
 
-  '@blocksuite/affine-widget-toolbar@0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(babel-plugin-macros@3.1.0)(change-case@4.1.2)(react@18.3.1)(vite@6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0))':
+  '@blocksuite/affine-widget-toolbar@0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(babel-plugin-macros@3.1.0)(change-case@4.1.2)(react@18.3.1)(vite@8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0))':
     dependencies:
-      '@blocksuite/affine-block-database': 0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(babel-plugin-macros@3.1.0)(change-case@4.1.2)(react@18.3.1)(vite@6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0))
+      '@blocksuite/affine-block-database': 0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(babel-plugin-macros@3.1.0)(change-case@4.1.2)(react@18.3.1)(vite@8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0))
       '@blocksuite/affine-block-surface': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
-      '@blocksuite/affine-block-table': 0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)(vite@6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0))
+      '@blocksuite/affine-block-table': 0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)(vite@8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0))
       '@blocksuite/affine-components': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
       '@blocksuite/affine-ext-loader': 0.22.4
       '@blocksuite/affine-model': 0.22.4
@@ -5698,14 +5848,14 @@ snapshots:
       - react
       - supports-color
 
-  '@blocksuite/affine@0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(babel-plugin-macros@3.1.0)(change-case@4.1.2)(react@18.3.1)(vite@6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0))(yjs@13.6.21)':
+  '@blocksuite/affine@0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(babel-plugin-macros@3.1.0)(change-case@4.1.2)(react@18.3.1)(vite@8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0))(yjs@13.6.21)':
     dependencies:
       '@blocksuite/affine-block-attachment': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
       '@blocksuite/affine-block-bookmark': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
       '@blocksuite/affine-block-callout': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
       '@blocksuite/affine-block-code': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
-      '@blocksuite/affine-block-data-view': 0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(babel-plugin-macros@3.1.0)(change-case@4.1.2)(react@18.3.1)(vite@6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0))
-      '@blocksuite/affine-block-database': 0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(babel-plugin-macros@3.1.0)(change-case@4.1.2)(react@18.3.1)(vite@6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0))
+      '@blocksuite/affine-block-data-view': 0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(babel-plugin-macros@3.1.0)(change-case@4.1.2)(react@18.3.1)(vite@8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0))
+      '@blocksuite/affine-block-database': 0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(babel-plugin-macros@3.1.0)(change-case@4.1.2)(react@18.3.1)(vite@8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0))
       '@blocksuite/affine-block-divider': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
       '@blocksuite/affine-block-edgeless-text': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
       '@blocksuite/affine-block-embed': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
@@ -5716,13 +5866,13 @@ snapshots:
       '@blocksuite/affine-block-list': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
       '@blocksuite/affine-block-note': 0.22.4(@types/react@18.3.31)(babel-plugin-macros@3.1.0)(change-case@4.1.2)(react@18.3.1)
       '@blocksuite/affine-block-paragraph': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
-      '@blocksuite/affine-block-root': 0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(babel-plugin-macros@3.1.0)(change-case@4.1.2)(react@18.3.1)(vite@6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0))
+      '@blocksuite/affine-block-root': 0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(babel-plugin-macros@3.1.0)(change-case@4.1.2)(react@18.3.1)(vite@8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0))
       '@blocksuite/affine-block-surface': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
       '@blocksuite/affine-block-surface-ref': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
-      '@blocksuite/affine-block-table': 0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)(vite@6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0))
+      '@blocksuite/affine-block-table': 0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)(vite@8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0))
       '@blocksuite/affine-components': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
       '@blocksuite/affine-ext-loader': 0.22.4
-      '@blocksuite/affine-foundation': 0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)(vite@6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0))
+      '@blocksuite/affine-foundation': 0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)(vite@8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0))
       '@blocksuite/affine-fragment-adapter-panel': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
       '@blocksuite/affine-fragment-doc-title': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
       '@blocksuite/affine-fragment-frame-panel': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
@@ -5754,16 +5904,16 @@ snapshots:
       '@blocksuite/affine-widget-edgeless-toolbar': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
       '@blocksuite/affine-widget-edgeless-zoom-toolbar': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
       '@blocksuite/affine-widget-frame-title': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
-      '@blocksuite/affine-widget-keyboard-toolbar': 0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(babel-plugin-macros@3.1.0)(change-case@4.1.2)(react@18.3.1)(vite@6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0))
+      '@blocksuite/affine-widget-keyboard-toolbar': 0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(babel-plugin-macros@3.1.0)(change-case@4.1.2)(react@18.3.1)(vite@8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0))
       '@blocksuite/affine-widget-linked-doc': 0.22.4(@types/react@18.3.31)(babel-plugin-macros@3.1.0)(change-case@4.1.2)(react@18.3.1)
       '@blocksuite/affine-widget-note-slicer': 0.22.4(@types/react@18.3.31)(babel-plugin-macros@3.1.0)(change-case@4.1.2)(react@18.3.1)
       '@blocksuite/affine-widget-page-dragging-area': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
       '@blocksuite/affine-widget-remote-selection': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
       '@blocksuite/affine-widget-scroll-anchoring': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
       '@blocksuite/affine-widget-slash-menu': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
-      '@blocksuite/affine-widget-toolbar': 0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(babel-plugin-macros@3.1.0)(change-case@4.1.2)(react@18.3.1)(vite@6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0))
+      '@blocksuite/affine-widget-toolbar': 0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(babel-plugin-macros@3.1.0)(change-case@4.1.2)(react@18.3.1)(vite@8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0))
       '@blocksuite/affine-widget-viewport-overlay': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
-      '@blocksuite/data-view': 0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)(vite@6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0))
+      '@blocksuite/data-view': 0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)(vite@8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0))
       '@blocksuite/global': 0.22.4
       '@blocksuite/std': 0.22.4
       '@blocksuite/store': 0.22.4
@@ -5790,7 +5940,7 @@ snapshots:
       - vite
       - yjs
 
-  '@blocksuite/data-view@0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)(vite@6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0))':
+  '@blocksuite/data-view@0.22.4(@types/node@22.19.11)(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)(vite@8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0))':
     dependencies:
       '@blocksuite/affine-components': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
       '@blocksuite/affine-shared': 0.22.4(@types/react@18.3.31)(change-case@4.1.2)(react@18.3.1)
@@ -5810,7 +5960,7 @@ snapshots:
       lit: 3.3.1
       lodash-es: 4.18.1
       rxjs: 7.8.2
-      vitest: 5.0.2(@types/node@22.19.11)(vite@6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0))
+      vitest: 5.0.2(@types/node@22.19.11)(vite@8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0))
       yjs: 13.6.21
       zod: 3.25.76
     transitivePeerDependencies:
@@ -5915,12 +6065,12 @@ snapshots:
     optionalDependencies:
       workerd: 1.20260926.1
 
-  '@cloudflare/vite-plugin@1.61.0(@types/node@22.19.11)(vite@6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0))(wrangler@4.142.0(@cloudflare/workers-types@5.20260928.1)(@types/node@22.19.11))':
+  '@cloudflare/vite-plugin@1.61.0(@types/node@22.19.11)(vite@8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0))(wrangler@4.142.0(@cloudflare/workers-types@5.20260928.1)(@types/node@22.19.11))':
     dependencies:
       '@cloudflare/unenv-preset': 2.16.2(unenv@2.0.0-rc.24)(workerd@1.20260926.1)
       miniflare: 5.20260926.0-alpha(@types/node@22.19.11)
       unenv: 2.0.0-rc.24
-      vite: 6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0)
+      vite: 8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0)
       workerd: 1.20260926.1
       wrangler: 4.142.0(@cloudflare/workers-types@5.20260928.1)(@types/node@22.19.11)
       ws: 8.21.0
@@ -6442,6 +6592,8 @@ snapshots:
 
   '@opentelemetry/semantic-conventions@1.43.0': {}
 
+  '@oxc-project/types@0.154.0': {}
+
   '@pdf-lib/standard-fonts@1.0.0':
     dependencies:
       pako: 1.0.11
@@ -6564,7 +6716,54 @@ snapshots:
 
   '@preact/signals-core@1.8.0': {}
 
+  '@rolldown/binding-android-arm-eabi@1.2.14':
+    optional: true
+
+  '@rolldown/binding-android-arm64@1.2.14':
+    optional: true
+
+  '@rolldown/binding-darwin-arm64@1.2.14':
+    optional: true
+
+  '@rolldown/binding-darwin-x64@1.2.14':
+    optional: true
+
+  '@rolldown/binding-freebsd-x64@1.2.14':
+    optional: true
+
+  '@rolldown/binding-linux-arm-gnueabihf@1.2.14':
+    optional: true
+
+  '@rolldown/binding-linux-arm64-gnu@1.2.14':
+    optional: true
+
+  '@rolldown/binding-linux-arm64-musl@1.2.14':
+    optional: true
+
+  '@rolldown/binding-linux-ppc64-gnu@1.2.14':
+    optional: true
+
+  '@rolldown/binding-linux-s390x-gnu@1.2.14':
+    optional: true
+
+  '@rolldown/binding-linux-x64-gnu@1.2.14':
+    optional: true
+
+  '@rolldown/binding-linux-x64-musl@1.2.14':
+    optional: true
+
+  '@rolldown/binding-openharmony-arm64@1.2.14':
+    optional: true
+
+  '@rolldown/binding-win32-arm64-msvc@1.2.14':
+    optional: true
+
+  '@rolldown/binding-win32-x64-msvc@1.2.14':
+    optional: true
+
   '@rolldown/pluginutils@1.0.0-beta.27': {}
+
+  '@rolldown/pluginutils@1.0.1': {}
 
   '@rollup/rollup-android-arm-eabi@4.63.5':
     optional: true
@@ -6809,15 +7008,17 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@vanilla-extract/compiler@0.7.2(@types/node@22.19.11)(babel-plugin-macros@3.1.0)(lightningcss@1.33.0)(tsx@4.21.0)':
+  '@vanilla-extract/compiler@0.7.2(@types/node@22.19.11)(babel-plugin-macros@3.1.0)(esbuild@0.28.2)(lightningcss@1.33.0)(tsx@4.21.0)':
     dependencies:
       '@vanilla-extract/css': 1.21.2(babel-plugin-macros@3.1.0)
       '@vanilla-extract/integration': 8.0.10(babel-plugin-macros@3.1.0)
-      vite: 6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0)
+      vite: 8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0)
       vite-node: 3.2.4(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0)
     transitivePeerDependencies:
       - '@types/node'
+      - '@vitejs/devtools'
       - babel-plugin-macros
+      - esbuild
       - jiti
       - less
       - lightningcss
@@ -6864,14 +7065,16 @@ snapshots:
 
   '@vanilla-extract/private@1.0.9': {}
 
-  '@vanilla-extract/vite-plugin@5.2.6(@types/node@22.19.11)(babel-plugin-macros@3.1.0)(lightningcss@1.33.0)(tsx@4.21.0)(vite@6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0))':
+  '@vanilla-extract/vite-plugin@5.2.6(@types/node@22.19.11)(babel-plugin-macros@3.1.0)(esbuild@0.28.2)(lightningcss@1.33.0)(tsx@4.21.0)(vite@8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0))':
     dependencies:
-      '@vanilla-extract/compiler': 0.7.2(@types/node@22.19.11)(babel-plugin-macros@3.1.0)(lightningcss@1.33.0)(tsx@4.21.0)
+      '@vanilla-extract/compiler': 0.7.2(@types/node@22.19.11)(babel-plugin-macros@3.1.0)(esbuild@0.28.2)(lightningcss@1.33.0)(tsx@4.21.0)
       '@vanilla-extract/integration': 8.0.10(babel-plugin-macros@3.1.0)
-      vite: 6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0)
+      vite: 8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0)
     transitivePeerDependencies:
       - '@types/node'
+      - '@vitejs/devtools'
       - babel-plugin-macros
+      - esbuild
       - jiti
       - less
       - lightningcss
@@ -6884,7 +7087,7 @@ snapshots:
       - tsx
       - yaml
 
-  '@vitejs/plugin-react@4.7.0(vite@6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0))':
+  '@vitejs/plugin-react@4.7.0(vite@8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0))':
     dependencies:
       '@babel/core': 7.29.7
       '@babel/plugin-transform-react-jsx-self': 7.29.7(@babel/core@7.29.7)
@@ -6892,18 +7095,18 @@ snapshots:
       '@rolldown/pluginutils': 1.0.0-beta.27
       '@types/babel__core': 7.20.5
       react-refresh: 0.17.0
-      vite: 6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0)
+      vite: 8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0)
     transitivePeerDependencies:
       - supports-color
 
-  '@vitest/mocker@5.0.2(vite@6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0))':
+  '@vitest/mocker@5.0.2(vite@8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0))':
     dependencies:
       '@jridgewell/trace-mapping': 0.3.31
       '@vitest/spy': 5.0.2
       estree-walker: 3.0.3
       magic-string: 1.4.2
     optionalDependencies:
-      vite: 6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0)
+      vite: 8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0)
 
   '@vitest/spy@5.0.2': {}
 
@@ -6955,7 +7158,7 @@ snapshots:
 
   baseline-browser-mapping@2.11.26: {}
 
-  better-auth@1.7.7(mysql2@3.24.5(@types/node@22.19.11))(pg@8.20.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(vitest@5.0.2(@types/node@22.19.11)(vite@6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0))):
+  better-auth@1.7.7(mysql2@3.24.5(@types/node@22.19.11))(pg@8.20.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(vitest@5.0.2(@types/node@22.19.11)(vite@8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0))):
     dependencies:
       '@better-auth/core': 1.7.7(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.2)(better-call@1.4.0(zod@3.25.76))(jose@6.2.12)(kysely@0.29.6)(nanostores@1.5.4)
       '@better-auth/drizzle-adapter': 1.7.7(@better-auth/core@1.7.7(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.2)(better-call@1.4.0(zod@3.25.76))(jose@6.2.12)(kysely@0.29.6)(nanostores@1.5.4))(@better-auth/utils@0.4.2)
@@ -6979,7 +7182,7 @@ snapshots:
       pg: 8.20.0
       react: 18.3.1
       react-dom: 18.3.1(react@18.3.1)
-      vitest: 5.0.2(@types/node@22.19.11)(vite@6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0))
+      vitest: 5.0.2(@types/node@22.19.11)(vite@8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0))
     transitivePeerDependencies:
       - '@opentelemetry/api'
 
@@ -7677,7 +7880,6 @@ snapshots:
       lightningcss-linux-x64-musl: 1.33.0
       lightningcss-win32-arm64-msvc: 1.33.0
       lightningcss-win32-x64-msvc: 1.33.0
-    optional: true
 
   lines-and-columns@1.2.4: {}
 
@@ -8108,7 +8310,7 @@ snapshots:
     dependencies:
       lru.min: 1.1.5
 
-  nanoid@3.3.19: {}
+  nanoid@3.3.20: {}
 
   nanoid@5.1.16: {}
 
@@ -8279,9 +8481,9 @@ snapshots:
 
   pngjs@5.0.0: {}
 
-  postcss@8.5.28:
+  postcss@8.5.30:
     dependencies:
-      nanoid: 3.3.19
+      nanoid: 3.3.20
       picocolors: 1.1.1
       source-map-js: 1.2.2
 
@@ -8410,6 +8612,27 @@ snapshots:
       is-core-module: 2.17.0
       path-parse: 1.0.7
       supports-preserve-symlinks-flag: 1.0.0
+
+  rolldown@1.2.14:
+    dependencies:
+      '@oxc-project/types': 0.154.0
+      '@rolldown/pluginutils': 1.0.1
+    optionalDependencies:
+      '@rolldown/binding-android-arm-eabi': 1.2.14
+      '@rolldown/binding-android-arm64': 1.2.14
+      '@rolldown/binding-darwin-arm64': 1.2.14
+      '@rolldown/binding-darwin-x64': 1.2.14
+      '@rolldown/binding-freebsd-x64': 1.2.14
+      '@rolldown/binding-linux-arm-gnueabihf': 1.2.14
+      '@rolldown/binding-linux-arm64-gnu': 1.2.14
+      '@rolldown/binding-linux-arm64-musl': 1.2.14
+      '@rolldown/binding-linux-ppc64-gnu': 1.2.14
+      '@rolldown/binding-linux-s390x-gnu': 1.2.14
+      '@rolldown/binding-linux-x64-gnu': 1.2.14
+      '@rolldown/binding-linux-x64-musl': 1.2.14
+      '@rolldown/binding-openharmony-arm64': 1.2.14
+      '@rolldown/binding-win32-arm64-msvc': 1.2.14
+      '@rolldown/binding-win32-x64-msvc': 1.2.14
 
   rollup@4.63.5:
     dependencies:
@@ -8793,7 +9016,7 @@ snapshots:
       esbuild: 0.25.12
       fdir: 6.5.0(picomatch@4.0.7)
       picomatch: 4.0.7
-      postcss: 8.5.28
+      postcss: 8.5.30
       rollup: 4.63.5
       tinyglobby: 0.2.17
     optionalDependencies:
@@ -8802,10 +9025,23 @@ snapshots:
       lightningcss: 1.33.0
       tsx: 4.21.0
 
-  vitest@5.0.2(@types/node@22.19.11)(vite@6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0)):
+  vite@8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0):
+    dependencies:
+      lightningcss: 1.33.0
+      picomatch: 4.0.7
+      postcss: 8.5.30
+      rolldown: 1.2.14
+      tinyglobby: 0.2.17
+    optionalDependencies:
+      '@types/node': 22.19.11
+      esbuild: 0.28.2
+      fsevents: 2.3.3
+      tsx: 4.21.0
+
+  vitest@5.0.2(@types/node@22.19.11)(vite@8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0)):
     dependencies:
       '@types/chai': 5.2.3
-      '@vitest/mocker': 5.0.2(vite@6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0))
+      '@vitest/mocker': 5.0.2(vite@8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0))
       chai: 6.2.2
       es-module-lexer: 2.3.2
       expect-type: 1.4.0
@@ -8816,7 +9052,7 @@ snapshots:
       tinybench: 6.2.0
       tinyexec: 1.3.1
       tinyglobby: 0.2.17
-      vite: 6.4.3(@types/node@22.19.11)(lightningcss@1.33.0)(tsx@4.21.0)
+      vite: 8.3.4(@types/node@22.19.11)(esbuild@0.28.2)(tsx@4.21.0)
       why-is-node-running: 3.2.2
     optionalDependencies:
       '@types/node': 22.19.11
