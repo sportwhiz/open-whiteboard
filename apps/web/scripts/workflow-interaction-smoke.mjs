@@ -327,6 +327,27 @@ try {
       await page.keyboard.press('Tab'); assert(await page.getByRole('button', { name: 'Close quick actions' }).evaluate(e => e === document.activeElement));
       await page.keyboard.press('Tab'); assert(await page.getByRole('combobox').evaluate(e => e === document.activeElement));
       await page.keyboard.press('Escape');
+      // A second palette can open before the previous action's next frame.
+      // Hold that frame to exercise the focus race deterministically.
+      await open();
+      await page.getByRole('combobox', { name: 'Search actions' }).fill('select all');
+      await page.evaluate(() => {
+        const original = window.requestAnimationFrame;
+        const pending = [];
+        window.requestAnimationFrame = callback => { pending.push(callback); return 0; };
+        window.releaseActionFrames = () => {
+          window.requestAnimationFrame = original;
+          for (const callback of pending) original.call(window, callback);
+        };
+      });
+      try {
+        await page.getByRole('combobox', { name: 'Search actions' }).press('Enter');
+        await page.getByRole('dialog', { name: 'Quick actions' }).waitFor({ state: 'hidden' });
+        await open();
+      } finally { await page.evaluate(() => window.releaseActionFrames()); }
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      assert(await page.getByRole('combobox', { name: 'Search actions' }).evaluate(e => e === document.activeElement), 'A previous action stole focus from the reopened palette');
+      await page.keyboard.press('Escape');
       await run('select all');
       await page.waitForFunction(() => window.auditController.state().selection.length === 2);
       await run('tidy');
