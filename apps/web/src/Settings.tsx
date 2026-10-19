@@ -482,7 +482,7 @@ function AccountPanel() {
         )}
         <Row
           title="Passkeys"
-          description="Use your device’s screen lock. A passkey can satisfy your second factor."
+          description="Sign in with your device’s screen lock. Your password still works; add an authenticator app for two-factor protection. A passkey sign-in also meets a required Studio second-factor policy."
         >
           <button
             disabled={action.busy}
@@ -523,7 +523,7 @@ function AccountPanel() {
           description={
             data.twoFactorEnabled
               ? "Two-factor authentication is enabled."
-              : "Use a six-digit code from an authenticator app."
+              : "Add two-factor protection with a six-digit code from an authenticator app. Password sign-in will require this extra step."
           }
         >
           <button

@@ -1274,7 +1274,7 @@ function PolicyForm({
           ))}
         </div>
         <p>
-          Two-factor authentication is recommended for everyone, including owners and administrators. Requiring it pauses existing app grants until their users confirm them.
+          An authenticator app is recommended for two-factor protection, including for owners and administrators. If you require a second factor, a passkey sign-in also meets that policy. Requiring it pauses existing app grants until their users confirm them.
         </p>
         <FormSaveBar dirty={["title", "registration", "approval_required", "mfa_required", "magic_link", "dynamic_registration", "reauthentication_seconds", "session_idle_seconds", "session_absolute_seconds"].some(key => String(form[key] ?? '') !== String(settings[key] ?? (key === 'reauthentication_seconds' ? 1800 : '')))} busy={action.busy} label="Save policy" onDiscard={() => setForm({ reauthentication_seconds: 1800, ...settings })} {...action.resultFor("policy")} onClearFeedback={action.clear} />
       </form>

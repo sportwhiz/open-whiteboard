@@ -17,9 +17,11 @@ export async function optionalSetupAndPasskey(origin, cookies) {
     } });
     await page.goto(origin);
     await page.getByRole('heading', { name: 'Protect your account', exact: true }).waitFor();
+    await page.getByRole('button', { name: /Sign in faster with a passkey/ }).waitFor();
+    assert.match(await page.getByRole('button', { name: /Use an authenticator app/ }).innerText(), /Recommended/);
     await page.getByRole('button', { name: 'Skip for now', exact: true }).click();
     await page.getByRole('heading', { name: 'Your studio is ready', exact: true }).waitFor();
-    await page.getByText('Add extra protection when you’re ready', { exact: true }).waitFor();
+    await page.getByText('Add an authenticator app for two-factor protection', { exact: true }).waitFor();
     await page.screenshot({ path: '/tmp/whiteboard-optional-protection.png', fullPage: true });
     const completion = page.waitForResponse(r => new URL(r.url()).pathname === '/api/v1/setup/complete');
     await page.getByRole('button', { name: 'Open my studio', exact: true }).click();

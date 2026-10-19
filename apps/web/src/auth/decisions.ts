@@ -6,6 +6,8 @@ export function requiresStrongAuthentication(
   _account: Pick<SecurityState, "role">,
   twoFactorEnabled: boolean,
 ) {
+  // Passkeys are an alternative sign-in method; adding one alone deliberately
+  // leaves password sign-in available. Personal MFA is enabled by TOTP enrollment.
   return Boolean(settings.mfa_required) || twoFactorEnabled;
 }
 

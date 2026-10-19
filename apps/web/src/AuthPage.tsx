@@ -1311,12 +1311,12 @@ export function AuthPage({
             <UiIcon name="lock" />
             <div>
               <strong>
-                {account.assurance === "strong" ? "Your account is protected" : "Add extra protection when you’re ready"}
+                {account.twoFactorEnabled || account.secondFactorReason === "studio" ? "Your account is protected" : "Add an authenticator app for two-factor protection"}
               </strong>
               <small>
-                {account.assurance === "strong"
+                {account.twoFactorEnabled || account.secondFactorReason === "studio"
                   ? "Your identity and security method are verified."
-                  : "You can add a passkey or authenticator app in Account and security."}
+                  : "You can set this up later in Account and security. A passkey offers faster sign-in, while your password stays available."}
               </small>
             </div>
           </li>
@@ -1370,7 +1370,7 @@ export function AuthPage({
   if (enroll) {
     const optional = setup && !account?.needsMfa;
     const reason = optional
-      ? "We recommend a passkey or authenticator app to help protect your account. You can set this up now or later in Account and security."
+      ? "We recommend an authenticator app for two-factor protection. You can set it up now or later in Account and security."
       : account?.secondFactorReason === "studio"
         ? `${studio} requires a passkey or authenticator app in addition to your password.`
         : "Add a passkey or authenticator app to keep your account safe.";
@@ -1410,12 +1410,13 @@ export function AuthPage({
             >
               <UiIcon name="key" />
               <span>
-                <strong>Set up a passkey</strong>
+                <strong>{optional ? "Sign in faster with a passkey" : "Set up a passkey"}</strong>
                 <small>
-                  Use your device’s fingerprint, face recognition, screen lock,
-                  or a security key.
+                  {optional
+                    ? "Use your device’s screen lock. You can still sign in with just your password unless you add an authenticator app or your Studio requires a second factor."
+                    : "Use your device’s fingerprint, face recognition, screen lock, or a security key."}
                 </small>
-                <span className="identity-recommended">Recommended</span>
+                {!optional && <span className="identity-recommended">Recommended</span>}
               </span>
             </button>
             <button
@@ -1430,6 +1431,7 @@ export function AuthPage({
                   Get a six-digit code from your app when you sign in. Includes
                   recovery codes.
                 </small>
+                {optional && <span className="identity-recommended">Recommended</span>}
               </span>
             </button>
             <button
