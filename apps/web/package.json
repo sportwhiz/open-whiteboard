@@ -84,7 +84,7 @@
     "@vitejs/plugin-react": "4.7.0",
     "esbuild": "0.28.2",
     "fake-indexeddb": "6.2.4",
-    "nodemailer": "10.0.14",
+    "nodemailer": "10.1.4",
     "pg": "8.20.0",
     "playwright": "1.62.1",
     "tsx": "4.21.0",
